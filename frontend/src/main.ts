@@ -6,7 +6,10 @@ import i18n, { initI18n } from './i18n'
 import { useAppStore } from '@/stores/app'
 import { updateFavicon } from '@/utils/branding'
 import { isIOSDevice } from '@/utils/device'
+import { aifooRouteClass, isAifooConsolePath } from '@/utils/aifoo'
 import './style.css'
+import './styles/aifoo-console.css'
+import './styles/aifoo-auth.css'
 
 function initIOSViewportZoomFix() {
   // iOS Safari 在输入框字号小于 16px 时聚焦会自动放大页面，且失焦后不会恢复。
@@ -30,9 +33,17 @@ function initThemeClass() {
   document.documentElement.classList.toggle('dark', shouldUseDark)
 }
 
+function initAifooShellClass() {
+  if (!isAifooConsolePath(window.location.pathname)) return
+
+  document.documentElement.classList.add('console-shell', aifooRouteClass(window.location.pathname))
+  document.body.classList.add('console-override-active')
+}
+
 async function bootstrap() {
   // Apply theme class globally before app mount to keep all routes consistent.
   initThemeClass()
+  initAifooShellClass()
   initIOSViewportZoomFix()
 
   const app = createApp(App)

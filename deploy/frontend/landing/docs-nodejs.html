@@ -1,0 +1,1670 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AIFoo.cc.cd / 接入文档</title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap");
+
+      :root {
+        --canvas: #090909;
+        --ink: #ffffff;
+        --body: #d9dbe2;
+        --mute: #7a7f88;
+        --hairline: rgba(255, 255, 255, 0.12);
+        --hairline-strong: rgba(255, 255, 255, 0.22);
+        --accent-ember: #ffb277;
+        --accent-ember-rgb: 255, 178, 119;
+        --accent-sunset: #ff7a17;
+        --accent-sunset-rgb: 255, 122, 23;
+        --accent-breeze: #9cc0e9;
+        --accent-dusk: #7258ff;
+        --surface-card: rgba(19, 21, 26, 0.9);
+        --surface-card-strong: rgba(19, 21, 26, 0.94);
+        --surface-card-raised: rgba(22, 24, 30, 0.96);
+        --surface-soft: rgba(255, 255, 255, 0.02);
+        --surface-soft-strong: rgba(255, 255, 255, 0.03);
+        --pill: 999px;
+        --gap: 18px;
+        --content-gap: 16px;
+        --theme-duration: 180ms;
+        --theme-ease: cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      body[data-theme="light"] {
+        --canvas: #f3f0ea;
+        --ink: #15191a;
+        --body: #4f525a;
+        --mute: #8b8f97;
+        --hairline: rgba(23, 21, 26, 0.1);
+        --hairline-strong: rgba(23, 21, 26, 0.16);
+        --surface-card: transparent;
+        --surface-card-strong: transparent;
+        --surface-card-raised: transparent;
+        --surface-soft: transparent;
+        --surface-soft-strong: transparent;
+        --accent-ember: #b65c24;
+        --accent-ember-rgb: 182, 92, 36;
+        --accent-sunset: #d45f14;
+        --accent-sunset-rgb: 212, 95, 20;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        --page-shift-y: 0px;
+        --page-opacity: 1;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 18% 0%, rgba(var(--accent-sunset-rgb), 0.08), transparent 24%),
+          radial-gradient(circle at 82% 10%, rgba(124, 58, 237, 0.08), transparent 26%),
+          linear-gradient(180deg, #080808 0%, #0a0a0a 28%, #0d1116 100%);
+        font-family: "Space Grotesk", Inter, "SF Pro Display", sans-serif;
+      }
+
+      body.is-page-entering,
+      body.is-page-leaving {
+        overflow: hidden;
+      }
+
+      body.is-page-entering {
+        --page-shift-y: 16px;
+        --page-opacity: 0;
+      }
+
+      body.is-page-leaving {
+        --page-shift-y: -10px;
+        --page-opacity: 0;
+        pointer-events: none;
+      }
+
+      body[data-theme="light"] {
+        background:
+          radial-gradient(circle at 18% 0%, rgba(var(--accent-sunset-rgb), 0.12), transparent 26%),
+          radial-gradient(circle at 82% 12%, rgba(124, 58, 237, 0.09), transparent 28%),
+          linear-gradient(180deg, #faf6ef 0%, #f4efe8 30%, #eee9e1 100%);
+      }
+
+      html[data-embedded="true"],
+      body[data-embedded="true"] {
+        background: transparent;
+      }
+
+      body,
+      .topbar,
+      .button,
+      .button-solid,
+      .theme-toggle,
+      .callout,
+      .code-shell,
+      .details,
+      .info-card,
+      .endpoint-card,
+      .sidebar-link,
+      .tab-button,
+      .copy-code,
+      .api-toggle-group,
+      .api-toggle-button,
+      .api-script-card,
+      .api-script-endpoint,
+      .api-code-shell,
+      .brand-dot,
+      .docs-shell,
+      .doc-panel,
+      .content-stage {
+        transition:
+          color var(--theme-duration) var(--theme-ease),
+          background-color var(--theme-duration) var(--theme-ease),
+          border-color var(--theme-duration) var(--theme-ease),
+          box-shadow var(--theme-duration) var(--theme-ease);
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      button {
+        font: inherit;
+      }
+
+      code,
+      pre {
+        font-family: "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+      }
+
+      .shell {
+        width: min(1180px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 128px 0 72px;
+        opacity: var(--page-opacity);
+        transform: translateY(var(--page-shift-y));
+        transition:
+          transform 360ms cubic-bezier(0.22, 1, 0.36, 1),
+          opacity 320ms ease;
+      }
+
+      body[data-embedded="true"] .shell {
+        padding: 0 0 32px;
+      }
+
+      .topbar,
+      .callout,
+      .code-shell,
+      .details,
+      .info-card,
+      .endpoint-card {
+        border: 1px solid var(--hairline);
+        border-radius: 22px;
+        background: var(--surface-card);
+      }
+
+      .topbar {
+        position: fixed;
+        top: 18px;
+        left: 50%;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        width: min(1180px, calc(100vw - 32px));
+        min-height: 92px;
+        padding: 14px 18px;
+        border-radius: var(--pill);
+        background: rgba(10, 10, 10, 0.78);
+        backdrop-filter: blur(18px);
+        transform: translateX(-50%) translateY(var(--page-shift-y));
+        opacity: var(--page-opacity);
+        transition:
+          transform 360ms cubic-bezier(0.22, 1, 0.36, 1),
+          opacity 320ms ease,
+          color var(--theme-duration) var(--theme-ease),
+          background-color var(--theme-duration) var(--theme-ease),
+          border-color var(--theme-duration) var(--theme-ease),
+          box-shadow var(--theme-duration) var(--theme-ease);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .brand-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--accent-sunset), var(--accent-dusk), var(--accent-breeze));
+      }
+
+      .brand-copy strong {
+        display: block;
+        font-size: 14px;
+        font-weight: 400;
+      }
+
+      .brand-copy span,
+      .eyebrow,
+      .mini,
+      .code-label,
+      .route {
+        font-family: "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--mute);
+        font-size: 11px;
+      }
+
+      .route {
+        color: var(--accent-ember);
+        text-transform: none;
+        letter-spacing: 0.08em;
+      }
+
+      .nav {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+
+      .button,
+      .button-solid {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 40px;
+        padding: 0 16px;
+        border-radius: var(--pill);
+        border: 1px solid var(--hairline-strong);
+        font-size: 13px;
+      }
+
+      .button-solid {
+        background: #fff;
+        color: #0a0a0a;
+        border-color: #fff;
+      }
+
+      body[data-theme="light"] .topbar {
+        background: rgba(255, 252, 246, 0.8);
+      }
+
+      body[data-theme="light"] .button-solid {
+        background: #ffffff;
+        color: #15191a;
+        border-color: #ffffff;
+      }
+
+      .theme-toggle {
+        width: 40px;
+        min-width: 40px;
+        min-height: 40px;
+        padding: 0;
+        background: transparent;
+        color: var(--ink);
+        border-color: var(--hairline-strong);
+        box-shadow: none;
+      }
+
+      .theme-toggle svg {
+        width: 17px;
+        height: 17px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.7;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        transition:
+          color var(--theme-duration) var(--theme-ease),
+          stroke var(--theme-duration) var(--theme-ease),
+          opacity 220ms ease;
+      }
+
+      .theme-toggle .icon-sun {
+        display: none;
+      }
+
+      body[data-theme="light"] .theme-toggle .icon-moon {
+        display: none;
+      }
+
+      body[data-theme="light"] .theme-toggle .icon-sun {
+        display: block;
+      }
+
+      body[data-theme="light"] .theme-toggle {
+        background: transparent;
+        color: var(--ink);
+        border-color: var(--hairline-strong);
+        box-shadow: none;
+      }
+
+      .docs-shell {
+        display: grid;
+        grid-template-columns: 300px minmax(0, 1fr);
+        gap: var(--gap);
+        align-items: start;
+        margin-top: 28px;
+        min-height: calc(100vh - 48px);
+        padding-bottom: 28px;
+        background:
+          linear-gradient(180deg, rgba(10, 11, 15, 0) 0%, rgba(10, 11, 15, 0.62) 22%, rgba(10, 11, 15, 0.9) 100%);
+      }
+
+      body[data-embedded="true"] .docs-shell {
+        margin-top: 0;
+        min-height: 0;
+        padding-bottom: 0;
+        background: transparent;
+      }
+
+      .sidebar {
+        position: sticky;
+        top: 24px;
+        display: grid;
+        gap: var(--content-gap);
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+      }
+
+      .sidebar h2,
+      .doc-panel h2 {
+        margin: 0;
+        font-weight: 400;
+        letter-spacing: -0.04em;
+      }
+
+      .sidebar h2 {
+        font-size: 18px;
+        line-height: 1.1;
+      }
+
+      .sidebar-links {
+        display: grid;
+        gap: var(--content-gap);
+      }
+
+      .sidebar-link {
+        display: grid;
+        gap: 8px;
+        padding: 14px 16px;
+        border: 1px solid transparent;
+        border-radius: 18px;
+        background: transparent;
+        color: var(--ink);
+        cursor: pointer;
+        text-align: left;
+        transition:
+          border-color 180ms ease,
+          background 180ms ease,
+          transform 180ms ease;
+      }
+
+      .sidebar-link.is-active,
+      .sidebar-link:focus-visible {
+        outline: none;
+        border-color: rgba(var(--accent-sunset-rgb), 0.36);
+        background: linear-gradient(180deg, rgba(var(--accent-sunset-rgb), 0.1), rgba(255, 255, 255, 0.02));
+        transform: translateY(-1px);
+      }
+
+      body[data-theme="light"] .sidebar-link:not(.is-active),
+      body[data-theme="light"] .tab-button,
+      body[data-theme="light"] .callout,
+      body[data-theme="light"] .code-shell,
+      body[data-theme="light"] .details,
+      body[data-theme="light"] .info-card,
+      body[data-theme="light"] .endpoint-card,
+      body[data-theme="light"] .api-code-shell {
+        background: transparent;
+        box-shadow: none;
+      }
+
+      body[data-embedded="true"] .callout,
+      body[data-embedded="true"] .code-shell,
+      body[data-embedded="true"] .details,
+      body[data-embedded="true"] .info-card,
+      body[data-embedded="true"] .endpoint-card,
+      body[data-embedded="true"] .api-code-shell,
+      body[data-embedded="true"] .api-script-card {
+        background: transparent;
+        box-shadow: none;
+      }
+
+      body[data-embedded="true"][data-theme="light"] .callout,
+      body[data-embedded="true"][data-theme="light"] .code-shell,
+      body[data-embedded="true"][data-theme="light"] .details,
+      body[data-embedded="true"][data-theme="light"] .info-card,
+      body[data-embedded="true"][data-theme="light"] .endpoint-card,
+      body[data-embedded="true"][data-theme="light"] .api-code-shell,
+      body[data-embedded="true"][data-theme="light"] .api-script-card {
+        background: transparent;
+        box-shadow: none;
+      }
+
+      body[data-embedded="true"] .sidebar-link,
+      body[data-embedded="true"] .tab-button,
+      body[data-embedded="true"] .copy-code,
+      body[data-embedded="true"] .api-toggle-group,
+      body[data-embedded="true"] .api-toggle-button {
+        background: transparent;
+        box-shadow: none;
+      }
+
+      body[data-embedded="true"][data-theme="light"] .sidebar-link,
+      body[data-embedded="true"][data-theme="light"] .tab-button,
+      body[data-embedded="true"][data-theme="light"] .copy-code,
+      body[data-embedded="true"][data-theme="light"] .api-toggle-group,
+      body[data-embedded="true"][data-theme="light"] .api-toggle-button {
+        background: transparent;
+        box-shadow: none;
+      }
+
+      body[data-embedded="true"] .sidebar-link.is-active,
+      body[data-embedded="true"] .sidebar-link:focus-visible,
+      body[data-embedded="true"] .tab-button.is-active,
+      body[data-embedded="true"] .endpoint-card.is-active,
+      body[data-embedded="true"] .endpoint-card:hover,
+      body[data-embedded="true"] .endpoint-card:focus-visible,
+      body[data-embedded="true"] .api-toggle-button.is-active {
+        background: transparent;
+        box-shadow: inset 0 0 0 1px rgba(var(--accent-sunset-rgb), 0.18);
+      }
+
+      body[data-embedded="true"][data-theme="light"] .sidebar-link.is-active,
+      body[data-embedded="true"][data-theme="light"] .sidebar-link:focus-visible,
+      body[data-embedded="true"][data-theme="light"] .tab-button.is-active,
+      body[data-embedded="true"][data-theme="light"] .endpoint-card.is-active,
+      body[data-embedded="true"][data-theme="light"] .endpoint-card:hover,
+      body[data-embedded="true"][data-theme="light"] .endpoint-card:focus-visible,
+      body[data-embedded="true"][data-theme="light"] .api-toggle-button.is-active {
+        background: transparent;
+        box-shadow: inset 0 0 0 1px rgba(var(--accent-sunset-rgb), 0.18);
+      }
+
+      body[data-theme="light"] .sidebar-link {
+        background: transparent;
+      }
+
+      body[data-theme="light"] .sidebar-link.is-active,
+      body[data-theme="light"] .sidebar-link:focus-visible,
+      body[data-theme="light"] .tab-button.is-active,
+      body[data-theme="light"] .endpoint-card.is-active,
+      body[data-theme="light"] .endpoint-card:hover,
+      body[data-theme="light"] .endpoint-card:focus-visible {
+        background: transparent;
+        box-shadow: inset 0 0 0 1px rgba(var(--accent-sunset-rgb), 0.18);
+      }
+
+      body[data-theme="light"] .tab-button,
+      body[data-theme="light"] .copy-code,
+      body[data-theme="light"] .api-toggle-group,
+      body[data-theme="light"] .api-toggle-button {
+        background: transparent;
+        box-shadow: none;
+      }
+
+      .sidebar-link strong {
+        font-size: 15px;
+        line-height: 1.14;
+        font-weight: 500;
+      }
+
+      .content-stage {
+        position: relative;
+        overflow: hidden;
+        min-height: 100%;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+      }
+
+      .doc-panel {
+        display: none;
+        gap: var(--content-gap);
+        align-content: start;
+      }
+
+      .doc-panel.is-active,
+      .doc-panel.is-entering,
+      .doc-panel.is-leaving {
+        display: grid;
+      }
+
+      .doc-panel.is-active {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      .doc-panel.is-entering {
+        opacity: 0;
+        transform: translateY(16px);
+      }
+
+      .doc-panel.is-active,
+      .doc-panel.is-leaving {
+        transition:
+          opacity 220ms ease,
+          transform 220ms ease;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+
+        body,
+        .topbar,
+        .button,
+        .button-solid,
+        .theme-toggle,
+        .callout,
+        .code-shell,
+        .details,
+        .info-card,
+        .endpoint-card,
+        .sidebar-link,
+        .tab-button,
+        .copy-code,
+        .api-toggle-group,
+        .api-toggle-button,
+        .api-script-card,
+        .api-script-endpoint,
+        .api-code-shell,
+        .brand-dot,
+        .docs-shell,
+        .doc-panel,
+        .content-stage,
+        .theme-toggle svg {
+          transition-duration: 1ms !important;
+          animation-duration: 1ms !important;
+        }
+      }
+
+      .doc-panel.is-leaving {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      .doc-panel[data-doc-panel="nodejs"],
+      .doc-panel[data-doc-panel="codex"],
+      .doc-panel[data-doc-panel="claude"],
+      .doc-panel[data-doc-panel="openclaw"],
+      .doc-panel[data-doc-panel="hermes"] {
+        min-height: calc(100vh - 132px);
+        margin: 0 -18px;
+        padding: 0 18px 28px;
+        border-radius: 30px;
+        background:
+          linear-gradient(180deg, rgba(12, 14, 18, 0.08) 0%, rgba(12, 14, 18, 0.18) 16%, rgba(12, 14, 18, 0.46) 100%);
+      }
+
+      body[data-embedded="true"] .doc-panel[data-doc-panel="nodejs"],
+      body[data-embedded="true"] .doc-panel[data-doc-panel="codex"],
+      body[data-embedded="true"] .doc-panel[data-doc-panel="claude"],
+      body[data-embedded="true"] .doc-panel[data-doc-panel="openclaw"],
+      body[data-embedded="true"] .doc-panel[data-doc-panel="hermes"],
+      body[data-embedded="true"] .doc-panel[data-doc-panel="api-script"] {
+        min-height: 0;
+        margin: 0;
+        padding: 0 0 24px;
+        border-radius: 0;
+        background: transparent;
+      }
+
+      body[data-theme="light"] .docs-shell,
+      body[data-theme="light"] .doc-panel[data-doc-panel="nodejs"],
+      body[data-theme="light"] .doc-panel[data-doc-panel="codex"],
+      body[data-theme="light"] .doc-panel[data-doc-panel="claude"],
+      body[data-theme="light"] .doc-panel[data-doc-panel="openclaw"],
+      body[data-theme="light"] .doc-panel[data-doc-panel="hermes"] {
+        background: transparent;
+      }
+
+      body[data-embedded="true"][data-theme="light"] .docs-shell,
+      body[data-embedded="true"][data-theme="light"] .doc-panel[data-doc-panel="nodejs"],
+      body[data-embedded="true"][data-theme="light"] .doc-panel[data-doc-panel="codex"],
+      body[data-embedded="true"][data-theme="light"] .doc-panel[data-doc-panel="claude"],
+      body[data-embedded="true"][data-theme="light"] .doc-panel[data-doc-panel="openclaw"],
+      body[data-embedded="true"][data-theme="light"] .doc-panel[data-doc-panel="hermes"],
+      body[data-embedded="true"][data-theme="light"] .doc-panel[data-doc-panel="api-script"] {
+        background: transparent;
+      }
+
+      .doc-panel[data-doc-panel="nodejs"] > *,
+      .doc-panel[data-doc-panel="codex"] > *,
+      .doc-panel[data-doc-panel="claude"] > *,
+      .doc-panel[data-doc-panel="openclaw"] > *,
+      .doc-panel[data-doc-panel="hermes"] > * {
+        position: relative;
+        z-index: 1;
+      }
+
+      .doc-head {
+        display: grid;
+        gap: 14px;
+      }
+
+      h1,
+      h2,
+      h3,
+      h4,
+      p,
+      pre {
+        margin: 0;
+      }
+
+      h1,
+      h2,
+      h3,
+      h4 {
+        font-weight: 400;
+        letter-spacing: -0.045em;
+      }
+
+      .doc-head h1 {
+        font-size: 24px;
+        line-height: 1.15;
+      }
+
+      .doc-panel h2 {
+        font-size: 18px;
+        line-height: 1.2;
+      }
+
+      .doc-panel p {
+        color: var(--body);
+        font-size: 14px;
+        line-height: 1.8;
+      }
+
+      .lead {
+        max-width: 900px;
+        font-size: 15px;
+        line-height: 1.75;
+      }
+
+      .tab-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--content-gap);
+      }
+
+      .tab-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 34px;
+        padding: 0 12px;
+        border: 1px solid var(--hairline);
+        border-radius: var(--pill);
+        background: var(--surface-soft);
+        color: var(--body);
+        cursor: pointer;
+        font-size: 12px;
+      }
+
+      .tab-button.is-active {
+        border-color: rgba(var(--accent-sunset-rgb), 0.38);
+        background: rgba(var(--accent-sunset-rgb), 0.1);
+        color: var(--ink);
+      }
+
+      .tab-panel {
+        display: grid;
+        gap: var(--content-gap);
+        align-content: start;
+      }
+
+      .tab-panel[hidden] {
+        display: none;
+      }
+
+      .callout {
+        padding: 14px 16px;
+        margin: 0;
+      }
+
+      .tab-panel > .callout:first-child {
+        margin-top: 0;
+      }
+
+      .tab-panel > :last-child {
+        margin-bottom: 0;
+      }
+
+      .code-shell {
+        overflow: hidden;
+        margin: 0;
+      }
+
+      .code-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--hairline);
+      }
+
+      .copy-code {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 56px;
+        height: 30px;
+        padding: 0 10px;
+        border: 1px solid var(--hairline);
+        border-radius: var(--pill);
+        background: var(--surface-soft);
+        color: var(--body);
+        cursor: pointer;
+      }
+
+      .copy-code.copied {
+        color: #ffc39a;
+      }
+
+      body[data-theme="light"] .copy-code.copied {
+        color: var(--accent-ember);
+      }
+
+      pre {
+        overflow: auto;
+        padding: 18px;
+        font-size: 13px;
+        line-height: 1.75;
+      }
+
+      .details-shell {
+        display: grid;
+        gap: 12px;
+      }
+
+      .details {
+        overflow: hidden;
+        background: var(--surface-card-strong);
+      }
+
+      .details summary {
+        list-style: none;
+        cursor: pointer;
+        display: grid;
+        gap: 0;
+        padding: 16px 18px;
+        background: var(--surface-card-strong);
+        box-shadow: inset 0 -1px 0 transparent;
+        transition: background 160ms ease, box-shadow 160ms ease;
+      }
+
+      .details[open] summary {
+        background: var(--surface-card-raised);
+        box-shadow: inset 0 -1px 0 var(--hairline);
+      }
+
+      .details summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .details-title {
+        display: block;
+        font-size: 18px;
+        line-height: 1.14;
+        font-weight: 500;
+        letter-spacing: -0.03em;
+      }
+
+      .details-copy {
+        display: block;
+        margin-top: 6px;
+        color: var(--mute);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .details-body {
+        display: grid;
+        gap: 14px;
+        padding: 16px 18px 18px;
+        background: var(--surface-card-strong);
+      }
+
+      .info-grid,
+      .endpoint-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--content-gap);
+      }
+
+      .info-card,
+      .endpoint-card {
+        display: grid;
+        gap: 8px;
+        padding: 16px 18px;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015)),
+          var(--surface-card);
+      }
+
+      .endpoint-card {
+        cursor: pointer;
+        transition:
+          border-color 180ms ease,
+          background 180ms ease,
+          transform 180ms ease;
+      }
+
+      .endpoint-card.is-active,
+      .endpoint-card:hover,
+      .endpoint-card:focus-visible {
+        outline: none;
+        border-color: rgba(var(--accent-sunset-rgb), 0.36);
+        background: linear-gradient(180deg, rgba(var(--accent-sunset-rgb), 0.1), rgba(255, 255, 255, 0.03));
+        transform: translateY(-1px);
+      }
+
+      .info-card strong,
+      .endpoint-card strong {
+        font-size: 18px;
+        line-height: 1.14;
+        font-weight: 500;
+      }
+
+      .api-script-grid {
+        display: grid;
+        gap: 22px;
+      }
+
+      .api-note {
+        padding-inline: 12px;
+      }
+
+      .api-script-card {
+        display: grid;
+        gap: 16px;
+        padding: 20px;
+        border: 1px solid var(--hairline);
+        border-radius: 24px;
+        background:
+          radial-gradient(circle at top right, rgba(var(--accent-sunset-rgb), 0.08), transparent 28%),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015)),
+          var(--surface-card);
+      }
+
+      body[data-theme="light"] .api-script-card {
+        background: transparent;
+        box-shadow: none;
+      }
+
+      .api-script-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+
+      .api-script-head > div {
+        flex: 1 1 320px;
+        min-width: 0;
+      }
+
+      .api-script-kicker {
+        margin: 0;
+        color: var(--accent-ember);
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .api-script-head h3 {
+        margin: 6px 0 0;
+        font-size: 20px;
+        line-height: 1.15;
+      }
+
+      .api-script-desc {
+        margin: 10px 0 0;
+        max-width: 720px;
+      }
+
+      .api-script-endpoint {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 38px;
+        padding: 0 14px;
+        border: 1px solid rgba(var(--accent-ember-rgb), 0.24);
+        border-radius: var(--pill);
+        background: rgba(var(--accent-ember-rgb), 0.08);
+        color: var(--accent-ember);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      body[data-theme="light"] .api-script-endpoint {
+        border-color: rgba(var(--accent-ember-rgb), 0.18);
+        background: transparent;
+        color: var(--accent-ember);
+      }
+
+      .api-script-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .api-toggle-group {
+        display: inline-flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 6px;
+        border: 1px solid var(--hairline);
+        border-radius: 18px;
+        background: var(--surface-soft-strong);
+      }
+
+      body[data-theme="light"] .api-toggle-group {
+        background: transparent;
+      }
+
+      .api-toggle-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 34px;
+        padding: 0 14px;
+        border: 0;
+        border-radius: 12px;
+        background: transparent;
+        color: var(--mute);
+        font: inherit;
+        font-size: 13px;
+        cursor: pointer;
+        transition:
+          background 180ms ease,
+          color 180ms ease,
+          transform 180ms ease;
+      }
+
+      .api-toggle-button:hover {
+        transform: translateY(-1px);
+        color: var(--ink);
+      }
+
+      .api-toggle-button.is-active {
+        background: rgba(var(--accent-sunset-rgb), 0.14);
+        color: var(--ink);
+        box-shadow: inset 0 0 0 1px rgba(var(--accent-sunset-rgb), 0.26);
+      }
+
+      body[data-theme="light"] .api-toggle-button.is-active {
+        background: transparent;
+        box-shadow: inset 0 0 0 1px rgba(var(--accent-sunset-rgb), 0.18);
+      }
+
+      .api-code-shell {
+        overflow: hidden;
+        border: 1px solid var(--hairline);
+        border-radius: 22px;
+        background: var(--surface-card-strong);
+      }
+
+      .api-code-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--hairline);
+      }
+
+      .api-code-meta {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .api-code-label,
+      .api-code-route {
+        font-family: "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .api-code-label {
+        color: var(--body);
+      }
+
+      .api-code-route {
+        color: var(--accent-breeze);
+        letter-spacing: 0.08em;
+      }
+
+      .api-copy-button {
+        min-width: 62px;
+      }
+
+      @media (max-width: 980px) {
+        .docs-shell,
+        .info-grid,
+        .endpoint-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          position: static;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .shell {
+          width: min(100vw - 20px, 1180px);
+          padding-top: 150px;
+        }
+
+        .topbar {
+          align-items: flex-start;
+          flex-direction: column;
+          border-radius: 24px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      (() => {
+        let theme = "dark";
+        try {
+          const storedTheme = window.localStorage.getItem("aifoo-theme");
+          if (storedTheme === "light" || storedTheme === "dark") {
+            theme = storedTheme;
+          }
+        } catch {
+          // Ignore storage restrictions in file:// previews.
+        }
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
+        document.body.dataset.theme = theme;
+        document.body.style.colorScheme = theme;
+        document.body.classList.add("is-page-entering");
+      })();
+    </script>
+
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-dot"></div>
+        <div class="brand-copy">
+          <strong>AIFoo.cc.cd</strong>
+          <span>Foo+ / Official Workflow Access</span>
+        </div>
+      </div>
+      <nav class="nav">
+        <a class="button" href="./index.html#home">首页</a>
+        <a class="button" href="./pricing.html">模型价格</a>
+        <a class="button-solid" href="./docs-nodejs.html">接入文档</a>
+        <a class="button" href="./index.html#faq">常见问题</a>
+        <button class="button theme-toggle" type="button" aria-label="切换显示模式">
+          <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"></path>
+          </svg>
+          <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v2.2"></path>
+            <path d="M12 19.8V22"></path>
+            <path d="M4.93 4.93l1.56 1.56"></path>
+            <path d="M17.51 17.51l1.56 1.56"></path>
+            <path d="M2 12h2.2"></path>
+            <path d="M19.8 12H22"></path>
+            <path d="M4.93 19.07l1.56-1.56"></path>
+            <path d="M17.51 6.49l1.56-1.56"></path>
+          </svg>
+        </button>
+      </nav>
+    </header>
+
+    <div class="shell">
+      <section class="docs-shell">
+        <aside class="sidebar">
+          <div class="mini">Sections</div>
+          <div class="sidebar-links">
+            <button class="sidebar-link is-active" type="button" data-doc-target="nodejs"><strong>Node.js 环境安装</strong></button>
+            <button class="sidebar-link" type="button" data-doc-target="codex"><strong>Codex 配置教程</strong></button>
+            <button class="sidebar-link" type="button" data-doc-target="claude"><strong>Claude Code 配置教程</strong></button>
+            <button class="sidebar-link" type="button" data-doc-target="gemini"><strong>Gemini CLI 配置教程</strong></button>
+            <button class="sidebar-link" type="button" data-doc-target="openclaw"><strong>OpenClaw 配置教程</strong></button>
+            <button class="sidebar-link" type="button" data-doc-target="hermes"><strong>Hermes 配置教程</strong></button>
+            <button class="sidebar-link" type="button" data-doc-target="api-script"><strong>API 脚本接入教程</strong></button>
+          </div>
+        </aside>
+
+        <section class="content-stage" id="content-stage">
+          <section class="doc-panel is-active" data-doc-panel="nodejs">
+            <div class="doc-head">
+              <h1>Node.js 环境安装教程</h1>
+            </div>
+            <div class="mini">Install</div>
+            <p>在 Windows、macOS、Linux 安装 Node.js LTS，并验证 node/npm 命令可用。</p>
+            <div class="tab-row">
+              <button class="tab-button is-active" type="button" data-tab-group="node" data-tab-target="windows">Windows</button>
+              <button class="tab-button" type="button" data-tab-group="node" data-tab-target="linux">Linux</button>
+              <button class="tab-button" type="button" data-tab-group="node" data-tab-target="macos">macOS</button>
+              <button class="tab-button" type="button" data-tab-group="node" data-tab-target="others">其他方式</button>
+            </div>
+            <section class="tab-panel" data-tab-panel="node" data-tab-value="windows">
+              <div class="callout"><p>💡 提示：后续的 Claude Code、Gemini CLI、Codex 都依赖 Node.js 运行环境。先完成本教程，再继续各自工具配置。</p></div>
+              <h2>Windows</h2>
+              <h3>方法一：官方下载</h3>
+              <p>前往 <a href="https://nodejs.org" target="_blank" rel="noreferrer">Node.js 官网</a> 下载 LTS 版本，双击安装包按提示安装即可。</p>
+              <h3>方法二：使用 Chocolatey</h3>
+              <div class="code-shell">
+                <div class="code-head"><span class="code-label">CMD / PowerShell</span><button class="copy-code" type="button">复制</button></div>
+                <pre><code>choco install nodejs-lts</code></pre>
+              </div>
+              <h3>方法三：使用 Scoop</h3>
+              <div class="code-shell">
+                <div class="code-head"><span class="code-label">CMD / PowerShell</span><button class="copy-code" type="button">复制</button></div>
+                <pre><code>scoop install nodejs-lts</code></pre>
+              </div>
+              <h3>验证安装</h3>
+              <div class="code-shell">
+                <div class="code-head"><span class="code-label">TERMINAL</span><button class="copy-code" type="button">复制</button></div>
+                <pre><code>node --version
+npm --version</code></pre>
+              </div>
+            </section>
+            <section class="tab-panel" data-tab-panel="node" data-tab-value="linux" hidden>
+              <h2>Linux</h2>
+              <h3>Ubuntu / Debian</h3>
+              <div class="code-shell">
+                <div class="code-head"><span class="code-label">BASH</span><button class="copy-code" type="button">复制</button></div>
+                <pre><code>curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+sudo apt-get install -y nodejs</code></pre>
+              </div>
+              <h3>CentOS / RHEL</h3>
+              <div class="code-shell">
+                <div class="code-head"><span class="code-label">BASH</span><button class="copy-code" type="button">复制</button></div>
+                <pre><code>curl -fsSL https://rpm.nodesource.com/setup_lts.x | sudo bash -
+sudo yum install -y nodejs</code></pre>
+              </div>
+              <h3>验证安装</h3>
+              <div class="code-shell">
+                <div class="code-head"><span class="code-label">TERMINAL</span><button class="copy-code" type="button">复制</button></div>
+                <pre><code>node --version
+npm --version</code></pre>
+              </div>
+              <p>如果能输出版本号，说明 Node.js 与 npm 已可用。</p>
+            </section>
+            <section class="tab-panel" data-tab-panel="node" data-tab-value="macos" hidden>
+              <h2>macOS</h2>
+              <p>官方文档里 macOS 明确给了两种方式：Homebrew 和官网下载。前者更省事，后者适合不使用 Homebrew 的机器。</p>
+              <h3>方法一：使用 Homebrew</h3>
+              <div class="code-shell">
+                <div class="code-head"><span class="code-label">BASH</span><button class="copy-code" type="button">复制</button></div>
+                <pre><code>brew install node
+node --version
+npm --version</code></pre>
+              </div>
+              <h3>方法二：官方下载</h3>
+              <p>前往 <a href="https://nodejs.org" target="_blank" rel="noreferrer">Node.js 官网</a> 下载 macOS 安装包。</p>
+            </section>
+            <section class="tab-panel" data-tab-panel="node" data-tab-value="others" hidden>
+              <h2>其他方式</h2>
+              <p>如果你需要在不同项目之间切换 Node 版本，推荐使用 <code>nvm</code> 进行版本管理。</p>
+              <div class="code-shell">
+                <div class="code-head"><span class="code-label">BASH</span><button class="copy-code" type="button">复制</button></div>
+                <pre><code>curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+source ~/.nvm/nvm.sh
+nvm install --lts
+nvm use --lts
+node --version
+npm --version</code></pre>
+              </div>
+            </section>
+          </section>
+
+          <section class="doc-panel" data-doc-panel="codex" hidden>
+            <div class="doc-head">
+              <h1>Codex 配置教程</h1>
+            </div>
+            <div class="mini">Quick Start</div>
+            <p>脚本会自动检测 Node.js 和 Codex CLI，缺失时引导安装；随后提示输入 API Key，并写入 ~/.codex 配置。复制命令不包含密钥。</p>
+            <div class="tab-row">
+              <button class="tab-button is-active" type="button" data-tab-group="codex" data-tab-target="windows">Windows PowerShell</button>
+              <button class="tab-button" type="button" data-tab-group="codex" data-tab-target="unix">macOS / Linux / WSL</button>
+            </div>
+            <section class="tab-panel" data-tab-panel="codex" data-tab-value="windows">
+              <div class="code-shell">
+                <div class="code-head"><span class="code-label">PowerShell</span><button class="copy-code" type="button">复制</button></div>
+                <pre><code>irm https://aifoo.cc.cd/install/codex.ps1 | iex</code></pre>
+              </div>
+            </section>
+            <section class="tab-panel" data-tab-panel="codex" data-tab-value="unix" hidden>
+              <div class="code-shell">
+                <div class="code-head"><span class="code-label">BASH</span><button class="copy-code" type="button">复制</button></div>
+                <pre><code>curl -fsSL https://aifoo.cc.cd/install/codex.sh | sudo bash</code></pre>
+              </div>
+            </section>
+            <div class="callout"><p>💡 配置写入 ~/.codex 后，Codex CLI 和 Codex App 客户端会同时生效；配置写入后，已打开的 CLI 需要重启后才会读取新配置。</p></div>
+            <div class="details-shell">
+              <details class="details">
+                <summary><span class="details-title">备用方案：手动安装 Codex</span><span class="details-copy">一键脚本不可用,想先审查命令或希望自己控制每一步时再展开</span></summary>
+                <div class="details-body">
+                  <div class="code-shell">
+                    <div class="code-head"><span class="code-label">TERMINAL</span><button class="copy-code" type="button">复制</button></div>
+                    <pre><code>npm install -g @openai/codex@latest
+codex --version</code></pre>
+                  </div>
+                  <div class="code-shell">
+                    <div class="code-head"><span class="code-label">TOML</span><button class="copy-code" type="button">复制</button></div>
+                    <pre><code># ~/.codex/config.toml
+model_provider = "codex"
+model = "gpt-5.5"
+review_model = "gpt-5.5"
+model_reasoning_effort = "high"
+disable_response_storage = true
+network_access = "enabled"
+
+[model_providers.codex]
+name = "codex"
+base_url = "https://aifoo.cc.cd/v1"
+wire_api = "responses"
+requires_openai_auth = true</code></pre>
+                  </div>
+                  <div class="code-shell">
+                    <div class="code-head"><span class="code-label">JSON</span><button class="copy-code" type="button">复制</button></div>
+                    <pre><code>{
+  "OPENAI_API_KEY": "YOUR_API_KEY"
+}</code></pre>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </section>
+
+          <section class="doc-panel" data-doc-panel="claude" hidden>
+            <div class="doc-head">
+              <h1>Claude Code 配置教程</h1>
+            </div>
+            <div class="mini">Quick Start</div>
+            <p>复制对应系统命令，运行后输入 API Key 即可。脚本执行完成后，如果 Claude Code 终端已经打开，一般也需要重启一次才能读取到新配置。</p>
+            <div class="tab-row">
+              <button class="tab-button is-active" type="button" data-tab-group="claude" data-tab-target="windows">Windows PowerShell</button>
+              <button class="tab-button" type="button" data-tab-group="claude" data-tab-target="unix">macOS / Linux / WSL</button>
+            </div>
+            <section class="tab-panel" data-tab-panel="claude" data-tab-value="windows">
+              <div class="code-shell">
+                <div class="code-head"><span class="code-label">PowerShell</span><button class="copy-code" type="button">复制</button></div>
+                <pre><code>irm https://aifoo.cc.cd/install/claude-code.ps1 | iex</code></pre>
+              </div>
+            </section>
+            <section class="tab-panel" data-tab-panel="claude" data-tab-value="unix" hidden>
+              <div class="code-shell">
+                <div class="code-head"><span class="code-label">BASH</span><button class="copy-code" type="button">复制</button></div>
+                <pre><code>curl -fsSL https://aifoo.cc.cd/install/claude-code.sh | sudo bash</code></pre>
+              </div>
+            </section>
+            <div class="details-shell">
+              <details class="details">
+                <summary><span class="details-title">备用方案：手动安装 Claude Code</span><span class="details-copy">一键脚本不可用,想先审查命令或希望自己控制每一步时再展开</span></summary>
+                <div class="details-body">
+                  <div class="code-shell">
+                    <div class="code-head"><span class="code-label">TERMINAL</span><button class="copy-code" type="button">复制</button></div>
+                    <pre><code>npm install -g @anthropic-ai/claude-code
+claude --version</code></pre>
+                  </div>
+                  <div class="code-shell">
+                    <div class="code-head"><span class="code-label">BASH</span><button class="copy-code" type="button">复制</button></div>
+                    <pre><code>export ANTHROPIC_BASE_URL=https://aifoo.cc.cd
+export ANTHROPIC_AUTH_TOKEN=your-key
+export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+
+cd your-project
+claude</code></pre>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </section>
+
+          <section class="doc-panel" data-doc-panel="gemini" hidden>
+            <div class="doc-head">
+              <h1>Gemini CLI 配置教程</h1>
+            </div>
+            <div class="mini">Install</div>
+            <h2>按系统安装 Gemini CLI</h2>
+            <p>开始前请先完成 Node.js 环境安装。</p>
+            <div class="tab-row">
+              <button class="tab-button is-active" type="button" data-tab-group="gemini-install" data-tab-target="windows">Windows</button>
+              <button class="tab-button" type="button" data-tab-group="gemini-install" data-tab-target="linux">Linux</button>
+              <button class="tab-button" type="button" data-tab-group="gemini-install" data-tab-target="macos">macOS</button>
+            </div>
+            <section class="tab-panel" data-tab-panel="gemini-install" data-tab-value="windows">
+              <div class="code-shell"><div class="code-head"><span class="code-label">CMD / PowerShell</span><button class="copy-code" type="button">复制</button></div><pre><code>npm install -g @google/gemini-cli
+gemini --version</code></pre></div>
+            </section>
+            <section class="tab-panel" data-tab-panel="gemini-install" data-tab-value="linux" hidden>
+              <div class="code-shell"><div class="code-head"><span class="code-label">BASH</span><button class="copy-code" type="button">复制</button></div><pre><code>sudo npm install -g @google/gemini-cli
+gemini --version</code></pre></div>
+            </section>
+            <section class="tab-panel" data-tab-panel="gemini-install" data-tab-value="macos" hidden>
+              <div class="code-shell"><div class="code-head"><span class="code-label">BASH</span><button class="copy-code" type="button">复制</button></div><pre><code>sudo npm install -g @google/gemini-cli
+gemini --version</code></pre></div>
+              <div class="code-shell"><div class="code-head"><span class="code-label">HOMEBREW</span><button class="copy-code" type="button">复制</button></div><pre><code>brew install gemini-cli
+gemini --version</code></pre></div>
+            </section>
+            <div class="mini">Environment</div>
+            <h2>配置环境变量</h2>
+            <p>设置环境变量让 Gemini CLI 连接到 APIKEY.FUN 平台。需要设置三个变量：<br>GOOGLE_GEMINI_BASE_URL -- 服务地址<br>GEMINI_API_KEY -- 你的 API Key<br>GEMINI_MODEL -- 使用的模型</p>
+            <div class="mini">Temporary</div>
+            <p>临时设置只在当前终端会话生效，适合先快速验证。</p>
+            <div class="tab-row">
+              <button class="tab-button is-active" type="button" data-tab-group="gemini-temp" data-tab-target="windows">Windows</button>
+              <button class="tab-button" type="button" data-tab-group="gemini-temp" data-tab-target="linux">Linux</button>
+              <button class="tab-button" type="button" data-tab-group="gemini-temp" data-tab-target="macos">macOS</button>
+            </div>
+            <section class="tab-panel" data-tab-panel="gemini-temp" data-tab-value="windows">
+              <div class="code-shell"><div class="code-head"><span class="code-label">POWERSHELL</span><button class="copy-code" type="button">复制</button></div><pre><code>$env:GOOGLE_GEMINI_BASE_URL = "https://aifoo.cc.cd"
+$env:GEMINI_API_KEY = "YOUR_API_KEY"
+$env:GEMINI_MODEL = "gemini-3-pro-preview"</code></pre></div>
+            </section>
+            <section class="tab-panel" data-tab-panel="gemini-temp" data-tab-value="linux" hidden>
+              <div class="code-shell"><div class="code-head"><span class="code-label">BASH</span><button class="copy-code" type="button">复制</button></div><pre><code>export GOOGLE_GEMINI_BASE_URL="https://aifoo.cc.cd"
+export GEMINI_API_KEY="YOUR_API_KEY"
+export GEMINI_MODEL="gemini-3-pro-preview"</code></pre></div>
+            </section>
+            <section class="tab-panel" data-tab-panel="gemini-temp" data-tab-value="macos" hidden>
+              <div class="code-shell"><div class="code-head"><span class="code-label">ZSH / BASH</span><button class="copy-code" type="button">复制</button></div><pre><code>export GOOGLE_GEMINI_BASE_URL="https://aifoo.cc.cd"
+export GEMINI_API_KEY="YOUR_API_KEY"
+export GEMINI_MODEL="gemini-3-pro-preview"</code></pre></div>
+            </section>
+            <div class="mini">Permanent</div>
+            <p>永久设置适合长期使用，重启终端后也能自动生效。</p>
+            <div class="tab-row">
+              <button class="tab-button is-active" type="button" data-tab-group="gemini-perm" data-tab-target="windows">Windows</button>
+              <button class="tab-button" type="button" data-tab-group="gemini-perm" data-tab-target="linux">Linux</button>
+              <button class="tab-button" type="button" data-tab-group="gemini-perm" data-tab-target="macos">macOS</button>
+            </div>
+            <section class="tab-panel" data-tab-panel="gemini-perm" data-tab-value="windows">
+              <div class="code-shell"><div class="code-head"><span class="code-label">POWERSHELL</span><button class="copy-code" type="button">复制</button></div><pre><code>[System.Environment]::SetEnvironmentVariable("GOOGLE_GEMINI_BASE_URL", "https://aifoo.cc.cd", [System.EnvironmentVariableTarget]::User)
+[System.Environment]::SetEnvironmentVariable("GEMINI_API_KEY", "YOUR_API_KEY", [System.EnvironmentVariableTarget]::User)
+[System.Environment]::SetEnvironmentVariable("GEMINI_MODEL", "gemini-3-pro-preview", [System.EnvironmentVariableTarget]::User)</code></pre></div>
+            </section>
+            <section class="tab-panel" data-tab-panel="gemini-perm" data-tab-value="linux" hidden>
+              <div class="code-shell"><div class="code-head"><span class="code-label">BASH</span><button class="copy-code" type="button">复制</button></div><pre><code>echo 'export GOOGLE_GEMINI_BASE_URL="https://aifoo.cc.cd"' >> ~/.bashrc
+echo 'export GEMINI_API_KEY="YOUR_API_KEY"' >> ~/.bashrc
+echo 'export GEMINI_MODEL="gemini-3-pro-preview"' >> ~/.bashrc
+source ~/.bashrc</code></pre></div>
+            </section>
+            <section class="tab-panel" data-tab-panel="gemini-perm" data-tab-value="macos" hidden>
+              <div class="code-shell"><div class="code-head"><span class="code-label">ZSH</span><button class="copy-code" type="button">复制</button></div><pre><code>echo 'export GOOGLE_GEMINI_BASE_URL="https://aifoo.cc.cd"' >> ~/.zshrc
+echo 'export GEMINI_API_KEY="YOUR_API_KEY"' >> ~/.zshrc
+echo 'export GEMINI_MODEL="gemini-3-pro-preview"' >> ~/.zshrc
+source ~/.zshrc</code></pre></div>
+            </section>
+            <div class="callout"><p>💡 提示：请将命令中的 YOUR_API_KEY 替换为控制台里复制的任意 API Key。如需更换模型，只需修改 GEMINI_MODEL 即可。</p></div>
+            <div class="mini">Run</div>
+            <h2>开始使用</h2>
+            <p>配置完成后，在项目目录中运行以下命令即可开始使用 Gemini CLI。</p>
+            <div class="code-shell"><div class="code-head"><span class="code-label">TERMINAL</span><button class="copy-code" type="button">复制</button></div><pre><code>gemini</code></pre></div>
+            <p>如果想先做一次非交互测试，可以直接运行下面这条命令。</p>
+            <div class="code-shell"><div class="code-head"><span class="code-label">TERMINAL</span><button class="copy-code" type="button">复制</button></div><pre><code>gemini -p "你好"</code></pre></div>
+          </section>
+
+          <section class="doc-panel" data-doc-panel="openclaw" hidden>
+            <div class="doc-head">
+              <h1>OpenClaw 配置教程</h1>
+            </div>
+            <p>推荐使用一键脚本，按提示选择 Anthropic（Claude）或 OpenAI（Codex）通道。</p>
+            <div class="info-grid">
+              <article class="info-card">
+                <strong>Anthropic（Claude）</strong>
+                <p><span class="route">https://aifoo.cc.cd</span></p>
+                <p>Claude / Anthropic 接口不要带 /v1，示例模型可用 claude-opus-4-6。</p>
+              </article>
+              <article class="info-card">
+                <strong>OpenAI（Codex）</strong>
+                <p><span class="route">https://aifoo.cc.cd/v1</span></p>
+                <p>OpenAI / Codex 接口必须带 /v1，示例模型可用 gpt-5.5。</p>
+              </article>
+            </div>
+            <div class="mini">Quick Start</div>
+            <h2>推荐方式：交互式一键脚本</h2>
+            <p>运行后选择通道并输入 API Key，脚本会写入 OpenClaw 配置。</p>
+            <div class="code-shell"><div class="code-head"><span class="code-label">BASH</span><button class="copy-code" type="button">复制</button></div><pre><code>curl -fsSL https://aifoo.cc.cd/install/openclaw.sh | sudo bash</code></pre></div>
+            <div class="callout"><p>💡 提示：脚本执行后会提示输入 API Key。请先在控制台获取对应分组的密钥，再按提示粘贴。</p></div>
+            <div class="details-shell">
+              <details class="details">
+                <summary><span class="details-title">备用方案：手动安装与配置 OpenClaw</span><span class="details-copy">一键脚本不可用,想先审查命令或希望自己控制每一步时再展开</span></summary>
+                <div class="details-body">
+                  <h2>第一步：安装 OpenClaw</h2>
+                  <div class="code-shell"><div class="code-head"><span class="code-label">BASH</span><button class="copy-code" type="button">复制</button></div><pre><code>npm install -g @openclaw/cli</code></pre></div>
+                  <h2>第二步：选择接入通道</h2>
+                  <div class="tab-row">
+                    <button class="tab-button is-active" type="button" data-tab-group="openclaw" data-tab-target="claude">Anthropic（Claude）</button>
+                    <button class="tab-button" type="button" data-tab-group="openclaw" data-tab-target="codex">OpenAI（Codex）</button>
+                  </div>
+                  <section class="tab-panel" data-tab-panel="openclaw" data-tab-value="claude">
+                    <div class="code-shell"><div class="code-head"><span class="code-label">BASH</span><button class="copy-code" type="button">复制</button></div><pre><code>export ANTHROPIC_API_KEY="YOUR_API_KEY"
+openclaw onboard --auth-choice custom-api-key \
+  --custom-base-url https://aifoo.cc.cd \
+  --custom-api-key-env ANTHROPIC_API_KEY \
+  --custom-compatibility anthropic \
+  --custom-model claude-opus-4-6</code></pre></div>
+                    <p>Anthropic（Claude）通道使用根地址，不要加 <code>/v1</code>。</p>
+                  </section>
+                  <section class="tab-panel" data-tab-panel="openclaw" data-tab-value="codex" hidden>
+                    <div class="code-shell"><div class="code-head"><span class="code-label">BASH</span><button class="copy-code" type="button">复制</button></div><pre><code>export OPENAI_API_KEY="YOUR_API_KEY"
+openclaw onboard --auth-choice custom-api-key \
+  --custom-base-url https://aifoo.cc.cd/v1 \
+  --custom-api-key-env OPENAI_API_KEY \
+  --custom-compatibility openai \
+  --custom-model gpt-5.5</code></pre></div>
+                    <p>OpenAI（Codex）通道使用带 <code>/v1</code> 的地址。</p>
+                  </section>
+                  <div class="callout"><p>💡 提示：请先在控制台获取对应分组的 API Key，并替换命令中的 <code>YOUR_API_KEY</code>。</p></div>
+                  <h2>第三步：开始使用</h2>
+                  <div class="code-shell"><div class="code-head"><span class="code-label">TERMINAL</span><button class="copy-code" type="button">复制</button></div><pre><code>openclaw</code></pre></div>
+                </div>
+              </details>
+            </div>
+          </section>
+
+          <section class="doc-panel" data-doc-panel="hermes" hidden>
+            <div class="doc-head">
+              <h1>Hermes 配置教程</h1>
+            </div>
+            <div class="mini">Quick Start</div>
+            <h2>推荐方式：交互式一键脚本</h2>
+            <p>运行后选择通道并输入 API Key，脚本会写入 <code>~/.hermes/config.yaml</code>。</p>
+            <div class="code-shell"><div class="code-head"><span class="code-label">BASH</span><button class="copy-code" type="button">复制</button></div><pre><code>curl -fsSL https://aifoo.cc.cd/install/hermes.sh | sudo bash</code></pre></div>
+            <div class="callout"><p>💡 提示：脚本执行后会提示输入 API Key。请先在控制台获取对应分组的密钥，再按提示粘贴。</p></div>
+            <div class="details-shell">
+              <details class="details">
+                <summary><span class="details-title">备用方案：手动安装与配置 Hermes</span><span class="details-copy">一键脚本不可用,想先审查命令或希望自己控制每一步时再展开</span></summary>
+                <div class="details-body">
+                  <div class="callout"><p><strong>注意：</strong>Claude / Anthropic 接口不要带 <code>/v1</code>；OpenAI / Codex 接口必须带 <code>/v1</code>。</p></div>
+                  <h2>第一步：安装 Hermes</h2>
+                  <div class="code-shell"><div class="code-head"><span class="code-label">BASH</span><button class="copy-code" type="button">复制</button></div><pre><code>pipx install hermes-agent</code></pre></div>
+                  <h2>第二步：选择接入通道</h2>
+                  <div class="tab-row">
+                    <button class="tab-button is-active" type="button" data-tab-group="hermes" data-tab-target="claude">Anthropic（Claude）</button>
+                    <button class="tab-button" type="button" data-tab-group="hermes" data-tab-target="codex">OpenAI（Codex）</button>
+                  </div>
+                  <section class="tab-panel" data-tab-panel="hermes" data-tab-value="claude">
+                    <div class="code-shell"><div class="code-head"><span class="code-label">YAML</span><button class="copy-code" type="button">复制</button></div><pre><code>mkdir -p ~/.hermes
+cat > ~/.hermes/config.yaml << 'EOF'
+model:
+  default: claude-opus-4-7
+  provider: aifoo-claude
+providers:
+  aifoo-claude:
+    api_mode: anthropic_messages
+    base_url: https://aifoo.cc.cd
+    api_key: YOUR_API_KEY
+    default_model: claude-opus-4-7
+    models:
+      - claude-opus-4-7
+EOF</code></pre></div>
+                  </section>
+                  <section class="tab-panel" data-tab-panel="hermes" data-tab-value="codex" hidden>
+                    <div class="code-shell"><div class="code-head"><span class="code-label">YAML</span><button class="copy-code" type="button">复制</button></div><pre><code>mkdir -p ~/.hermes
+cat > ~/.hermes/config.yaml << 'EOF'
+model:
+  default: gpt-5.5
+  provider: aifoo-codex
+providers:
+  aifoo-codex:
+    api_mode: codex_responses
+    base_url: https://aifoo.cc.cd/v1
+    api_key: YOUR_API_KEY
+    default_model: gpt-5.5
+    models:
+      - gpt-5.5
+EOF</code></pre></div>
+                  </section>
+                  <div class="callout"><p>💡 提示：请先在控制台获取对应分组的 API Key，并替换命令中的 <code>YOUR_API_KEY</code>。</p></div>
+                  <h2>第三步：开始使用</h2>
+                  <div class="code-shell"><div class="code-head"><span class="code-label">TERMINAL</span><button class="copy-code" type="button">复制</button></div><pre><code>hermes</code></pre></div>
+                </div>
+              </details>
+            </div>
+          </section>
+
+          <section class="doc-panel" data-doc-panel="api-script" hidden>
+            <div class="doc-head">
+              <h1>API 脚本接入教程</h1>
+              <p class="lead">下面示例覆盖文本、视觉和图片接口。复制后把 YOUR_API_KEY 替换为你的密钥即可运行。</p>
+            </div>
+            <div class="mini">Overview</div>
+            <div class="endpoint-grid">
+              <article class="endpoint-card is-active" role="button" tabindex="0" data-api-filter="responses"><strong>OpenAI Responses</strong><p>适合新接入或直接对齐新一代 OpenAI 风格工作流。</p></article>
+              <article class="endpoint-card" role="button" tabindex="0" data-api-filter="chat"><strong>Chat Completions</strong><p>适合已有旧版 OpenAI 客户端和历史脚本的迁移。</p></article>
+              <article class="endpoint-card" role="button" tabindex="0" data-api-filter="anthropic"><strong>Anthropic Messages</strong><p>适合明确走 Claude 通道的消息式调用。</p></article>
+              <article class="endpoint-card" role="button" tabindex="0" data-api-filter="images"><strong>图片接口</strong><p>额外补了图片生成和图片编辑脚本，方便直接接视觉能力。</p></article>
+            </div>
+            <p class="api-note">如果你是全新接入，建议优先看 OpenAI Responses；如果你已经有旧版 OpenAI 客户端，优先看 Chat Completions；如果你接的是 Claude 通道，就看 Anthropic Messages。</p>
+            <div class="api-script-grid" id="api-script-cards"></div>
+          </section>
+        </section>
+      </section>
+    </div>
+
+    <script src="./aifoo-docs-api-scripts.js"></script>
+    <script>
+      const body = document.body;
+      const themeToggle = document.querySelector(".theme-toggle");
+      const internalPageLinks = Array.from(document.querySelectorAll('a[href]'));
+      const getStoredTheme = () => {
+        try {
+          return window.localStorage.getItem("aifoo-theme");
+        } catch {
+          return null;
+        }
+      };
+      const setStoredTheme = (theme) => {
+        try {
+          window.localStorage.setItem("aifoo-theme", theme);
+        } catch {
+          // Ignore storage restrictions in embedded/file:// browsers.
+        }
+      };
+      const applyTheme = (theme, { persist = false } = {}) => {
+        const nextTheme = theme === "light" ? "light" : "dark";
+        document.documentElement.dataset.theme = nextTheme;
+        body.dataset.theme = nextTheme;
+        document.documentElement.style.colorScheme = nextTheme;
+        body.style.colorScheme = nextTheme;
+        if (persist) {
+          setStoredTheme(nextTheme);
+        }
+      };
+      window.applyAifooTheme = applyTheme;
+      const storedTheme = getStoredTheme();
+      applyTheme(storedTheme);
+
+      themeToggle?.addEventListener("click", () => {
+        const nextTheme = body.dataset.theme === "light" ? "dark" : "light";
+        applyTheme(nextTheme, { persist: true });
+      });
+
+      window.addEventListener("storage", (event) => {
+        if (event.key === "aifoo-theme") {
+          applyTheme(event.newValue);
+        }
+      });
+
+      const setupPageTransitions = () => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            body.classList.remove("is-page-entering");
+          });
+        });
+
+        internalPageLinks.forEach((link) => {
+          link.addEventListener("click", (event) => {
+            if (event.defaultPrevented || event.button !== 0) return;
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            if (link.target && link.target !== "_self") return;
+            if (link.hasAttribute("download")) return;
+
+            const url = new URL(link.href, window.location.href);
+            if (url.protocol !== window.location.protocol) return;
+            if (!url.pathname.endsWith(".html")) return;
+            if (url.hash === "#faq") return;
+
+            event.preventDefault();
+            body.classList.add("is-page-leaving");
+            window.setTimeout(() => {
+              window.location.href = url.href;
+            }, 280);
+          });
+        });
+      };
+
+      document.addEventListener("click", (event) => {
+        const copy = event.target.closest(".copy-code");
+        if (copy) {
+          const targetId = copy.dataset.copyTarget;
+          const code = targetId
+            ? document.getElementById(targetId)?.innerText || ""
+            : copy.closest(".code-shell, .api-code-shell")?.querySelector("code")?.innerText || "";
+          navigator.clipboard.writeText(code).then(() => {
+            copy.textContent = "已复制";
+            copy.classList.add("copied");
+            setTimeout(() => {
+              copy.textContent = "复制";
+              copy.classList.remove("copied");
+            }, 1200);
+          });
+          return;
+        }
+
+        const tab = event.target.closest("[data-tab-target]");
+        if (tab) {
+          const group = tab.dataset.tabGroup;
+          const target = tab.dataset.tabTarget;
+          document.querySelectorAll(`[data-tab-group="${group}"]`).forEach((item) => item.classList.toggle("is-active", item === tab));
+          document.querySelectorAll(`[data-tab-panel="${group}"]`).forEach((panel) => {
+            panel.hidden = panel.dataset.tabValue !== target;
+          });
+          return;
+        }
+
+        const docButton = event.target.closest("[data-doc-target]");
+        if (!docButton) return;
+
+        const nextId = docButton.dataset.docTarget;
+        const stage = document.getElementById("content-stage");
+        const current = stage.querySelector(".doc-panel.is-active");
+        const next = stage.querySelector(`[data-doc-panel="${nextId}"]`);
+        if (!next || current === next) return;
+
+        document.querySelectorAll("[data-doc-target]").forEach((button) => {
+          button.classList.toggle("is-active", button === docButton);
+        });
+
+        stage.style.minHeight = `${stage.offsetHeight}px`;
+        current.classList.add("is-leaving");
+
+        window.setTimeout(() => {
+          current.hidden = true;
+          current.classList.remove("is-active", "is-leaving");
+
+          next.hidden = false;
+          next.classList.add("is-entering");
+
+          requestAnimationFrame(() => {
+            next.classList.add("is-active");
+            next.classList.remove("is-entering");
+          });
+
+          window.setTimeout(() => {
+            stage.style.minHeight = "";
+          }, 240);
+        }, 180);
+      });
+
+      setupPageTransitions();
+      window.initializeAifooApiScripts?.();
+    </script>
+  </body>
+</html>

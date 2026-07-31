@@ -1,0 +1,122 @@
+name: Validate AIFoo frontend
+
+on:
+  push:
+    branches:
+      - production
+      - 'upgrade/**'
+  pull_request:
+    branches:
+      - production
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: aifoo-frontend-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.28.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Official critical frontend suite
+        working-directory: .
+        run: make test-frontend
+
+      - name: AIFoo source integration tests
+        run: >-
+          pnpm exec vitest run
+          src/utils/__tests__/aifoo.spec.ts
+          src/components/layout/__tests__/siteLogoSanitization.spec.ts
+          src/features/prompt-audit/__tests__/integrationSurface.spec.ts
+
+      - name: Production build
+        run: pnpm run build
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Browser regression tests
+        run: pnpm run test:e2e
+        env:
+          CI: 'true'
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: aifoo-playwright-${{ github.sha }}
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+  image:
+    needs: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Normalize GHCR owner
+        id: owner
+        shell: bash
+        run: echo "value=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/production'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build candidate image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/frontend/Dockerfile
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/production' }}
+          tags: ghcr.io/${{ steps.owner.outputs.value }}/sub2api-frontend:candidate-${{ github.sha }}
+          build-args: |
+            BUILD_VERSION=candidate-${{ github.sha }}
+            VCS_REF=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Record immutable candidate
+        if: github.event_name == 'push' && github.ref == 'refs/heads/production'
+        run: |
+          echo "### Candidate frontend image" >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          echo "ghcr.io/${{ steps.owner.outputs.value }}/sub2api-frontend@${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

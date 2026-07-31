@@ -14,7 +14,7 @@
         class="sidebar-logo flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl shadow-glow transition-opacity hover:opacity-80"
         @click="handleMenuItemClick(homePath)"
       >
-        <img v-if="settingsLoaded" :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
+        <img v-if="settingsLoaded" :src="aifooLogo" alt="AIFoo" class="h-full w-full object-contain" />
       </router-link>
       <div class="sidebar-brand" :class="{ 'sidebar-brand-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
         <router-link
@@ -35,7 +35,17 @@
       <template v-if="isAdmin">
         <!-- Admin Section -->
         <div class="sidebar-section">
-          <template v-for="item in adminNavItems" :key="item.path">
+          <template v-for="(item, index) in adminNavItems" :key="item.path">
+            <div
+              v-if="getAifooHeading(adminNavItems, index)"
+              class="console-nav-heading sidebar-section-title"
+              :class="{ 'sidebar-section-title-collapsed': sidebarCollapsed }"
+              :aria-hidden="sidebarCollapsed ? 'true' : 'false'"
+            >
+              <span class="sidebar-section-title-text">
+                {{ getAifooHeading(adminNavItems, index) }}
+              </span>
+            </div>
             <!-- Collapsible group (has children) -->
             <template v-if="item.children?.length">
               <button
@@ -103,7 +113,7 @@
 
         <!-- Personal Section for Admin (hidden in simple mode) -->
         <div v-if="!authStore.isSimpleMode" class="sidebar-section">
-          <div class="sidebar-section-title" :class="{ 'sidebar-section-title-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
+          <div data-console-hidden-heading="true" class="sidebar-section-title" :class="{ 'sidebar-section-title-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
             <span class="sidebar-section-title-text" :class="{ 'sidebar-section-title-text-collapsed': sidebarCollapsed }">
               {{ t('nav.myAccount') }}
             </span>
@@ -129,20 +139,30 @@
       <!-- Regular User View -->
       <template v-else-if="!appStore.backendModeEnabled">
         <div class="sidebar-section">
-          <router-link
-            v-for="item in userNavItems"
-            :key="item.path"
-            :to="item.path"
-            class="sidebar-link mb-1"
-            :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
-            :title="sidebarCollapsed ? item.label : undefined"
-            :data-tour="item.path === '/keys' ? 'sidebar-my-keys' : undefined"
-            @click="handleMenuItemClick(item.path)"
-          >
-            <span v-if="item.iconSvg" class="h-5 w-5 flex-shrink-0 sidebar-svg-icon" v-html="sanitizeSvg(item.iconSvg)"></span>
-            <component v-else :is="item.icon" class="h-5 w-5 flex-shrink-0" />
-            <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
-          </router-link>
+          <template v-for="(item, index) in userNavItems" :key="item.path">
+            <div
+              v-if="getAifooHeading(userNavItems, index)"
+              class="console-nav-heading sidebar-section-title"
+              :class="{ 'sidebar-section-title-collapsed': sidebarCollapsed }"
+              :aria-hidden="sidebarCollapsed ? 'true' : 'false'"
+            >
+              <span class="sidebar-section-title-text">
+                {{ getAifooHeading(userNavItems, index) }}
+              </span>
+            </div>
+            <router-link
+              :to="item.path"
+              class="sidebar-link mb-1"
+              :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
+              :title="sidebarCollapsed ? item.label : undefined"
+              :data-tour="item.path === '/keys' ? 'sidebar-my-keys' : undefined"
+              @click="handleMenuItemClick(item.path)"
+            >
+              <span v-if="item.iconSvg" class="h-5 w-5 flex-shrink-0 sidebar-svg-icon" v-html="sanitizeSvg(item.iconSvg)"></span>
+              <component v-else :is="item.icon" class="h-5 w-5 flex-shrink-0" />
+              <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
+            </router-link>
+          </template>
         </div>
       </template>
     </nav>
@@ -194,9 +214,9 @@ import { useI18n } from 'vue-i18n'
 import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
 import VersionBadge from '@/components/common/VersionBadge.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
-import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
+import { aifooNavHeading } from '@/utils/aifoo'
 
 interface NavItem {
   path: string
@@ -257,9 +277,11 @@ const expandedGroups = ref<Set<string>>(new Set())
 
 // Site settings from appStore (cached, no flicker)
 const siteName = computed(() => appStore.siteName)
-const siteLogo = computed(() => sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
 const siteVersion = computed(() => appStore.siteVersion)
 const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
+const aifooLogo = computed(() => isDark.value
+  ? '/landing-assets/foo_ai_logo_white.svg'
+  : '/landing-assets/foo_ai_logo_black.svg')
 
 // SVG Icon Components
 const DashboardIcon = {
@@ -834,6 +856,10 @@ const adminNavItems = computed((): NavItem[] => {
   }
   return visible
 })
+
+function getAifooHeading(items: NavItem[], index: number): string {
+  return aifooNavHeading(items.map(item => item.path), index)
+}
 
 function toggleSidebar() {
   appStore.toggleSidebar()

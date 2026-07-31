@@ -10,9 +10,10 @@ const homeViewSource = readFileSync(resolve(dir, '../../../views/HomeView.vue'),
 const keyUsageViewSource = readFileSync(resolve(dir, '../../../views/KeyUsageView.vue'), 'utf8')
 
 describe('site_logo sanitization', () => {
-  it('AppSidebar imports sanitizeUrl and applies it to siteLogo', () => {
-    expect(sidebarSource).toContain("import { sanitizeUrl } from '@/utils/url'")
-    expect(sidebarSource).toContain('sanitizeUrl(appStore.siteLogo')
+  it('AppSidebar uses only source-controlled AIFoo logo paths', () => {
+    expect(sidebarSource).toContain("'/landing-assets/foo_ai_logo_white.svg'")
+    expect(sidebarSource).toContain("'/landing-assets/foo_ai_logo_black.svg'")
+    expect(sidebarSource).not.toContain('appStore.siteLogo')
   })
 
   it('HomeView applies sanitizeUrl to siteLogo', () => {
@@ -23,8 +24,8 @@ describe('site_logo sanitization', () => {
     expect(keyUsageViewSource).toContain('sanitizeUrl(appStore.cachedPublicSettings?.site_logo || appStore.siteLogo')
   })
 
-  it('all three pass allowRelative and allowDataUrl options', () => {
-    for (const src of [sidebarSource, homeViewSource, keyUsageViewSource]) {
+  it('configurable logo surfaces allow only sanitized relative or image data URLs', () => {
+    for (const src of [homeViewSource, keyUsageViewSource]) {
       expect(src).toContain('allowRelative: true')
       expect(src).toContain('allowDataUrl: true')
     }

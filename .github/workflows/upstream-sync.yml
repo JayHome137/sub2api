@@ -1,0 +1,79 @@
+name: Sync official Sub2API releases
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout production history
+        uses: actions/checkout@v6
+        with:
+          ref: production
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git remote add upstream https://github.com/Wei-Shaw/sub2api.git
+
+      - name: Mirror official main and tags
+        run: |
+          git fetch upstream main --tags --force
+          git push origin refs/remotes/upstream/main:refs/heads/main
+          git push origin --tags
+
+      - name: Create release upgrade pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          latest_tag=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
+          test -n "$latest_tag"
+
+          git fetch origin production
+          if git merge-base --is-ancestor "$latest_tag" origin/production; then
+            echo "production already contains $latest_tag"
+            exit 0
+          fi
+
+          branch="upgrade/$latest_tag"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            echo "$branch already exists"
+            exit 0
+          fi
+
+          git checkout -b "$branch" origin/production
+          if ! git merge --no-edit "$latest_tag"; then
+            git merge --abort
+            title="Upgrade $latest_tag needs manual conflict resolution"
+            if ! gh issue list --state open --search "$title in:title" --json title --jq '.[].title' | grep -Fxq "$title"; then
+              gh issue create --title "$title" --body "The scheduled upstream merge into production has conflicts. Resolve it on a local upgrade/$latest_tag branch; validation and deployment remain blocked until a reviewed PR passes."
+            fi
+            exit 1
+          fi
+
+          git push origin "$branch"
+
+          migration_note="No migration files changed against production."
+          if git diff --name-only origin/production...HEAD | grep -q '^backend/migrations/'; then
+            migration_note="Database migration files changed. Backup restore validation and explicit production approval are required."
+          fi
+
+          gh pr create \
+            --base production \
+            --head "$branch" \
+            --title "Upgrade Sub2API to $latest_tag" \
+            --body "Automated stable-release candidate from official Wei-Shaw/sub2api.\n\n$migration_note\n\nThis PR must pass frontend, browser, backend, and image validation. Merging creates a candidate image but does not deploy it."

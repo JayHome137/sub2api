@@ -141,5 +141,7 @@ docs/*
 .serena/
 .codex/
 frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
 aicodex
 output/

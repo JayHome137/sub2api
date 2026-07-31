@@ -1,0 +1,2319 @@
+/* AIFoo console theme, bundled with the Vue application.
+   AppLayout owns the console-shell and route classes directly. */
+
+/* ==========================================================
+   SECTION 1 — CSS 变量
+   ========================================================== */
+:root {
+  --console-accent: #ef7a17;
+  --console-accent-rgb: 239, 122, 23;
+  --console-accent-soft: #ffb277;
+  --console-panel-line: rgba(255, 255, 255, 0.08);
+  --console-panel-line-strong: rgba(255, 255, 255, 0.14);
+  --console-panel-shadow: 0 24px 60px rgba(0, 0, 0, 0.24);
+  --console-panel-shadow-soft: 0 18px 42px rgba(0, 0, 0, 0.16);
+  --console-radius-xl: 28px;
+  --console-radius-lg: 20px;
+  --console-radius-md: 16px;
+  --console-module-surface:
+
+    radial-gradient(circle at top right, rgba(var(--console-accent-rgb), 0.07), transparent 32%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 241, 233, 0.96));
+  --console-module-surface-soft:
+    radial-gradient(circle at top right, rgba(var(--console-accent-rgb), 0.06), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(248, 242, 234, 0.88));
+  --console-module-fill: rgba(255, 255, 255, 0.9);
+  --console-module-fill-soft: rgba(255, 255, 255, 0.8);
+  --console-module-border: rgba(117, 83, 47, 0.14);
+  --console-module-header:
+    linear-gradient(180deg, rgba(255, 252, 248, 0.82), rgba(249, 242, 234, 0.66));
+}
+
+/* ==========================================================
+   SECTION 2 — FOUS 防御层
+   ========================================================== */
+
+/* 初始隐藏控制台（旧壳不可见） */
+.relative.min-h-screen.transition-all.duration-300 {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
+/* JS 注入 console-shell 后显示 */
+html.console-shell .relative.min-h-screen.transition-all.duration-300 {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+/* 沙箱态：即使 console-shell 存在也强制隐藏 */
+html.console-shell-pending #app > .min-h-screen,
+html.console-shell-pending .relative.min-h-screen.transition-all.duration-300 {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* ==========================================================
+   SECTION 3 — 亮色主题 (html.console-shell)
+   ========================================================== */
+
+/* ---- 3.1 全局背景 ---- */
+html.console-shell body {
+  background-color: #f4efe7;
+}
+
+html.console-shell .bg-mesh-gradient {
+  opacity: 0.3;
+  filter: blur(12px) saturate(0.88);
+}
+
+/* ---- 3.2 侧边栏 ---- */
+html.console-shell .sidebar {
+  border-right: 1px solid rgba(20, 18, 16, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.8), rgba(248, 242, 234, 0.88)),
+    rgba(255, 255, 255, 0.82) !important;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  overflow: hidden;
+}
+
+html.console-shell .sidebar-header {
+  margin: 0 12px 10px;
+  padding: 16px 6px 14px;
+  border-bottom: 1px solid rgba(20, 18, 16, 0.08);
+}
+
+html.console-shell .sidebar-logo {
+  background: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+html.console-shell .sidebar-logo img {
+  transform: scale(1.18);
+  transform-origin: center;
+  filter: drop-shadow(0 0 24px rgba(239, 122, 23, 0.16));
+}
+
+html.console-shell .sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.82rem;
+  padding: 8px 12px 12px;
+}
+
+html.console-shell .console-nav-heading {
+  margin-top: 0.7rem;
+  margin-bottom: 0.46rem;
+  padding-left: 0.95rem;
+  padding-right: 0.95rem;
+  font-size: 10px !important;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  line-height: 1.2;
+}
+
+html.console-shell .console-nav-heading:first-child {
+  margin-top: 0.15rem;
+}
+
+html.console-shell .sidebar-brand-title {
+  font-size: 22px !important;
+  color: #161411 !important;
+  letter-spacing: -0.04em;
+}
+
+html.console-shell .sidebar-brand {
+  gap: 0.1rem;
+}
+
+html.console-shell .sidebar-section {
+  position: relative;
+  padding: 0.1rem 0 0;
+}
+
+html.console-shell .sidebar-section + .sidebar-section {
+  margin-top: -0.15rem;
+  padding-top: 0.95rem;
+  border-top: 1px solid rgba(20, 18, 16, 0.06);
+}
+
+html.console-shell .sidebar-section-title {
+  color: rgba(73, 62, 52, 0.64) !important;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+html.console-shell .console-nav-heading.sidebar-section-title {
+  position: relative;
+  min-height: auto;
+}
+
+html.console-shell .console-nav-heading.sidebar-section-title::after {
+  opacity: 1;
+  left: 0.95rem;
+  right: 0.95rem;
+  top: auto;
+  bottom: -0.12rem;
+  transform: none;
+  background: linear-gradient(90deg, rgba(var(--console-accent-rgb), 0.22), rgba(133, 104, 72, 0.08) 54%, rgba(133, 104, 72, 0));
+}
+
+html.console-shell .console-nav-heading .sidebar-section-title-text {
+  opacity: 1 !important;
+  transform: none !important;
+  font-size: 10px !important;
+}
+
+html.console-shell .sidebar-link {
+  min-height: 42px;
+  padding-left: 0.95rem !important;
+  padding-right: 0.95rem !important;
+  border-radius: 14px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  color: rgba(38, 31, 24, 0.78) !important;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease !important;
+}
+
+html.console-shell .sidebar-link .sidebar-label,
+html.console-shell .sidebar-link .sidebar-label span,
+html.console-shell .sidebar-link .truncate {
+  font-size: 14px !important;
+}
+
+html.console-shell .sidebar-link .h-5.w-5 {
+  width: 20px !important;
+  height: 20px !important;
+}
+
+html.console-shell .sidebar-section-title[data-console-hidden-heading="true"] {
+  display: none !important;
+}
+
+html.console-shell .sidebar-link:hover {
+  background: rgba(239, 122, 23, 0.08) !important;
+  color: #161411 !important;
+}
+
+html.console-shell .sidebar-link-active {
+  color: #17120d !important;
+  border: 1px solid rgba(var(--console-accent-rgb), 0.18) !important;
+  background:
+    linear-gradient(90deg, rgba(var(--console-accent-rgb), 0.18), rgba(var(--console-accent-rgb), 0.06) 46%, rgba(255, 255, 255, 0.12)) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.24),
+    0 12px 28px rgba(var(--console-accent-rgb), 0.12) !important;
+}
+
+/* ---- 3.3 顶部导航 ---- */
+html.console-shell header.glass {
+  background: rgba(255, 252, 248, 0.72) !important;
+  border-bottom: 1px solid rgba(20, 18, 16, 0.08) !important;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+/* ---- 3.4 主内容区背景 ---- */
+html.console-shell .relative.min-h-screen.transition-all.duration-300 {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(var(--console-accent-rgb), 0.08), transparent 24%),
+    radial-gradient(circle at 88% 10%, rgba(124, 58, 237, 0.08), transparent 26%),
+    linear-gradient(180deg, #e8eeef 0%, #edf1f1 18%, #f4efe7 48%, #f7f1e9 100%) !important;
+}
+
+html.console-shell .relative.min-h-screen.transition-all.duration-300::before {
+  content: "";
+  position: fixed;
+  top: 84px;
+  right: 36px;
+  width: 420px;
+  height: 420px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(var(--console-accent-rgb), 0.12) 0%, rgba(var(--console-accent-rgb), 0.03) 42%, rgba(var(--console-accent-rgb), 0) 74%);
+  filter: blur(14px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+html.console-shell .relative.min-h-screen.transition-all.duration-300::after {
+  content: "";
+  position: fixed;
+  bottom: 10%;
+  left: 26%;
+  width: 380px;
+  height: 380px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(160, 195, 236, 0.14) 0%, rgba(160, 195, 236, 0.04) 40%, rgba(160, 195, 236, 0) 72%);
+  filter: blur(18px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ---- 3.5 Header 按钮/控件 ---- */
+html.console-shell header.glass .rounded-xl,
+html.console-shell header.glass .rounded-lg {
+  border-radius: 999px !important;
+}
+
+html.console-shell header.glass .bg-primary-50,
+html.console-shell header.glass .dark\:bg-primary-900\/20 {
+  background: rgba(239, 122, 23, 0.08) !important;
+}
+
+html.console-shell header.glass .bg-gradient-to-br {
+  background: linear-gradient(135deg, #ef7a17, #ff9a45) !important;
+  box-shadow: none !important;
+}
+
+html.console-shell header.glass .hover\:bg-gray-100:hover,
+html.console-shell header.glass .dark\:hover\:bg-dark-800:hover {
+  background: rgba(239, 122, 23, 0.08) !important;
+}
+
+html.console-shell main {
+  padding-top: 24px !important;
+}
+
+/* ---- 3.6 卡片 ---- */
+html.console-shell .card,
+html.console-shell .glass-card,
+html.console-shell .table-scroll-container,
+html.console-shell .rounded-2xl.border,
+html.console-shell .rounded-xl.border,
+html.console-shell .rounded-lg.border,
+html.console-shell .dropdown {
+  border-color: rgba(20, 18, 16, 0.08) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(250, 245, 238, 0.92)),
+    rgba(255, 255, 255, 0.86) !important;
+  box-shadow: var(--console-panel-shadow-soft) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* ---- 3.7 统计卡片装饰 ---- */
+html.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 > .card,
+html.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 > div.card,
+html.console-shell .grid.grid-cols-1.gap-6.lg\:grid-cols-3 > div > .card,
+html.console-shell .grid.grid-cols-1.gap-3.sm\:grid-cols-2.lg\:grid-cols-4 > div,
+html.console-shell .grid.gap-5.grid-cols-1.md\:grid-cols-2.xl\:grid-cols-3.\32 xl\:grid-cols-4 > div {
+  position: relative;
+  overflow: hidden;
+}
+
+html.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 > .card::before,
+html.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 > div.card::before,
+html.console-shell .grid.grid-cols-1.gap-3.sm\:grid-cols-2.lg\:grid-cols-4 > div::before,
+html.console-shell .grid.gap-5.grid-cols-1.md\:grid-cols-2.xl\:grid-cols-3.\32 xl\:grid-cols-4 > div::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at top right, rgba(var(--console-accent-rgb), 0.1), transparent 36%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 38%);
+  pointer-events: none;
+}
+
+html.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 .rounded-lg.bg-blue-100,
+html.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 .rounded-lg.bg-amber-100,
+html.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 .rounded-lg.bg-green-100,
+html.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 .rounded-lg.bg-purple-100,
+html.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 .rounded-lg.bg-emerald-100,
+html.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 .rounded-lg.bg-indigo-100,
+html.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 .rounded-lg.bg-violet-100,
+html.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 .rounded-lg.bg-rose-100 {
+  border: 1px solid rgba(var(--console-accent-rgb), 0.12);
+  background: rgba(var(--console-accent-rgb), 0.08) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+}
+
+html.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 p.text-xl.font-bold,
+html.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 .text-xl.font-bold {
+  letter-spacing: -0.03em;
+}
+
+/* ---- 3.8 面板容器 ---- */
+html.console-shell section.py-3.md\:py-4 > div {
+  border: 1px solid rgba(20, 18, 16, 0.08);
+  border-radius: 24px;
+  padding: 16px 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(250, 245, 238, 0.9)),
+    rgba(255, 255, 255, 0.84);
+  box-shadow: var(--console-panel-shadow-soft);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/* ---- 3.9 Tab 切换 ---- */
+
+html.console-shell [role="tablist"] {
+  padding: 4px !important;
+  border-radius: 999px !important;
+  border-color: rgba(20, 18, 16, 0.08) !important;
+  background: rgba(255, 255, 255, 0.76) !important;
+}
+
+html.console-shell [role="tablist"] > button {
+  border-radius: 999px !important;
+}
+
+html.console-shell [role="tablist"] > button[aria-selected="true"] {
+  background: linear-gradient(135deg, rgba(var(--console-accent-rgb), 0.92), #ff9743) !important;
+  color: #fff !important;
+  box-shadow: 0 12px 24px rgba(var(--console-accent-rgb), 0.22) !important;
+}
+
+/* ---- 3.10 列表项 ---- */
+html.console-shell .group.flex.w-full.items-center.gap-4.rounded-xl.bg-gray-50 {
+  border: 1px solid rgba(20, 18, 16, 0.06);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(248, 242, 234, 0.86)),
+    rgba(255, 255, 255, 0.74) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
+html.console-shell .group.flex.w-full.items-center.gap-4.rounded-xl.bg-gray-50:hover {
+  border-color: rgba(var(--console-accent-rgb), 0.16);
+  transform: translateY(-1px);
+}
+
+html.console-shell .group.flex.w-full.items-center.gap-4.rounded-xl.bg-gray-50 .h-12.w-12.rounded-xl {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+}
+
+html.console-shell .mx-auto.max-w-\[950px\].space-y-6,
+html.console-shell [data-testid="profile-shell"] {
+  max-width: 1100px !important;
+}
+
+/* ---- 3.11 Profile Hero ---- */
+html.console-shell [data-testid="profile-overview-hero"] {
+  border-color: rgba(var(--console-accent-rgb), 0.14) !important;
+  background:
+    radial-gradient(circle at top right, rgba(var(--console-accent-rgb), 0.12), transparent 30%),
+    linear-gradient(135deg, rgba(255, 250, 245, 0.92), rgba(246, 239, 231, 0.9)) !important;
+  box-shadow: 0 26px 56px rgba(23, 21, 26, 0.12) !important;
+}
+
+html.console-shell [data-testid="profile-overview-hero"] .rounded-\[1\.75rem\] {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 18px 34px rgba(var(--console-accent-rgb), 0.22) !important;
+}
+
+html.console-shell [data-testid="profile-overview-hero"] .rounded-2xl,
+html.console-shell [data-testid="profile-overview-hero"] .rounded-full,
+html.console-shell [data-testid="profile-basics-panel"] .rounded-3xl,
+html.console-shell [data-testid="profile-side-column"] .rounded-2xl {
+  border-color: rgba(20, 18, 16, 0.08) !important;
+  background: rgba(255, 255, 255, 0.7) !important;
+}
+
+/* ---- 3.12 徽章 ---- */
+html.console-shell .badge,
+html.console-shell .badge-primary,
+html.console-shell .badge-success,
+html.console-shell .badge-danger,
+html.console-shell .badge-gray {
+  border-radius: 999px !important;
+}
+
+html.console-shell .badge-primary {
+  background: rgba(var(--console-accent-rgb), 0.14) !important;
+  color: #c45c08 !important;
+  border: 1px solid rgba(var(--console-accent-rgb), 0.18) !important;
+}
+
+html.console-shell .badge-success {
+  background: rgba(50, 177, 115, 0.12) !important;
+  color: #218457 !important;
+  border: 1px solid rgba(50, 177, 115, 0.14) !important;
+}
+
+html.console-shell .badge-danger {
+  background: rgba(220, 78, 78, 0.1) !important;
+  color: #be4343 !important;
+  border: 1px solid rgba(220, 78, 78, 0.14) !important;
+}
+
+html.console-shell .badge-gray {
+  background: rgba(36, 28, 20, 0.06) !important;
+  color: rgba(44, 35, 26, 0.72) !important;
+  border: 1px solid rgba(20, 18, 16, 0.08) !important;
+}
+
+/* ---- 3.13 模态框 ---- */
+html.console-shell .modal-overlay {
+  background: rgba(12, 10, 8, 0.48) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+html.console-shell .modal-content {
+  border: 1px solid rgba(20, 18, 16, 0.08) !important;
+  border-radius: 28px !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(248, 242, 235, 0.98)),
+    rgba(255, 255, 255, 0.96) !important;
+  box-shadow: 0 30px 80px rgba(23, 21, 26, 0.18) !important;
+}
+
+html.console-shell .modal-header,
+html.console-shell .modal-footer {
+  border-color: rgba(20, 18, 16, 0.08) !important;
+}
+
+/* ---- 3.14 辅助面板 ---- */
+html.console-shell .rounded-xl.bg-gray-50.p-4.dark\:bg-dark-800,
+html.console-shell .rounded-xl.bg-gray-50,
+html.console-shell .bg-primary-50 {
+  border: 1px solid rgba(20, 18, 16, 0.06);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(248, 242, 234, 0.84)),
+    rgba(255, 255, 255, 0.72) !important;
+}
+
+html.console-shell .grid.gap-6.lg\:grid-cols-2 > div.overflow-hidden.rounded-2xl.border,
+html.console-shell .grid.gap-6.lg\:grid-cols-2 > div.rounded-2xl.border {
+  border-color: rgba(20, 18, 16, 0.08) !important;
+  border-radius: 28px !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(247, 241, 233, 0.9)),
+    rgba(255, 255, 255, 0.84) !important;
+  box-shadow: var(--console-panel-shadow-soft) !important;
+}
+
+html.console-shell .grid.gap-6.lg\:grid-cols-2 > div.overflow-hidden.rounded-2xl.border > div:first-child {
+  background: rgba(255, 255, 255, 0.38);
+}
+
+/* ---- 3.15 进度条 ---- */
+html.console-shell .relative.h-2.overflow-hidden.rounded-full.bg-gray-200,
+html.console-shell .h-1\.5.w-full.overflow-hidden.rounded-full.bg-gray-200 {
+  background: rgba(36, 28, 20, 0.1) !important;
+}
+
+/* ---- 3.16 下拉菜单 ---- */
+html.console-shell .absolute.right-0.top-full.z-50,
+html.console-shell .absolute.right-0.z-50,
+html.console-shell .absolute.right-0.top-full {
+  border: 1px solid rgba(20, 18, 16, 0.08) !important;
+  border-radius: 18px !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(249, 243, 236, 0.98)),
+    rgba(255, 255, 255, 0.96) !important;
+  box-shadow: 0 22px 48px rgba(23, 21, 26, 0.16) !important;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+html.console-shell .account-tools-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  border-radius: 14px;
+  padding: 0.7rem 0.75rem;
+  color: #241d16;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+html.console-shell .account-tools-menu-item:hover {
+  background: rgba(var(--console-accent-rgb), 0.08) !important;
+}
+
+html.console-shell .account-tools-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.9rem;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+}
+
+html.console-shell .max-h-80.w-48.overflow-y-auto.rounded-lg,
+html.console-shell .w-48.rounded-lg,
+html.console-shell .w-56.origin-top-right.rounded-lg {
+  border-color: rgba(20, 18, 16, 0.08) !important;
+}
+
+html.console-shell .border-t.border-gray-100,
+html.console-shell .my-1.border-t.border-gray-100,
+html.console-shell .my-2.border-t.border-gray-100 {
+  border-color: rgba(20, 18, 16, 0.08) !important;
+}
+
+/* ---- 3.17 提示面板 ---- */
+html.console-shell .rounded-lg.border.border-amber-200.bg-amber-50 {
+  border-color: rgba(var(--console-accent-rgb), 0.18) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 247, 237, 0.92), rgba(250, 241, 230, 0.96)),
+    rgba(255, 247, 237, 0.94) !important;
+  color: #a24d0c !important;
+  box-shadow: 0 14px 28px rgba(var(--console-accent-rgb), 0.08);
+}
+
+html.console-shell .rounded-lg.border.border-amber-200.bg-amber-50 .btn.btn-secondary {
+  background: rgba(255, 255, 255, 0.72) !important;
+}
+
+html.console-shell .rounded-full.bg-primary-100,
+html.console-shell .bg-primary-100.dark\:bg-primary-900\/30 {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+}
+
+html.console-shell .badge-purple {
+  background: rgba(124, 58, 237, 0.12) !important;
+  color: #7c3aed !important;
+  border: 1px solid rgba(124, 58, 237, 0.14) !important;
+  border-radius: 999px !important;
+}
+
+/* ---- 3.18 交互反馈 ---- */
+html.console-shell .flex.flex-col.items-center.gap-0\.5.rounded-lg.p-1\.5,
+html.console-shell .inline-flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium {
+  transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease;
+}
+
+html.console-shell .flex.flex-col.items-center.gap-0\.5.rounded-lg.p-1\.5:hover {
+  background: rgba(var(--console-accent-rgb), 0.08) !important;
+}
+
+html.console-shell .grid.grid-cols-2.gap-4 > div > p.text-xl.font-bold,
+html.console-shell .grid.grid-cols-2.gap-4 > .card p.text-xl.font-bold {
+  letter-spacing: -0.03em;
+}
+
+/* ---- 3.19 加载 Spinner ---- */
+html.console-shell .h-8.w-8.animate-spin.rounded-full.border-2 {
+  border-color: rgba(var(--console-accent-rgb), 0.3) !important;
+  border-top-color: rgba(var(--console-accent-rgb), 0.95) !important;
+}
+
+/* ---- 3.20 表格 ---- */
+html.console-shell table thead,
+html.console-shell .table-header {
+  background: rgba(239, 122, 23, 0.06) !important;
+}
+
+html.console-shell .table-scroll-container {
+  overflow: hidden;
+}
+
+html.console-shell .table-scroll-container .table-wrapper {
+  scrollbar-width: thin;
+}
+
+html.console-shell nav[aria-label="Pagination"] {
+  border-radius: 18px !important;
+  overflow: hidden;
+}
+
+html.console-shell .flex.items-center.justify-between.border-t.border-gray-200.bg-white.px-4.py-3.dark\:border-dark-700.dark\:bg-dark-800.sm\:px-6 {
+  border-radius: 20px !important;
+}
+
+html.console-shell nav[aria-label="Pagination"] > button,
+html.console-shell nav[aria-label="Pagination"] > a {
+  border-radius: 0 !important;
+}
+
+html.console-shell nav[aria-label="Pagination"] > button:first-child,
+html.console-shell nav[aria-label="Pagination"] > a:first-child {
+  border-top-left-radius: 18px !important;
+  border-bottom-left-radius: 18px !important;
+}
+
+html.console-shell nav[aria-label="Pagination"] > button:last-child,
+html.console-shell nav[aria-label="Pagination"] > a:last-child {
+  border-top-right-radius: 18px !important;
+  border-bottom-right-radius: 18px !important;
+}
+
+html.console-shell .page-size-select,
+html.console-shell .page-size-select .select-trigger,
+html.console-shell .page-size-select :is(button, div.select-trigger) {
+  border-radius: 16px !important;
+}
+
+html.console-shell .page-size-select.w-20,
+html.console-shell .page-size-select.w-20 .select-trigger,
+html.console-shell button.relative.inline-flex.items-center.rounded-l-md,
+html.console-shell button.relative.inline-flex.items-center.rounded-r-md,
+html.console-shell button.relative.inline-flex.items-center.rounded-md,
+html.console-shell input.input.w-20.text-sm {
+  border-radius: 16px !important;
+}
+
+html.console-shell .layout-section-fixed .pagination,
+html.console-shell .layout-section-fixed [aria-label="Pagination"],
+html.console-shell .layout-section-fixed .input,
+html.console-shell .layout-section-fixed input[type="number"] {
+  border-radius: 16px !important;
+}
+
+html.console-shell .table-scroll-container thead {
+  border-bottom: 1px solid rgba(20, 18, 16, 0.08);
+}
+
+html.console-shell .table-scroll-container th {
+  color: rgba(73, 62, 52, 0.72) !important;
+  font-size: 12px !important;
+  letter-spacing: 0.08em;
+}
+
+html.console-shell .table-scroll-container td {
+  color: #211a14 !important;
+  border-bottom-color: rgba(20, 18, 16, 0.06) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.928), rgba(252, 249, 245, 0.938)),
+    rgba(255, 255, 255, 0.934) !important;
+}
+
+html.console-shell .table-scroll-container tbody tr {
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+
+html.console-shell .table-scroll-container tbody tr:hover td {
+  background:
+    linear-gradient(180deg, rgba(255, 251, 247, 0.948), rgba(250, 245, 240, 0.956)),
+    rgba(255, 249, 245, 0.952) !important;
+}
+
+html.console-shell .table-scroll-container tbody tr:last-child td {
+  border-bottom-color: transparent !important;
+}
+
+/* 表格粘性列 */
+html.console-shell .table-scroll-container .sticky-col,
+html.console-shell .table-scroll-container .sticky-header-cell.sticky-col,
+html.console-shell .table-scroll-container tbody .sticky-col {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.928), rgba(252, 249, 245, 0.938)),
+    rgba(255, 255, 255, 0.934) !important;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+html.console-shell .table-scroll-container thead .sticky-col,
+html.console-shell .table-scroll-container tbody .sticky-col-left,
+html.console-shell .table-scroll-container tbody .sticky-col-left-first,
+html.console-shell .table-scroll-container tbody .sticky-col-left-second,
+html.console-shell .table-scroll-container tbody .sticky-col-right {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.928), rgba(252, 249, 245, 0.938)),
+    rgba(255, 255, 255, 0.934) !important;
+}
+
+html.console-shell .table-scroll-container tr:hover .sticky-col,
+html.console-shell .table-scroll-container tbody tr:hover .sticky-col {
+  background:
+    linear-gradient(180deg, rgba(255, 250, 244, 0.98), rgba(247, 240, 232, 0.99)),
+    rgba(255, 250, 244, 0.98) !important;
+}
+
+html.console-shell .table-scroll-container tbody tr:hover .sticky-col-left,
+html.console-shell .table-scroll-container tbody tr:hover .sticky-col-left-first,
+html.console-shell .table-scroll-container tbody tr:hover .sticky-col-left-second,
+html.console-shell .table-scroll-container tbody tr:hover .sticky-col-right {
+  background:
+    linear-gradient(180deg, rgba(255, 251, 247, 0.948), rgba(250, 245, 240, 0.956)),
+    rgba(255, 249, 245, 0.952) !important;
+}
+
+html.console-shell .table-scroll-container .sticky-col-left,
+html.console-shell .table-scroll-container .sticky-col-left-first,
+html.console-shell .table-scroll-container .sticky-col-left-second,
+html.console-shell .table-scroll-container .sticky-col-right {
+  box-shadow: none;
+}
+
+html.console-shell .table-scroll-container.is-scrollable .sticky-col-left::after,
+html.console-shell .table-scroll-container.is-scrollable .sticky-col-left-second::after {
+  background: none !important;
+}
+
+html.console-shell .table-scroll-container.is-scrollable .sticky-col-right::before {
+  background: none !important;
+}
+
+html.console-shell .table-scroll-container tr:hover .sticky-col-left,
+html.console-shell .table-scroll-container tr:hover .sticky-col-left-first,
+html.console-shell .table-scroll-container tr:hover .sticky-col-left-second,
+html.console-shell .table-scroll-container tr:hover .sticky-col-right {
+  background: linear-gradient(180deg, rgba(255, 251, 247, 0.948), rgba(250, 245, 240, 0.956)) !important;
+}
+
+html.console-shell .hover\:bg-gray-50:hover,
+html.console-shell .dark\:hover\:bg-dark-800:hover,
+html.console-shell tr:hover td {
+  background: rgba(255, 255, 255, 0.3) !important;
+}
+
+/* ---- 3.21 统一模块表面（应用 CSS 变量） ---- */
+html.console-shell .card,
+html.console-shell .glass-card,
+html.console-shell .table-scroll-container,
+html.console-shell .rounded-2xl.border,
+html.console-shell .rounded-3xl.border,
+html.console-shell .rounded-xl.border,
+html.console-shell .rounded-lg.border,
+html.console-shell .border.border-gray-200,
+html.console-shell .border.border-gray-100,
+html.console-shell .overflow-hidden.rounded-2xl.border,
+html.console-shell .overflow-hidden.rounded-xl.border,
+html.console-shell .overflow-hidden.rounded-lg.border,
+html.console-shell .rounded-xl.bg-gray-50.p-4.dark\:bg-dark-800,
+html.console-shell .rounded-xl.bg-gray-50,
+html.console-shell .bg-primary-50,
+html.console-shell .group.flex.w-full.items-center.gap-4.rounded-xl.bg-gray-50,
+html.console-shell section.py-3.md\:py-4 > div,
+html.console-shell .layout-section-fixed > *,
+html.console-shell .grid.gap-6.lg\:grid-cols-2 > div.overflow-hidden.rounded-2xl.border,
+html.console-shell .grid.gap-6.lg\:grid-cols-2 > div.rounded-2xl.border,
+html.console-shell .route-admin-ops .space-y-6 > .rounded-3xl.bg-white,
+html.console-shell .route-admin-ops .space-y-6 > .rounded-3xl.bg-white.p-6,
+html.console-shell .route-admin-ops .rounded-3xl.bg-white.p-6.shadow-sm.ring-1,
+html.console-shell .route-admin-ops .rounded-3xl.bg-white.p-6.shadow-sm.ring-1.ring-gray-900\/5,
+html.console-shell .route-admin-ops .rounded-2xl.bg-gray-50,
+html.console-shell .route-admin-ops .rounded-xl.bg-gray-50,
+html.console-shell .route-admin-ops .rounded-lg.bg-gray-100,
+html.console-shell .route-admin-ops .rounded-2xl.bg-gray-50.p-4,
+html.console-shell .route-admin-ops .rounded-xl.bg-gray-50.p-3,
+html.console-shell .route-admin-groups .rounded-xl.border.border-gray-200.bg-white,
+html.console-shell .route-admin-groups .group.relative.rounded-xl.border.border-gray-200.bg-white,
+html.console-shell .route-admin-groups .rounded-2xl.bg-gray-50,
+html.console-shell .route-admin-groups .rounded-lg.bg-gray-50,
+html.console-shell .route-admin-accounts .rounded-lg.border.border-amber-200.bg-amber-50,
+html.console-shell .route-orders .rounded-xl.bg-gray-50.p-4,
+html.console-shell .route-admin-orders .rounded-xl.bg-gray-50.p-4,
+html.console-shell .route-admin-orders .max-h-48.space-y-2.overflow-y-auto > .rounded-lg.border.border-gray-100.bg-gray-50.p-2\.5 {
+  border-color: var(--console-module-border) !important;
+  background: var(--console-module-surface), var(--console-module-fill) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+    0 18px 42px rgba(54, 35, 18, 0.08) !important;
+}
+
+html.console-shell .table-scroll-container > div:first-child,
+html.console-shell .overflow-hidden.rounded-2xl.border > div:first-child,
+html.console-shell .overflow-hidden.rounded-xl.border > div:first-child,
+html.console-shell .overflow-hidden.rounded-lg.border > div:first-child,
+html.console-shell .grid.gap-6.lg\:grid-cols-2 > div.overflow-hidden.rounded-2xl.border > div:first-child,
+html.console-shell .route-admin-ops .space-y-6 > .rounded-3xl.bg-white > div:first-child,
+html.console-shell .route-admin-ops .space-y-6 > .rounded-3xl.bg-white.p-6 > div:first-child,
+html.console-shell .route-admin-ops .rounded-3xl.bg-white.p-6.shadow-sm.ring-1 > div:first-child,
+html.console-shell .route-admin-ops .rounded-3xl.bg-white.p-6.shadow-sm.ring-1.ring-gray-900\/5 > div:first-child {
+  background: var(--console-module-header), rgba(255, 255, 255, 0.72) !important;
+  border-bottom: 1px solid rgba(117, 83, 47, 0.1) !important;
+}
+
+/* ---- 3.22 按钮 ---- */
+html.console-shell .btn,
+html.console-shell .btn-secondary,
+html.console-shell .btn-ghost {
+  border-color: rgba(20, 18, 16, 0.1) !important;
+  background: rgba(255, 255, 255, 0.66) !important;
+  box-shadow: none !important;
+}
+
+html.console-shell .btn:hover,
+html.console-shell .btn-secondary:hover,
+html.console-shell .btn-ghost:hover {
+  background: rgba(255, 250, 244, 0.94) !important;
+}
+
+html.console-shell .btn-primary,
+html.console-shell .btn-success,
+html.console-shell .btn-warning {
+  color: #fff !important;
+  border-color: rgba(var(--console-accent-rgb), 0.28) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.01)),
+    rgba(var(--console-accent-rgb), 0.92) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(var(--console-accent-rgb), 0.12),
+    0 16px 34px rgba(var(--console-accent-rgb), 0.22) !important;
+}
+
+html.console-shell .btn.btn-secondary {
+  background: rgba(255, 255, 255, 0.72) !important;
+}
+
+/* ---- 3.23 输入框 ---- */
+html.console-shell .input,
+html.console-shell input,
+html.console-shell select,
+html.console-shell textarea,
+html.console-shell [role="textbox"],
+html.console-shell [role="combobox"] {
+  border-color: rgba(20, 18, 16, 0.1) !important;
+  border-radius: 16px !important;
+  background: rgba(255, 255, 255, 0.9) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
+}
+
+html.console-shell .input.pl-10 {
+  padding-left: 2.7rem !important;
+}
+
+html.console-shell .relative.w-full .pointer-events-none.absolute.inset-y-0.left-0 {
+  padding-left: 2px;
+}
+
+html.console-shell .select-trigger {
+  min-height: 44px;
+  border-radius: 16px !important;
+  border-color: rgba(20, 18, 16, 0.1) !important;
+  background: rgba(255, 255, 255, 0.9) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28) !important;
+}
+
+html.console-shell .select-trigger:hover,
+html.console-shell .select-trigger-open {
+  border-color: rgba(var(--console-accent-rgb), 0.24) !important;
+  background: rgba(255, 252, 248, 0.96) !important;
+}
+
+html.console-shell .select-dropdown-portal {
+  border: 1px solid rgba(20, 18, 16, 0.08) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(249, 243, 236, 0.98)),
+    rgba(255, 255, 255, 0.96) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 22px 48px rgba(23, 21, 26, 0.16) !important;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+html.console-shell .select-search {
+  border-bottom-color: rgba(20, 18, 16, 0.08) !important;
+}
+
+html.console-shell .select-search-input {
+  background: transparent !important;
+}
+
+html.console-shell .select-option:hover,
+html.console-shell .select-option-focused {
+  background: rgba(var(--console-accent-rgb), 0.08) !important;
+}
+
+html.console-shell .select-option-selected {
+  color: #17120d !important;
+}
+
+html.console-shell .input:focus,
+html.console-shell input:focus,
+html.console-shell select:focus,
+html.console-shell textarea:focus {
+  border-color: rgba(var(--console-accent-rgb), 0.42) !important;
+  box-shadow:
+    0 0 0 4px rgba(var(--console-accent-rgb), 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.3) !important;
+}
+
+/* ---- 3.24 圆角半径统一 ---- */
+html.console-shell .card,
+html.console-shell .glass-card {
+  border-radius: var(--console-radius-xl) !important;
+}
+
+html.console-shell .rounded-lg  { border-radius: var(--console-radius-md) !important; }
+html.console-shell .rounded-xl  { border-radius: var(--console-radius-lg) !important; }
+html.console-shell .rounded-2xl { border-radius: var(--console-radius-xl) !important; }
+
+/* ---- 3.25 小标签/胶囊 ---- */
+html.console-shell .inline-flex.items-center.gap-1\.5.rounded-md {
+  border-radius: 999px !important;
+  padding: 0.45rem 0.72rem !important;
+  border: 1px solid rgba(20, 18, 16, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+html.console-shell .flex.items-center.gap-2.rounded-full.bg-primary-100.px-2.py-0\.5,
+html.console-shell .rounded-full.bg-primary-100.px-2.py-0\.5 {
+  background: rgba(var(--console-accent-rgb), 0.12) !important;
+  color: #c45c08 !important;
+}
+
+html.console-shell .inline-flex.items-center.rounded.px-2.py-0\.5.text-xs.font-medium,
+html.console-shell .inline-flex.items-center.rounded-md.px-2.py-0\.5.text-xs.font-medium {
+  border-radius: 999px !important;
+}
+
+html.console-shell .flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-gray-600,
+html.console-shell .inline-flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-gray-600,
+html.console-shell .inline-flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-yellow-600,
+html.console-shell .inline-flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-blue-600,
+html.console-shell .inline-flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-purple-600,
+html.console-shell .inline-flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-red-600 {
+  border: 1px solid rgba(20, 18, 16, 0.08);
+  background: rgba(255, 255, 255, 0.62) !important;
+}
+
+html.console-shell .flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-gray-600:hover,
+html.console-shell .inline-flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-gray-600:hover,
+html.console-shell .inline-flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-yellow-600:hover,
+html.console-shell .inline-flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-blue-600:hover,
+html.console-shell .inline-flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-purple-600:hover,
+html.console-shell .inline-flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-red-600:hover {
+  background: rgba(var(--console-accent-rgb), 0.08) !important;
+}
+
+html.console-shell .card.p-4 > .flex.items-center.gap-3 > div:last-child,
+html.console-shell .card.p-4 .flex-1,
+html.console-shell .card.p-4 .min-w-0.flex-1 {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---- 3.26 表格页面布局 ---- */
+html.console-shell .table-page-layout {
+  gap: 18px !important;
+}
+
+html.console-shell .layout-section-fixed {
+  display: block;
+}
+
+html.console-shell .layout-section-fixed > * {
+  border: 1px solid rgba(20, 18, 16, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(250, 245, 238, 0.9)),
+    rgba(255, 255, 255, 0.84);
+  border-radius: 24px;
+  box-shadow: var(--console-panel-shadow-soft);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+html.console-shell .layout-section-fixed:first-child > *,
+html.console-shell .layout-section-fixed:nth-child(2) > * {
+  padding: 18px 20px;
+}
+
+/* ---- 3.27 代码块 ---- */
+html.console-shell code,
+html.console-shell .code {
+  color: #c35c0a !important;
+  background: rgba(var(--console-accent-rgb), 0.08) !important;
+  border: 1px solid rgba(var(--console-accent-rgb), 0.14) !important;
+}
+
+/* ---- 3.28 特定路由增强输入框 ---- */
+html.console-shell .route-admin-users .input,
+html.console-shell .route-admin-groups .input,
+html.console-shell .route-admin-accounts .input,
+html.console-shell .route-keys .input,
+html.console-shell .route-admin-users .select-trigger,
+html.console-shell .route-admin-groups .select-trigger,
+html.console-shell .route-admin-accounts .select-trigger,
+html.console-shell .route-keys .select-trigger,
+html.console-shell .route-orders .card.p-4 .input,
+html.console-shell .route-orders .card.p-4 .select-trigger,
+html.console-shell .route-admin-orders .card.p-4 .input,
+html.console-shell .route-admin-orders .card.p-4 .select-trigger,
+html.console-shell .route-admin-orders .space-y-4 > .card.p-4 .input,
+html.console-shell .route-admin-orders .space-y-4 > .card.p-4 .select-trigger {
+  background: rgba(255, 252, 248, 0.92) !important;
+}
+
+/* ---- 3.29 其他控件 ---- */
+html.console-shell .text-yellow-600.hover\:bg-yellow-50,
+html.console-shell .text-purple-600.hover\:bg-purple-50 {
+  border: 1px solid rgba(20, 18, 16, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+html.console-shell .text-yellow-600.hover\:bg-yellow-50:hover,
+html.console-shell .text-purple-600.hover\:bg-purple-50:hover {
+  background: rgba(var(--console-accent-rgb), 0.08) !important;
+}
+
+html.console-shell .flex.flex-wrap.items-center.gap-3,
+html.console-shell .flex.flex-wrap-reverse.items-start.justify-between.gap-3,
+html.console-shell .flex.flex-col.justify-between.gap-4.lg\:flex-row.lg\:items-start {
+  position: relative;
+  z-index: 1;
+}
+
+html.console-shell .max-h-48.space-y-2.overflow-y-auto > div,
+html.console-shell .max-h-48.space-y-2.overflow-y-auto .rounded-lg.border,
+html.console-shell .grid.grid-cols-2.gap-4 > div > p.text-sm,
+html.console-shell .grid.grid-cols-2.gap-4 > div > .text-sm {
+  border-color: rgba(20, 18, 16, 0.08);
+}
+
+/* ==========================================================
+   SECTION 4 — 暗色主题 (html.dark.console-shell)
+   ========================================================== */
+
+/* ---- 4.1 全局背景 ---- */
+html.dark.console-shell body {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(var(--console-accent-rgb), 0.12), transparent 24%),
+    radial-gradient(circle at 82% 8%, rgba(124, 58, 237, 0.12), transparent 28%),
+    linear-gradient(180deg, #080808 0%, #0a0a0a 28%, #0d1116 100%) !important;
+  background-color: #0a0a0a !important;
+}
+
+html.dark.console-shell #app > .min-h-screen {
+  background: transparent !important;
+}
+
+html.dark.console-shell .bg-mesh-gradient {
+  opacity: 0.22;
+  filter: saturate(0.66) blur(8px);
+}
+
+/* ---- 4.2 侧边栏 ---- */
+html.dark.console-shell .sidebar {
+  border-right: 1px solid var(--console-panel-line) !important;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(var(--console-accent-rgb), 0.12), transparent 24%),
+    linear-gradient(180deg, rgba(8, 12, 22, 0.98), rgba(11, 17, 30, 0.96)),
+    rgba(9, 12, 18, 0.94) !important;
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.02);
+}
+
+html.dark.console-shell .sidebar-brand-title {
+  color: #fff !important;
+}
+
+html.dark.console-shell .sidebar-header {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+html.dark.console-shell .sidebar-section-title {
+  color: rgba(216, 218, 224, 0.62) !important;
+}
+
+html.dark.console-shell .console-nav-heading {
+  color: rgba(216, 218, 224, 0.56) !important;
+}
+
+html.dark.console-shell .console-nav-heading.sidebar-section-title::after {
+  background: linear-gradient(90deg, rgba(var(--console-accent-rgb), 0.24), rgba(255, 255, 255, 0.08) 52%, rgba(255, 255, 255, 0));
+}
+
+html.dark.console-shell .sidebar-section + .sidebar-section {
+  border-top-color: rgba(255, 255, 255, 0.05);
+}
+
+html.dark.console-shell .sidebar-link {
+  color: rgba(216, 218, 224, 0.92) !important;
+}
+
+html.dark.console-shell .sidebar-link:hover {
+  background: rgba(255, 255, 255, 0.03) !important;
+  color: #fff !important;
+}
+
+html.dark.console-shell .sidebar-link-active {
+  color: #fff !important;
+  border-color: rgba(var(--console-accent-rgb), 0.18) !important;
+  background:
+    linear-gradient(90deg, rgba(var(--console-accent-rgb), 0.18), rgba(var(--console-accent-rgb), 0.05) 42%, rgba(255, 255, 255, 0.01)) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(var(--console-accent-rgb), 0.08),
+    0 14px 34px rgba(var(--console-accent-rgb), 0.08) !important;
+}
+
+/* ---- 4.3 顶部导航 ---- */
+html.dark.console-shell header.glass {
+  background: rgba(18, 20, 26, 0.82) !important;
+  border-bottom: 1px solid var(--console-panel-line) !important;
+}
+
+/* ---- 4.4 主内容背景 ---- */
+html.dark.console-shell .relative.min-h-screen.transition-all.duration-300 {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(var(--console-accent-rgb), 0.12), transparent 24%),
+    radial-gradient(circle at 82% 8%, rgba(124, 58, 237, 0.12), transparent 28%),
+    linear-gradient(180deg, #080808 0%, #0a0a0a 28%, #0d1116 100%) !important;
+}
+
+html.dark.console-shell .relative.min-h-screen.transition-all.duration-300::before {
+  background: radial-gradient(circle, rgba(var(--console-accent-rgb), 0.18) 0%, rgba(var(--console-accent-rgb), 0.05) 42%, rgba(var(--console-accent-rgb), 0) 74%);
+}
+
+html.dark.console-shell .relative.min-h-screen.transition-all.duration-300::after {
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.16) 0%, rgba(124, 58, 237, 0.04) 42%, rgba(124, 58, 237, 0) 74%);
+}
+
+/* ---- 4.5 Header 文字 ---- */
+html.dark.console-shell header.glass .text-lg,
+html.dark.console-shell header.glass .font-semibold,
+html.dark.console-shell header.glass .font-medium {
+  color: #fff !important;
+}
+
+html.dark.console-shell header.glass .text-xs,
+html.dark.console-shell header.glass .text-sm,
+html.dark.console-shell header.glass .text-gray-500,
+html.dark.console-shell header.glass .text-gray-600,
+html.dark.console-shell header.glass .dark\:text-dark-400,
+html.dark.console-shell header.glass .dark\:text-dark-300 {
+  color: rgba(216, 218, 224, 0.62) !important;
+}
+
+html.dark.console-shell header.glass .bg-primary-50,
+html.dark.console-shell header.glass .dark\:bg-primary-900\/20 {
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+
+/* ---- 4.6 卡片 ---- */
+html.dark.console-shell .card,
+html.dark.console-shell .glass-card,
+html.dark.console-shell .table-scroll-container,
+html.dark.console-shell .rounded-2xl.border,
+html.dark.console-shell .rounded-xl.border,
+html.dark.console-shell .rounded-lg.border,
+html.dark.console-shell .dropdown {
+  border-color: var(--console-panel-line) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01)),
+    rgba(11, 15, 22, 0.82) !important;
+  box-shadow: var(--console-panel-shadow) !important;
+}
+
+html.dark.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 > .card::before,
+html.dark.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 > div.card::before,
+html.dark.console-shell .grid.grid-cols-1.gap-3.sm\:grid-cols-2.lg\:grid-cols-4 > div::before,
+html.dark.console-shell .grid.gap-5.grid-cols-1.md\:grid-cols-2.xl\:grid-cols-3.\32 xl\:grid-cols-4 > div::before {
+  background:
+    radial-gradient(circle at top right, rgba(var(--console-accent-rgb), 0.14), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 38%);
+}
+
+html.dark.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 .rounded-lg.bg-blue-100,
+html.dark.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 .rounded-lg.bg-amber-100,
+html.dark.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 .rounded-lg.bg-green-100,
+html.dark.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 .rounded-lg.bg-purple-100,
+html.dark.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 .rounded-lg.bg-emerald-100,
+html.dark.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 .rounded-lg.bg-indigo-100,
+html.dark.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 .rounded-lg.bg-violet-100,
+html.dark.console-shell .grid.grid-cols-2.gap-4.lg\:grid-cols-4 .rounded-lg.bg-rose-100 {
+  border-color: rgba(var(--console-accent-rgb), 0.16);
+  background: rgba(var(--console-accent-rgb), 0.08) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+html.dark.console-shell section.py-3.md\:py-4 > div {
+  border-color: var(--console-panel-line) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01)),
+    rgba(11, 15, 22, 0.82) !important;
+  box-shadow: var(--console-panel-shadow) !important;
+}
+
+html.dark.console-shell [role="tablist"] {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+
+html.dark.console-shell .group.flex.w-full.items-center.gap-4.rounded-xl.bg-gray-50 {
+  border-color: rgba(255, 255, 255, 0.06);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+    rgba(255, 255, 255, 0.02) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+html.dark.console-shell .group.flex.w-full.items-center.gap-4.rounded-xl.bg-gray-50:hover {
+  border-color: rgba(var(--console-accent-rgb), 0.18);
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+
+html.dark.console-shell [data-testid="profile-overview-hero"] {
+  border-color: rgba(var(--console-accent-rgb), 0.16) !important;
+  background:
+    radial-gradient(circle at top right, rgba(var(--console-accent-rgb), 0.16), transparent 28%),
+    linear-gradient(135deg, rgba(17, 19, 24, 0.94), rgba(11, 15, 22, 0.96)) !important;
+  box-shadow: var(--console-panel-shadow) !important;
+}
+
+html.dark.console-shell [data-testid="profile-overview-hero"] .rounded-2xl,
+html.dark.console-shell [data-testid="profile-overview-hero"] .rounded-full,
+html.dark.console-shell [data-testid="profile-basics-panel"] .rounded-3xl,
+html.dark.console-shell [data-testid="profile-side-column"] .rounded-2xl {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+
+html.dark.console-shell .badge-primary {
+  background: rgba(var(--console-accent-rgb), 0.16) !important;
+  color: #ffbf8b !important;
+  border-color: rgba(var(--console-accent-rgb), 0.18) !important;
+}
+
+html.dark.console-shell .badge-success {
+  background: rgba(50, 177, 115, 0.16) !important;
+  color: #8ce0b4 !important;
+  border-color: rgba(50, 177, 115, 0.16) !important;
+}
+
+html.dark.console-shell .badge-danger {
+  background: rgba(220, 78, 78, 0.14) !important;
+  color: #ffb1b1 !important;
+  border-color: rgba(220, 78, 78, 0.16) !important;
+}
+
+html.dark.console-shell .badge-gray {
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: rgba(216, 218, 224, 0.62) !important;
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+html.dark.console-shell .modal-overlay {
+  background: rgba(4, 4, 6, 0.6) !important;
+}
+
+html.dark.console-shell .modal-content {
+  border-color: var(--console-panel-line) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+    rgba(11, 15, 22, 0.98) !important;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.42) !important;
+}
+
+html.dark.console-shell .modal-header,
+html.dark.console-shell .modal-footer {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+html.dark.console-shell .rounded-xl.bg-gray-50.p-4.dark\:bg-dark-800,
+html.dark.console-shell .rounded-xl.bg-gray-50,
+html.dark.console-shell .bg-primary-50 {
+  border-color: rgba(255, 255, 255, 0.06);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+    rgba(255, 255, 255, 0.02) !important;
+}
+
+html.dark.console-shell .grid.gap-6.lg\:grid-cols-2 > div.overflow-hidden.rounded-2xl.border,
+html.dark.console-shell .grid.gap-6.lg\:grid-cols-2 > div.rounded-2xl.border {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+    rgba(11, 15, 22, 0.82) !important;
+  box-shadow: var(--console-panel-shadow) !important;
+}
+
+html.dark.console-shell .grid.gap-6.lg\:grid-cols-2 > div.overflow-hidden.rounded-2xl.border > div:first-child {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+html.dark.console-shell .relative.h-2.overflow-hidden.rounded-full.bg-gray-200,
+html.dark.console-shell .h-1\.5.w-full.overflow-hidden.rounded-full.bg-gray-200 {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+html.dark.console-shell .text-yellow-600.hover\:bg-yellow-50,
+html.dark.console-shell .text-purple-600.hover\:bg-purple-50 {
+  border-color: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+html.dark.console-shell .text-yellow-600.hover\:bg-yellow-50:hover,
+html.dark.console-shell .text-purple-600.hover\:bg-purple-50:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+
+html.dark.console-shell .absolute.right-0.top-full.z-50,
+html.dark.console-shell .absolute.right-0.z-50,
+html.dark.console-shell .absolute.right-0.top-full {
+  border-color: var(--console-panel-line) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+    rgba(11, 15, 22, 0.98) !important;
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.36) !important;
+}
+
+html.dark.console-shell .account-tools-menu-item {
+  color: #d8dae0;
+}
+
+html.dark.console-shell .account-tools-menu-item:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+
+html.dark.console-shell .account-tools-menu-icon {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+html.dark.console-shell .max-h-80.w-48.overflow-y-auto.rounded-lg,
+html.dark.console-shell .w-48.rounded-lg,
+html.dark.console-shell .w-56.origin-top-right.rounded-lg {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+html.dark.console-shell .border-t.border-gray-100,
+html.dark.console-shell .my-1.border-t.border-gray-100,
+html.dark.console-shell .my-2.border-t.border-gray-100 {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+html.dark.console-shell .rounded-lg.border.border-amber-200.bg-amber-50 {
+  border-color: rgba(var(--console-accent-rgb), 0.2) !important;
+  background:
+    linear-gradient(180deg, rgba(var(--console-accent-rgb), 0.12), rgba(255, 255, 255, 0.01)),
+    rgba(255, 255, 255, 0.03) !important;
+  color: #ffbf8b !important;
+}
+
+html.dark.console-shell .badge-purple {
+  background: rgba(124, 58, 237, 0.16) !important;
+  color: #cbb3ff !important;
+  border-color: rgba(124, 58, 237, 0.18) !important;
+}
+
+html.dark.console-shell .flex.flex-col.items-center.gap-0\.5.rounded-lg.p-1\.5:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+
+html.dark.console-shell .h-8.w-8.animate-spin.rounded-full.border-2 {
+  border-color: rgba(var(--console-accent-rgb), 0.2) !important;
+  border-top-color: rgba(var(--console-accent-rgb), 0.92) !important;
+}
+
+html.dark.console-shell .flex.items-center.gap-2.rounded-full.bg-primary-100.px-2.py-0\.5,
+html.dark.console-shell .rounded-full.bg-primary-100.px-2.py-0\.5 {
+  background: rgba(var(--console-accent-rgb), 0.16) !important;
+  color: #ffbf8b !important;
+}
+
+html.dark.console-shell .flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-gray-600,
+html.dark.console-shell .inline-flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-gray-600,
+html.dark.console-shell .inline-flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-yellow-600,
+html.dark.console-shell .inline-flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-blue-600,
+html.dark.console-shell .inline-flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-purple-600,
+html.dark.console-shell .inline-flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-red-600 {
+  border-color: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+
+html.dark.console-shell .flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-gray-600:hover,
+html.dark.console-shell .inline-flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-gray-600:hover,
+html.dark.console-shell .inline-flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-yellow-600:hover,
+html.dark.console-shell .inline-flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-blue-600:hover,
+html.dark.console-shell .inline-flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-purple-600:hover,
+html.dark.console-shell .inline-flex.items-center.gap-1.rounded-md.px-2.py-1.text-xs.font-medium.text-red-600:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+
+html.dark.console-shell .layout-section-fixed > * {
+  border-color: var(--console-panel-line) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01)),
+    rgba(11, 15, 22, 0.82) !important;
+  box-shadow: var(--console-panel-shadow) !important;
+}
+
+html.dark.console-shell .btn,
+html.dark.console-shell .btn-secondary,
+html.dark.console-shell .btn-ghost {
+  border-color: var(--console-panel-line-strong) !important;
+  background: rgba(255, 255, 255, 0.03) !important;
+  color: #d8dae0 !important;
+}
+
+html.dark.console-shell .btn.btn-secondary {
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+
+html.dark.console-shell .btn:hover,
+html.dark.console-shell .btn-secondary:hover,
+html.dark.console-shell .btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+
+html.dark.console-shell .input,
+html.dark.console-shell input,
+html.dark.console-shell select,
+html.dark.console-shell textarea,
+html.dark.console-shell [role="textbox"],
+html.dark.console-shell [role="combobox"] {
+  border-color: var(--console-panel-line-strong) !important;
+  background: rgba(255, 255, 255, 0.03) !important;
+  color: #d8dae0 !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+html.dark.console-shell .select-trigger {
+  border-color: var(--console-panel-line-strong) !important;
+  background: rgba(255, 255, 255, 0.03) !important;
+  color: #d8dae0 !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02) !important;
+}
+
+html.dark.console-shell .select-trigger:hover,
+html.dark.console-shell .select-trigger-open {
+  border-color: rgba(var(--console-accent-rgb), 0.24) !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+
+html.dark.console-shell .select-dropdown-portal {
+  border-color: var(--console-panel-line) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01)),
+    rgba(11, 15, 22, 0.98) !important;
+  box-shadow: var(--console-panel-shadow) !important;
+}
+
+html.dark.console-shell .select-search {
+  border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+html.dark.console-shell .input::placeholder,
+html.dark.console-shell input::placeholder,
+html.dark.console-shell textarea::placeholder {
+  color: rgba(216, 218, 224, 0.44) !important;
+}
+
+html.dark.console-shell table thead,
+html.dark.console-shell .table-header {
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+
+html.dark.console-shell .table-scroll-container th {
+  color: rgba(232, 235, 240, 0.84) !important;
+}
+
+html.dark.console-shell .table-scroll-container td {
+  color: #d8dae0 !important;
+  background:
+    linear-gradient(180deg, rgba(22, 29, 41, 0.952), rgba(19, 25, 36, 0.962)),
+    rgba(19, 25, 36, 0.956) !important;
+}
+
+html.dark.console-shell nav[aria-label="Pagination"] {
+  border-radius: 18px !important;
+  overflow: hidden;
+}
+
+html.dark.console-shell .flex.items-center.justify-between.border-t.border-gray-200.bg-white.px-4.py-3.dark\:border-dark-700.dark\:bg-dark-800.sm\:px-6 {
+  border-radius: 20px !important;
+}
+
+html.dark.console-shell nav[aria-label="Pagination"] > button,
+html.dark.console-shell nav[aria-label="Pagination"] > a {
+  border-radius: 0 !important;
+}
+
+html.dark.console-shell nav[aria-label="Pagination"] > button:first-child,
+html.dark.console-shell nav[aria-label="Pagination"] > a:first-child {
+  border-top-left-radius: 18px !important;
+  border-bottom-left-radius: 18px !important;
+}
+
+html.dark.console-shell nav[aria-label="Pagination"] > button:last-child,
+html.dark.console-shell nav[aria-label="Pagination"] > a:last-child {
+  border-top-right-radius: 18px !important;
+  border-bottom-right-radius: 18px !important;
+}
+
+html.dark.console-shell .page-size-select,
+html.dark.console-shell .page-size-select .select-trigger,
+html.dark.console-shell .page-size-select :is(button, div.select-trigger) {
+  border-radius: 16px !important;
+}
+
+html.dark.console-shell .page-size-select.w-20,
+html.dark.console-shell .page-size-select.w-20 .select-trigger,
+html.dark.console-shell button.relative.inline-flex.items-center.rounded-l-md,
+html.dark.console-shell button.relative.inline-flex.items-center.rounded-r-md,
+html.dark.console-shell button.relative.inline-flex.items-center.rounded-md,
+html.dark.console-shell input.input.w-20.text-sm {
+  border-radius: 16px !important;
+}
+
+html.dark.console-shell .layout-section-fixed .pagination,
+html.dark.console-shell .layout-section-fixed [aria-label="Pagination"],
+html.dark.console-shell .layout-section-fixed .input,
+html.dark.console-shell .layout-section-fixed input[type="number"] {
+  border-radius: 16px !important;
+}
+
+html.dark.console-shell .table-scroll-container,
+html.dark.console-shell .rounded-2xl.border,
+html.dark.console-shell .rounded-3xl.border,
+html.dark.console-shell .rounded-xl.border,
+html.dark.console-shell .rounded-lg.border,
+html.dark.console-shell .border.border-gray-200,
+html.dark.console-shell .border.border-gray-100,
+html.dark.console-shell .overflow-hidden.rounded-2xl.border,
+html.dark.console-shell .overflow-hidden.rounded-xl.border,
+html.dark.console-shell .overflow-hidden.rounded-lg.border {
+  border-color: rgba(255, 255, 255, 0.07) !important;
+  background:
+
+    radial-gradient(circle at top right, rgba(var(--console-accent-rgb), 0.12), transparent 32%),
+    linear-gradient(180deg, rgba(23, 29, 40, 0.96), rgba(14, 20, 30, 0.985)),
+    rgba(12, 17, 25, 0.98) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02),
+    0 24px 56px rgba(0, 0, 0, 0.3) !important;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+html.dark.console-shell .table-scroll-container > div:first-child,
+html.dark.console-shell .overflow-hidden.rounded-2xl.border > div:first-child,
+html.dark.console-shell .overflow-hidden.rounded-xl.border > div:first-child,
+html.dark.console-shell .overflow-hidden.rounded-lg.border > div:first-child {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.012)),
+    rgba(15, 21, 31, 0.78) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+/* 暗色表格粘性列 */
+html.dark.console-shell .table-scroll-container .sticky-col,
+html.dark.console-shell .table-scroll-container .sticky-header-cell.sticky-col,
+html.dark.console-shell .table-scroll-container tbody .sticky-col {
+  background:
+    linear-gradient(180deg, rgba(22, 29, 41, 0.952), rgba(19, 25, 36, 0.962)),
+    rgba(19, 25, 36, 0.956) !important;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+html.dark.console-shell .table-scroll-container thead .sticky-col,
+html.dark.console-shell .table-scroll-container tbody .sticky-col-left,
+html.dark.console-shell .table-scroll-container tbody .sticky-col-left-first,
+html.dark.console-shell .table-scroll-container tbody .sticky-col-left-second,
+html.dark.console-shell .table-scroll-container tbody .sticky-col-right {
+  background:
+    linear-gradient(180deg, rgba(22, 29, 41, 0.952), rgba(19, 25, 36, 0.962)),
+    rgba(19, 25, 36, 0.956) !important;
+}
+
+html.dark.console-shell .table-scroll-container tr:hover .sticky-col,
+html.dark.console-shell .table-scroll-container tbody tr:hover .sticky-col {
+  background:
+    linear-gradient(180deg, rgba(24, 32, 46, 0.99), rgba(19, 27, 40, 0.99)),
+    rgba(22, 29, 42, 0.99) !important;
+}
+
+html.dark.console-shell .table-scroll-container tbody tr:hover .sticky-col-left,
+html.dark.console-shell .table-scroll-container tbody tr:hover .sticky-col-left-first,
+html.dark.console-shell .table-scroll-container tbody tr:hover .sticky-col-left-second,
+html.dark.console-shell .table-scroll-container tbody tr:hover .sticky-col-right {
+  background:
+    linear-gradient(180deg, rgba(27, 36, 50, 0.962), rgba(22, 30, 43, 0.972)),
+    rgba(24, 32, 46, 0.968) !important;
+}
+
+html.dark.console-shell .table-scroll-container .sticky-col-left,
+html.dark.console-shell .table-scroll-container .sticky-col-left-first,
+html.dark.console-shell .table-scroll-container .sticky-col-left-second,
+html.dark.console-shell .table-scroll-container .sticky-col-right {
+  box-shadow: none;
+}
+
+html.dark.console-shell .table-scroll-container.is-scrollable .sticky-col-left::after,
+html.dark.console-shell .table-scroll-container.is-scrollable .sticky-col-left-second::after {
+  background: none !important;
+}
+
+html.dark.console-shell .table-scroll-container.is-scrollable .sticky-col-right::before {
+  background: none !important;
+}
+
+html.dark.console-shell .table-scroll-container tbody .text-gray-900,
+html.dark.console-shell .table-scroll-container tbody .dark\:text-white,
+html.dark.console-shell .table-scroll-container tbody .font-medium,
+html.dark.console-shell .table-scroll-container tbody .font-semibold {
+  color: rgba(245, 247, 250, 0.96) !important;
+}
+
+html.dark.console-shell .table-scroll-container tbody .text-gray-700,
+html.dark.console-shell .table-scroll-container tbody .text-gray-600,
+html.dark.console-shell .table-scroll-container tbody .dark\:text-gray-300,
+html.dark.console-shell .table-scroll-container tbody .dark\:text-gray-200 {
+  color: rgba(229, 233, 239, 0.88) !important;
+}
+
+html.dark.console-shell .table-scroll-container tbody .text-gray-500,
+html.dark.console-shell .table-scroll-container tbody .text-gray-400,
+html.dark.console-shell .table-scroll-container tbody .dark\:text-dark-400,
+html.dark.console-shell .table-scroll-container tbody .dark\:text-dark-300,
+html.dark.console-shell .table-scroll-container tbody .dark\:text-gray-400 {
+  color: rgba(218, 223, 230, 0.78) !important;
+}
+
+html.dark.console-shell .table-scroll-container tbody .text-xs,
+html.dark.console-shell .table-scroll-container tbody .text-\[10px\],
+html.dark.console-shell .table-scroll-container tbody .text-\[11px\] {
+  opacity: 1 !important;
+}
+
+html.dark.console-shell .table-scroll-container tbody tr:hover td {
+  background:
+    linear-gradient(180deg, rgba(27, 36, 50, 0.962), rgba(22, 30, 43, 0.972)),
+    rgba(24, 32, 46, 0.968) !important;
+}
+
+html.dark.console-shell .table-scroll-container tbody .badge-gray,
+html.dark.console-shell .table-scroll-container tbody .inline-flex.items-center.rounded.bg-gray-100,
+html.dark.console-shell .table-scroll-container tbody .inline-flex.items-center.rounded-md.bg-gray-100,
+html.dark.console-shell .table-scroll-container tbody .bg-gray-100,
+html.dark.console-shell .table-scroll-container tbody .dark\:bg-dark-600 {
+  color: rgba(231, 235, 241, 0.9) !important;
+}
+
+html.dark.console-shell .table-scroll-container tbody .line-through,
+html.dark.console-shell .table-scroll-container tbody .opacity-50,
+html.dark.console-shell .table-scroll-container tbody .opacity-60 {
+  opacity: 0.82 !important;
+}
+
+html.dark.console-shell .table-scroll-container thead th:first-child,
+html.dark.console-shell .table-scroll-container thead th:last-child,
+html.dark.console-shell .table-scroll-container tbody td:first-child,
+html.dark.console-shell .table-scroll-container tbody td:last-child {
+  color: rgba(245, 247, 250, 0.96) !important;
+}
+
+html.dark.console-shell .table-scroll-container tbody td:first-child .font-medium,
+html.dark.console-shell .table-scroll-container tbody td:first-child .text-gray-900,
+html.dark.console-shell .table-scroll-container tbody td:first-child .dark\:text-white,
+html.dark.console-shell .table-scroll-container tbody td:last-child .font-medium,
+html.dark.console-shell .table-scroll-container tbody td:last-child .text-gray-900,
+html.dark.console-shell .table-scroll-container tbody td:last-child .dark\:text-white {
+  color: rgba(245, 247, 250, 0.98) !important;
+}
+
+html.dark.console-shell .table-scroll-container tbody td:last-child .text-xs,
+html.dark.console-shell .table-scroll-container tbody td:last-child .text-gray-500,
+html.dark.console-shell .table-scroll-container tbody td:last-child .text-gray-400,
+html.dark.console-shell .table-scroll-container tbody td:last-child .dark\:text-gray-300,
+html.dark.console-shell .table-scroll-container tbody td:last-child .dark\:text-dark-400 {
+  color: rgba(233, 237, 243, 0.86) !important;
+}
+
+html.dark.console-shell .table-scroll-container tbody td:last-child button,
+html.dark.console-shell .table-scroll-container tbody td:last-child a,
+html.dark.console-shell .table-scroll-container tbody td:last-child .flex.flex-col.items-center.gap-0\.5.rounded-lg.p-1\.5 {
+  color: rgba(223, 227, 234, 0.82) !important;
+}
+
+html.dark.console-shell .table-scroll-container tbody td:last-child button:hover,
+html.dark.console-shell .table-scroll-container tbody td:last-child a:hover,
+html.dark.console-shell .table-scroll-container tbody td:last-child .flex.flex-col.items-center.gap-0\.5.rounded-lg.p-1\.5:hover {
+  color: rgba(255, 255, 255, 0.96) !important;
+}
+
+html.dark.console-shell .inline-flex.items-center.gap-1\.5.rounded-md {
+  border-color: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+html.dark.console-shell table th,
+html.dark.console-shell .table-header th,
+html.dark.console-shell table td,
+html.dark.console-shell .table-body td {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+html.dark.console-shell .hover\:bg-gray-50:hover,
+html.dark.console-shell .dark\:hover\:bg-dark-800:hover,
+html.dark.console-shell tr:hover td {
+  background: rgba(255, 255, 255, 0.018) !important;
+}
+
+html.dark.console-shell .table-scroll-container tr:hover .sticky-col-left,
+html.dark.console-shell .table-scroll-container tr:hover .sticky-col-left-first,
+html.dark.console-shell .table-scroll-container tr:hover .sticky-col-left-second,
+html.dark.console-shell .table-scroll-container tr:hover .sticky-col-right {
+  background: linear-gradient(180deg, rgba(27, 36, 50, 0.962), rgba(22, 30, 43, 0.972)) !important;
+}
+
+/* ---- 4.7 暗色模块表面变量 ---- */
+html.dark.console-shell {
+  --console-module-surface:
+    radial-gradient(circle at top right, rgba(var(--console-accent-rgb), 0.12), transparent 32%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
+  --console-module-surface-soft:
+    radial-gradient(circle at top right, rgba(var(--console-accent-rgb), 0.1), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
+  --console-module-fill: rgba(11, 15, 22, 0.9);
+  --console-module-fill-soft: rgba(255, 255, 255, 0.03);
+  --console-module-border: rgba(255, 255, 255, 0.06);
+  --console-module-header:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015));
+}
+
+html.dark.console-shell .card,
+html.dark.console-shell .glass-card,
+html.dark.console-shell .table-scroll-container,
+html.dark.console-shell .rounded-2xl.border,
+html.dark.console-shell .rounded-3xl.border,
+html.dark.console-shell .rounded-xl.border,
+html.dark.console-shell .rounded-lg.border,
+html.dark.console-shell .border.border-gray-200,
+html.dark.console-shell .border.border-gray-100,
+html.dark.console-shell .overflow-hidden.rounded-2xl.border,
+html.dark.console-shell .overflow-hidden.rounded-xl.border,
+html.dark.console-shell .overflow-hidden.rounded-lg.border,
+html.dark.console-shell .rounded-xl.bg-gray-50.p-4.dark\:bg-dark-800,
+html.dark.console-shell .rounded-xl.bg-gray-50,
+html.dark.console-shell .bg-primary-50,
+html.dark.console-shell .group.flex.w-full.items-center.gap-4.rounded-xl.bg-gray-50,
+html.dark.console-shell section.py-3.md\:py-4 > div,
+html.dark.console-shell .layout-section-fixed > *,
+html.dark.console-shell .grid.gap-6.lg\:grid-cols-2 > div.overflow-hidden.rounded-2xl.border,
+html.dark.console-shell .grid.gap-6.lg\:grid-cols-2 > div.rounded-2xl.border,
+html.dark.console-shell .route-admin-ops .space-y-6 > .rounded-3xl.bg-white,
+html.dark.console-shell .route-admin-ops .space-y-6 > .rounded-3xl.bg-white.p-6,
+html.dark.console-shell .route-admin-ops .rounded-3xl.bg-white.p-6.shadow-sm.ring-1,
+html.dark.console-shell .route-admin-ops .rounded-3xl.bg-white.p-6.shadow-sm.ring-1.ring-gray-900\/5,
+html.dark.console-shell .route-admin-ops .rounded-3xl.dark\:bg-dark-800,
+html.dark.console-shell .route-admin-ops .rounded-2xl.bg-gray-50,
+html.dark.console-shell .route-admin-ops .rounded-xl.bg-gray-50,
+html.dark.console-shell .route-admin-ops .rounded-lg.bg-gray-100,
+html.dark.console-shell .route-admin-ops .rounded-2xl.bg-gray-50.p-4,
+html.dark.console-shell .route-admin-ops .rounded-xl.bg-gray-50.p-3,
+html.dark.console-shell .route-admin-ops .dark\:bg-dark-900,
+html.dark.console-shell .route-admin-ops .dark\:bg-dark-700\/50,
+html.dark.console-shell .route-admin-ops .dark\:bg-dark-800,
+html.dark.console-shell .route-admin-groups .rounded-xl.border.border-gray-200.bg-white,
+html.dark.console-shell .route-admin-groups .group.relative.rounded-xl.border.border-gray-200.bg-white,
+html.dark.console-shell .route-admin-groups .rounded-2xl.bg-gray-50,
+html.dark.console-shell .route-admin-groups .rounded-lg.bg-gray-50,
+html.dark.console-shell .route-admin-groups .dark\:bg-dark-800,
+html.dark.console-shell .route-admin-groups .dark\:bg-dark-700\/50,
+html.dark.console-shell .route-admin-accounts .rounded-lg.border.border-amber-200.bg-amber-50,
+html.dark.console-shell .route-orders .rounded-xl.bg-gray-50.p-4,
+html.dark.console-shell .route-admin-orders .rounded-xl.bg-gray-50.p-4,
+html.dark.console-shell .route-admin-orders .max-h-48.space-y-2.overflow-y-auto > .rounded-lg.border.border-gray-100.bg-gray-50.p-2\.5,
+html.dark.console-shell .route-admin-orders .dark\:bg-dark-800 {
+  border-color: var(--console-module-border) !important;
+  background: var(--console-module-surface), var(--console-module-fill) !important;
+  box-shadow: var(--console-panel-shadow) !important;
+}
+
+html.dark.console-shell .table-scroll-container > div:first-child,
+html.dark.console-shell .overflow-hidden.rounded-2xl.border > div:first-child,
+html.dark.console-shell .overflow-hidden.rounded-xl.border > div:first-child,
+html.dark.console-shell .overflow-hidden.rounded-lg.border > div:first-child,
+html.dark.console-shell .grid.gap-6.lg\:grid-cols-2 > div.overflow-hidden.rounded-2xl.border > div:first-child,
+html.dark.console-shell .route-admin-ops .space-y-6 > .rounded-3xl.bg-white > div:first-child,
+html.dark.console-shell .route-admin-ops .space-y-6 > .rounded-3xl.bg-white.p-6 > div:first-child,
+html.dark.console-shell .route-admin-ops .rounded-3xl.bg-white.p-6.shadow-sm.ring-1 > div:first-child,
+html.dark.console-shell .route-admin-ops .rounded-3xl.bg-white.p-6.shadow-sm.ring-1.ring-gray-900\/5 > div:first-child {
+  background: var(--console-module-header), rgba(255, 255, 255, 0.02) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+html.dark.console-shell .route-admin-users .input,
+html.dark.console-shell .route-admin-groups .input,
+html.dark.console-shell .route-admin-accounts .input,
+html.dark.console-shell .route-keys .input,
+html.dark.console-shell .route-admin-users .select-trigger,
+html.dark.console-shell .route-admin-groups .select-trigger,
+html.dark.console-shell .route-admin-accounts .select-trigger,
+html.dark.console-shell .route-keys .select-trigger,
+html.dark.console-shell .route-orders .card.p-4 .input,
+html.dark.console-shell .route-orders .card.p-4 .select-trigger,
+html.dark.console-shell .route-admin-orders .card.p-4 .input,
+html.dark.console-shell .route-admin-orders .card.p-4 .select-trigger,
+html.dark.console-shell .route-admin-orders .space-y-4 > .card.p-4 .input,
+html.dark.console-shell .route-admin-orders .space-y-4 > .card.p-4 .select-trigger {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+
+html.dark.console-shell code,
+html.dark.console-shell .code {
+  color: var(--console-accent-soft) !important;
+}
+
+/* ==========================================================
+   SECTION 5 — 路由特化样式 (route-admin-ops)
+   独立于通用暗/亮主题，覆盖特定页面控件
+   ========================================================== */
+
+/* ---- 5.1 亮色 admin-ops ---- */
+html.console-shell.route-admin-ops .space-y-6 > .rounded-3xl.bg-white,
+html.console-shell.route-admin-ops .space-y-6 > .rounded-3xl.bg-white.p-6,
+html.console-shell.route-admin-ops .rounded-3xl.bg-white.p-6.shadow-sm.ring-1,
+html.console-shell.route-admin-ops .rounded-3xl.bg-white.p-6.shadow-sm.ring-1.ring-gray-900\/5 {
+  border: 1px solid rgba(117, 83, 47, 0.16) !important;
+  background:
+    radial-gradient(circle at top right, rgba(var(--console-accent-rgb), 0.1), transparent 30%),
+    linear-gradient(180deg, rgba(255, 251, 247, 0.94), rgba(246, 238, 229, 0.98)),
+    rgba(255, 255, 255, 0.94) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.22),
+    0 20px 48px rgba(54, 35, 18, 0.1) !important;
+}
+
+html.console-shell.route-admin-ops .rounded-2xl.bg-gray-50,
+html.console-shell.route-admin-ops .rounded-xl.bg-gray-50,
+html.console-shell.route-admin-ops .rounded-lg.bg-gray-100,
+html.console-shell.route-admin-ops .rounded-2xl.bg-gray-50.p-4,
+html.console-shell.route-admin-ops .rounded-xl.bg-gray-50.p-3 {
+  border: 1px solid rgba(117, 83, 47, 0.1) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 252, 248, 0.9), rgba(245, 237, 228, 0.96)),
+    rgba(255, 255, 255, 0.85) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+    0 12px 28px rgba(54, 35, 18, 0.06) !important;
+}
+
+html.console-shell.route-admin-ops .text-blue-500,
+html.console-shell.route-admin-ops .hover\:text-blue-700:hover,
+html.console-shell.route-admin-ops .text-blue-600 {
+  color: #d66b12 !important;
+}
+
+html.console-shell.route-admin-ops .bg-blue-500,
+html.console-shell.route-admin-ops .hover\:bg-blue-500:hover {
+  background-color: rgba(var(--console-accent-rgb), 0.9) !important;
+}
+
+html.console-shell.route-admin-ops .bg-gray-200,
+html.console-shell.route-admin-ops .dark\:bg-dark-700 {
+  background-color: rgba(143, 113, 80, 0.14) !important;
+}
+
+html.console-shell.route-admin-ops .h-2.w-full.overflow-hidden.rounded-full.bg-gray-200,
+html.console-shell.route-admin-ops .relative.h-2.overflow-hidden.rounded-full.bg-gray-200 {
+  background: rgba(143, 113, 80, 0.16) !important;
+}
+
+/* ---- 5.2 暗色 admin-ops ---- */
+html.dark.console-shell.route-admin-ops .space-y-6 > .rounded-3xl.bg-white,
+html.dark.console-shell.route-admin-ops .space-y-6 > .rounded-3xl.bg-white.p-6,
+html.dark.console-shell.route-admin-ops .rounded-3xl.bg-white.p-6.shadow-sm.ring-1,
+html.dark.console-shell.route-admin-ops .rounded-3xl.bg-white.p-6.shadow-sm.ring-1.ring-gray-900\/5,
+html.dark.console-shell.route-admin-ops .rounded-3xl.dark\:bg-dark-800 {
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  background:
+    radial-gradient(circle at top right, rgba(var(--console-accent-rgb), 0.12), transparent 32%),
+    linear-gradient(180deg, rgba(24, 30, 41, 0.97), rgba(13, 18, 27, 0.99)),
+    rgba(12, 17, 25, 0.98) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02),
+    0 26px 58px rgba(0, 0, 0, 0.32) !important;
+}
+
+html.dark.console-shell.route-admin-ops .rounded-2xl.bg-gray-50,
+html.dark.console-shell.route-admin-ops .rounded-xl.bg-gray-50,
+html.dark.console-shell.route-admin-ops .rounded-lg.bg-gray-100,
+html.dark.console-shell.route-admin-ops .rounded-2xl.bg-gray-50.p-4,
+html.dark.console-shell.route-admin-ops .rounded-xl.bg-gray-50.p-3,
+html.dark.console-shell.route-admin-ops .dark\:bg-dark-900,
+html.dark.console-shell.route-admin-ops .dark\:bg-dark-700\/50,
+html.dark.console-shell.route-admin-ops .dark\:bg-dark-800 {
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.032), rgba(255, 255, 255, 0.012)),
+    rgba(18, 24, 35, 0.95) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.015),
+    0 16px 34px rgba(0, 0, 0, 0.18) !important;
+}
+
+html.dark.console-shell.route-admin-ops .text-blue-500,
+html.dark.console-shell.route-admin-ops .hover\:text-blue-700:hover,
+html.dark.console-shell.route-admin-ops .text-blue-600,
+html.dark.console-shell.route-admin-ops .dark\:text-blue-400 {
+  color: #ff9d4d !important;
+}
+
+html.dark.console-shell.route-admin-ops .bg-blue-500,
+html.dark.console-shell.route-admin-ops .hover\:bg-blue-500:hover {
+  background-color: rgba(var(--console-accent-rgb), 0.92) !important;
+}
+
+html.dark.console-shell.route-admin-ops .bg-gray-200,
+html.dark.console-shell.route-admin-ops .dark\:bg-dark-700 {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+html.dark.console-shell.route-admin-ops .h-2.w-full.overflow-hidden.rounded-full.bg-gray-200,
+html.dark.console-shell.route-admin-ops .relative.h-2.overflow-hidden.rounded-full.bg-gray-200 {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* ==========================================================
+   SECTION 6 — 路由特化 (admin-users, admin-groups, admin-accounts, keys)
+   ========================================================== */
+
+/* ---- 6.1 亮色 ---- */
+html.console-shell.route-admin-users .absolute.right-0.top-full.z-50,
+html.console-shell.route-admin-users .absolute.left-0.top-full.z-50,
+html.console-shell.route-admin-users .action-menu-content,
+html.console-shell.route-admin-groups .absolute.z-50.mt-1,
+html.console-shell.route-admin-groups .relative.overflow-hidden.rounded-xl.border.border-gray-200.bg-white.shadow-sm,
+html.console-shell.route-admin-accounts .absolute.right-0.z-50.mt-2,
+html.console-shell.route-admin-accounts .account-tools-menu-item,
+html.console-shell.route-admin-accounts .account-tools-menu-icon,
+html.console-shell.route-keys .group-selector-menu,
+html.console-shell.route-keys .endpoint-popover-content {
+  border-color: rgba(117, 83, 47, 0.14) !important;
+}
+
+html.console-shell.route-admin-users .absolute.right-0.top-full.z-50,
+html.console-shell.route-admin-users .absolute.left-0.top-full.z-50,
+html.console-shell.route-admin-users .action-menu-content,
+html.console-shell.route-admin-groups .absolute.z-50.mt-1,
+html.console-shell.route-admin-accounts .absolute.right-0.z-50.mt-2,
+html.console-shell.route-keys .group-selector-menu,
+html.console-shell.route-keys .endpoint-popover-content {
+  background:
+    radial-gradient(circle at top right, rgba(var(--console-accent-rgb), 0.09), transparent 30%),
+    linear-gradient(180deg, rgba(255, 252, 248, 0.96), rgba(247, 240, 232, 0.98)),
+    rgba(255, 255, 255, 0.96) !important;
+  box-shadow: 0 22px 48px rgba(54, 35, 18, 0.14) !important;
+}
+
+html.console-shell.route-admin-users .my-1.border-t.border-gray-100,
+html.console-shell.route-admin-users .my-2.border-t.border-gray-100,
+html.console-shell.route-admin-accounts .my-1.border-t.border-gray-100,
+html.console-shell.route-admin-accounts .my-2.border-t.border-gray-100,
+html.console-shell.route-admin-groups .border-b.border-gray-100 {
+  border-color: rgba(117, 83, 47, 0.12) !important;
+}
+
+html.console-shell.route-admin-users .input,
+html.console-shell.route-admin-groups .input,
+html.console-shell.route-admin-accounts .input,
+html.console-shell.route-keys .input,
+html.console-shell.route-admin-users .select-trigger,
+html.console-shell.route-admin-groups .select-trigger,
+html.console-shell.route-admin-accounts .select-trigger,
+html.console-shell.route-keys .select-trigger {
+  background: rgba(255, 253, 250, 0.94) !important;
+  border-color: rgba(117, 83, 47, 0.12) !important;
+}
+
+html.console-shell.route-admin-groups .rounded-xl.border.border-gray-200.bg-white,
+html.console-shell.route-admin-groups .group.relative.rounded-xl.border.border-gray-200.bg-white,
+html.console-shell.route-admin-groups .rounded-2xl.bg-gray-50,
+html.console-shell.route-admin-groups .rounded-lg.bg-gray-50,
+html.console-shell.route-admin-accounts .rounded-lg.border.border-amber-200.bg-amber-50,
+html.console-shell.route-admin-accounts .account-tools-menu-icon,
+html.console-shell.route-keys .h-1\.5.w-full.overflow-hidden.rounded-full.bg-gray-200,
+html.console-shell.route-keys .h-1.w-full.overflow-hidden.rounded-full.bg-gray-200 {
+  background:
+    linear-gradient(180deg, rgba(255, 252, 248, 0.92), rgba(245, 237, 228, 0.96)),
+    rgba(255, 255, 255, 0.88) !important;
+}
+
+html.console-shell.route-admin-groups .bg-blue-100,
+html.console-shell.route-admin-groups .bg-primary-50,
+html.console-shell.route-admin-accounts .bg-blue-50,
+html.console-shell.route-admin-accounts .bg-primary-100,
+html.console-shell.route-keys .bg-primary-500,
+html.console-shell.route-keys .text-blue-500,
+html.console-shell.route-keys .text-blue-600 {
+  color: #d66b12 !important;
+}
+
+html.console-shell.route-admin-groups .bg-blue-100,
+html.console-shell.route-admin-accounts .bg-blue-50,
+html.console-shell.route-admin-accounts .bg-primary-100 {
+  background-color: rgba(var(--console-accent-rgb), 0.12) !important;
+}
+
+html.console-shell.route-keys .bg-primary-500 {
+  background-color: rgba(var(--console-accent-rgb), 0.88) !important;
+}
+
+/* ---- 6.2 暗色 ---- */
+html.dark.console-shell.route-admin-users .absolute.right-0.top-full.z-50,
+html.dark.console-shell.route-admin-users .absolute.left-0.top-full.z-50,
+html.dark.console-shell.route-admin-users .action-menu-content,
+html.dark.console-shell.route-admin-groups .absolute.z-50.mt-1,
+html.dark.console-shell.route-admin-accounts .absolute.right-0.z-50.mt-2,
+html.dark.console-shell.route-keys .group-selector-menu,
+html.dark.console-shell.route-keys .endpoint-popover-content {
+  border-color: rgba(255, 255, 255, 0.07) !important;
+  background:
+    radial-gradient(circle at top right, rgba(var(--console-accent-rgb), 0.12), transparent 32%),
+    linear-gradient(180deg, rgba(24, 30, 41, 0.97), rgba(13, 18, 27, 0.99)),
+    rgba(12, 17, 25, 0.98) !important;
+  box-shadow: 0 24px 56px rgba(0, 0, 0, 0.34) !important;
+}
+
+html.dark.console-shell.route-admin-users .my-1.border-t.border-gray-100,
+html.dark.console-shell.route-admin-users .my-2.border-t.border-gray-100,
+html.dark.console-shell.route-admin-accounts .my-1.border-t.border-gray-100,
+html.dark.console-shell.route-admin-accounts .my-2.border-t.border-gray-100,
+html.dark.console-shell.route-admin-groups .border-b.border-gray-100 {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+html.dark.console-shell.route-admin-users .input,
+html.dark.console-shell.route-admin-groups .input,
+html.dark.console-shell.route-admin-accounts .input,
+html.dark.console-shell.route-keys .input,
+html.dark.console-shell.route-admin-users .select-trigger,
+html.dark.console-shell.route-admin-groups .select-trigger,
+html.dark.console-shell.route-admin-accounts .select-trigger,
+html.dark.console-shell.route-keys .select-trigger {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+html.dark.console-shell.route-admin-groups .rounded-xl.border.border-gray-200.bg-white,
+html.dark.console-shell.route-admin-groups .group.relative.rounded-xl.border.border-gray-200.bg-white,
+html.dark.console-shell.route-admin-groups .rounded-2xl.bg-gray-50,
+html.dark.console-shell.route-admin-groups .rounded-lg.bg-gray-50,
+html.dark.console-shell.route-admin-accounts .rounded-lg.border.border-amber-200.bg-amber-50,
+html.dark.console-shell.route-admin-accounts .account-tools-menu-icon,
+html.dark.console-shell.route-keys .h-1\.5.w-full.overflow-hidden.rounded-full.bg-gray-200,
+html.dark.console-shell.route-keys .h-1.w-full.overflow-hidden.rounded-full.bg-gray-200,
+html.dark.console-shell.route-admin-groups .dark\:bg-dark-800,
+html.dark.console-shell.route-admin-groups .dark\:bg-dark-700\/50 {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.012)),
+    rgba(18, 24, 35, 0.94) !important;
+}
+
+html.dark.console-shell.route-admin-groups .bg-blue-100,
+html.dark.console-shell.route-admin-groups .dark\:bg-blue-900\/30,
+html.dark.console-shell.route-admin-accounts .bg-blue-50,
+html.dark.console-shell.route-admin-accounts .dark\:bg-blue-900\/30,
+html.dark.console-shell.route-admin-accounts .dark\:bg-primary-900\/40,
+html.dark.console-shell.route-keys .text-blue-500,
+html.dark.console-shell.route-keys .text-blue-600 {
+  color: #ff9d4d !important;
+}
+
+html.dark.console-shell.route-admin-groups .bg-blue-100,
+html.dark.console-shell.route-admin-groups .dark\:bg-blue-900\/30,
+html.dark.console-shell.route-admin-accounts .bg-blue-50,
+html.dark.console-shell.route-admin-accounts .dark\:bg-blue-900\/30,
+html.dark.console-shell.route-admin-accounts .dark\:bg-primary-900\/40 {
+  background-color: rgba(var(--console-accent-rgb), 0.14) !important;
+}
+
+html.dark.console-shell.route-keys .bg-primary-500 {
+  background-color: rgba(var(--console-accent-rgb), 0.92) !important;
+}
+
+/* ==========================================================
+   SECTION 7 — 路由特化 (orders)
+   ========================================================== */
+
+html.console-shell.route-orders .card.p-4 .input,
+html.console-shell.route-orders .card.p-4 .select-trigger,
+html.console-shell.route-admin-orders .card.p-4 .input,
+html.console-shell.route-admin-orders .card.p-4 .select-trigger,
+html.console-shell.route-admin-orders .space-y-4 > .card.p-4 .input,
+html.console-shell.route-admin-orders .space-y-4 > .card.p-4 .select-trigger {
+  border-radius: 18px !important;
+}
+
+html.console-shell.route-orders .card.p-4 .flex-1.sm\:max-w-64,
+html.console-shell.route-admin-orders .card.p-4 .flex-1.sm\:max-w-64 {
+  border-radius: 18px !important;
+  overflow: hidden;
+}
+
+html.console-shell.route-orders .rounded-xl.bg-gray-50.p-4,
+html.console-shell.route-admin-orders .rounded-xl.bg-gray-50.p-4,
+html.console-shell.route-admin-orders .max-h-48.space-y-2.overflow-y-auto > .rounded-lg.border.border-gray-100.bg-gray-50.p-2\.5 {
+  border-radius: 22px !important;
+}
+
+/* 暗色 orders */
+html.dark.console-shell.route-orders .card.p-4 .input,
+html.dark.console-shell.route-orders .card.p-4 .select-trigger,
+html.dark.console-shell.route-admin-orders .card.p-4 .input,
+html.dark.console-shell.route-admin-orders .card.p-4 .select-trigger,
+html.dark.console-shell.route-admin-orders .space-y-4 > .card.p-4 .input,
+html.dark.console-shell.route-admin-orders .space-y-4 > .card.p-4 .select-trigger {
+  border-radius: 18px !important;
+}
+
+html.dark.console-shell.route-orders .card.p-4 .flex-1.sm\:max-w-64,
+html.dark.console-shell.route-admin-orders .card.p-4 .flex-1.sm\:max-w-64 {
+  border-radius: 18px !important;
+  overflow: hidden;
+}
+
+html.dark.console-shell.route-orders .rounded-xl.bg-gray-50.p-4,
+html.dark.console-shell.route-admin-orders .rounded-xl.bg-gray-50.p-4,
+html.dark.console-shell.route-admin-orders .max-h-48.space-y-2.overflow-y-auto > .rounded-lg.border.border-gray-100.bg-gray-50.p-2\.5,
+html.dark.console-shell.route-orders .dark\:bg-dark-800,
+html.dark.console-shell.route-admin-orders .dark\:bg-dark-800 {
+  border-radius: 22px !important;
+}
+
+/* ==========================================================
+   SECTION 8 — 路由特化 (dashboard)
+   ========================================================== */
+
+html.console-shell.route-dashboard .relative.min-h-screen.transition-all.duration-300 {
+  background:
+    radial-gradient(circle at 12% 10%, rgba(var(--console-accent-rgb), 0.12), transparent 24%),
+    radial-gradient(circle at 86% 14%, rgba(160, 195, 236, 0.18), transparent 28%),
+    linear-gradient(180deg, #ece7de 0%, #f4efe7 34%, #f8f2eb 100%) !important;
+}
+
+html.console-shell.route-dashboard main {
+  padding-top: 30px !important;
+}
+
+html.console-shell.route-dashboard section.py-3.md\:py-4:first-of-type > div {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(117, 83, 47, 0.12) !important;
+  border-radius: 28px !important;
+  background:
+    radial-gradient(circle at top right, rgba(var(--console-accent-rgb), 0.16), transparent 34%),
+    linear-gradient(135deg, rgba(255, 251, 246, 0.96), rgba(248, 241, 232, 0.94)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.68),
+    0 28px 60px rgba(90, 62, 33, 0.14) !important;
+}
+
+html.console-shell.route-dashboard section.py-3.md\:py-4:first-of-type > div::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(120deg, rgba(255, 255, 255, 0.42), transparent 38%),
+    radial-gradient(circle at 88% 18%, rgba(var(--console-accent-rgb), 0.14), transparent 26%);
+  pointer-events: none;
+}
+
+html.console-shell.route-dashboard .grid.grid-cols-2.gap-4.lg\:grid-cols-4 > .card,
+html.console-shell.route-dashboard .grid.grid-cols-2.gap-4.lg\:grid-cols-4 > div.card,
+html.console-shell.route-dashboard .grid.grid-cols-1.gap-3.sm\:grid-cols-2.lg\:grid-cols-4 > div,
+html.console-shell.route-dashboard .grid.gap-5.grid-cols-1.md\:grid-cols-2.xl\:grid-cols-3.\32 xl\:grid-cols-4 > div {
+  border: 1px solid rgba(117, 83, 47, 0.1) !important;
+  border-radius: 24px !important;
+  background:
+    radial-gradient(circle at top right, rgba(var(--console-accent-rgb), 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 239, 230, 0.94)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.64),
+    0 20px 40px rgba(88, 61, 34, 0.1) !important;
+}
+
+html.console-shell.route-dashboard .grid.grid-cols-2.gap-4.lg\:grid-cols-4 > .card:hover,
+html.console-shell.route-dashboard .grid.grid-cols-2.gap-4.lg\:grid-cols-4 > div.card:hover,
+html.console-shell.route-dashboard .grid.grid-cols-1.gap-3.sm\:grid-cols-2.lg\:grid-cols-4 > div:hover,
+html.console-shell.route-dashboard .grid.gap-5.grid-cols-1.md\:grid-cols-2.xl\:grid-cols-3.\32 xl\:grid-cols-4 > div:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 26px 52px rgba(88, 61, 34, 0.14) !important;
+}
+
+html.console-shell.route-dashboard .grid.grid-cols-2.gap-4.lg\:grid-cols-4 p.text-xl.font-bold,
+html.console-shell.route-dashboard .grid.grid-cols-2.gap-4.lg\:grid-cols-4 .text-xl.font-bold,
+html.console-shell.route-dashboard .grid.grid-cols-1.gap-3.sm\:grid-cols-2.lg\:grid-cols-4 p.text-xl.font-bold,
+html.console-shell.route-dashboard .grid.grid-cols-1.gap-3.sm\:grid-cols-2.lg\:grid-cols-4 .text-xl.font-bold {
+  font-size: 1.45rem !important;
+  letter-spacing: -0.04em;
+  color: #17130f !important;
+}
+
+html.console-shell.route-dashboard .grid.grid-cols-2.gap-4.lg\:grid-cols-4 .text-gray-500,
+html.console-shell.route-dashboard .grid.grid-cols-1.gap-3.sm\:grid-cols-2.lg\:grid-cols-4 .text-gray-500,
+html.console-shell.route-dashboard .grid.gap-5.grid-cols-1.md\:grid-cols-2.xl\:grid-cols-3.\32 xl\:grid-cols-4 .text-gray-500 {
+  color: rgba(89, 70, 49, 0.72) !important;
+}
+
+html.console-shell.route-dashboard .rounded-xl.bg-gray-50.p-4,
+html.console-shell.route-dashboard .rounded-2xl.bg-gray-50,
+html.console-shell.route-dashboard .rounded-lg.bg-gray-100,
+html.console-shell.route-dashboard .group.flex.w-full.items-center.gap-4.rounded-xl.bg-gray-50,
+html.console-shell.route-dashboard .grid.gap-6.lg\:grid-cols-2 > div.overflow-hidden.rounded-2xl.border,
+html.console-shell.route-dashboard .grid.gap-6.lg\:grid-cols-2 > div.rounded-2xl.border {
+  border-color: rgba(117, 83, 47, 0.1) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(247, 239, 231, 0.92)),
+    rgba(255, 255, 255, 0.9) !important;
+}
+
+html.dark.console-shell.route-dashboard .relative.min-h-screen.transition-all.duration-300 {
+  background:
+    radial-gradient(circle at 14% 10%, rgba(var(--console-accent-rgb), 0.16), transparent 26%),
+    radial-gradient(circle at 86% 12%, rgba(160, 195, 236, 0.12), transparent 30%),
+    linear-gradient(180deg, #0f141c 0%, #131a24 34%, #171f28 100%) !important;
+}
+
+html.dark.console-shell.route-dashboard section.py-3.md\:py-4:first-of-type > div {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  background:
+    radial-gradient(circle at top right, rgba(var(--console-accent-rgb), 0.16), transparent 34%),
+    linear-gradient(135deg, rgba(24, 31, 42, 0.96), rgba(14, 19, 28, 0.98)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 30px 66px rgba(0, 0, 0, 0.34) !important;
+}
+
+html.dark.console-shell.route-dashboard section.py-3.md\:py-4:first-of-type > div::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(120deg, rgba(255, 255, 255, 0.06), transparent 36%),
+    radial-gradient(circle at 86% 18%, rgba(var(--console-accent-rgb), 0.15), transparent 24%);
+  pointer-events: none;
+}
+
+html.dark.console-shell.route-dashboard .grid.grid-cols-2.gap-4.lg\:grid-cols-4 > .card,
+html.dark.console-shell.route-dashboard .grid.grid-cols-2.gap-4.lg\:grid-cols-4 > div.card,
+html.dark.console-shell.route-dashboard .grid.grid-cols-1.gap-3.sm\:grid-cols-2.lg\:grid-cols-4 > div,
+html.dark.console-shell.route-dashboard .grid.gap-5.grid-cols-1.md\:grid-cols-2.xl\:grid-cols-3.\32 xl\:grid-cols-4 > div {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  border-radius: 24px !important;
+  background:
+    radial-gradient(circle at top right, rgba(var(--console-accent-rgb), 0.14), transparent 32%),
+    linear-gradient(180deg, rgba(24, 31, 42, 0.94), rgba(14, 19, 28, 0.98)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 24px 54px rgba(0, 0, 0, 0.28) !important;
+}
+
+html.dark.console-shell.route-dashboard .grid.grid-cols-2.gap-4.lg\:grid-cols-4 > .card:hover,
+html.dark.console-shell.route-dashboard .grid.grid-cols-2.gap-4.lg\:grid-cols-4 > div.card:hover,
+html.dark.console-shell.route-dashboard .grid.grid-cols-1.gap-3.sm\:grid-cols-2.lg\:grid-cols-4 > div:hover,
+html.dark.console-shell.route-dashboard .grid.gap-5.grid-cols-1.md\:grid-cols-2.xl\:grid-cols-3.\32 xl\:grid-cols-4 > div:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 30px 62px rgba(0, 0, 0, 0.32) !important;
+}
+
+html.dark.console-shell.route-dashboard .grid.grid-cols-2.gap-4.lg\:grid-cols-4 p.text-xl.font-bold,
+html.dark.console-shell.route-dashboard .grid.grid-cols-2.gap-4.lg\:grid-cols-4 .text-xl.font-bold,
+html.dark.console-shell.route-dashboard .grid.grid-cols-1.gap-3.sm\:grid-cols-2.lg\:grid-cols-4 p.text-xl.font-bold,
+html.dark.console-shell.route-dashboard .grid.grid-cols-1.gap-3.sm\:grid-cols-2.lg\:grid-cols-4 .text-xl.font-bold {
+  color: #f5efe8 !important;
+}
+
+html.dark.console-shell.route-dashboard .rounded-xl.bg-gray-50.p-4,
+html.dark.console-shell.route-dashboard .rounded-2xl.bg-gray-50,
+html.dark.console-shell.route-dashboard .rounded-lg.bg-gray-100,
+html.dark.console-shell.route-dashboard .group.flex.w-full.items-center.gap-4.rounded-xl.bg-gray-50,
+html.dark.console-shell.route-dashboard .grid.gap-6.lg\:grid-cols-2 > div.overflow-hidden.rounded-2xl.border,
+html.dark.console-shell.route-dashboard .grid.gap-6.lg\:grid-cols-2 > div.rounded-2xl.border,
+html.dark.console-shell.route-dashboard .dark\:bg-dark-800,
+html.dark.console-shell.route-dashboard .dark\:bg-dark-700\/50 {
+  border-color: rgba(255, 255, 255, 0.07) !important;
+  background:
+    linear-gradient(180deg, rgba(24, 31, 42, 0.92), rgba(13, 18, 27, 0.96)),
+    rgba(14, 19, 28, 0.94) !important;
+}
