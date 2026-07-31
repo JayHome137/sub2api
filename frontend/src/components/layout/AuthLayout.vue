@@ -17,7 +17,7 @@
 
     <div class="aifoo-auth-panel">
       <div class="aifoo-auth-brand">
-        <img v-if="settingsLoaded" :src="aifooLogo" alt="AIFoo" />
+        <img :src="aifooLogo" alt="AIFoo" />
       </div>
 
       <div class="aifoo-auth-card">
@@ -50,7 +50,6 @@ const route = useRoute()
 const appStore = useAppStore()
 
 const siteName = computed(() => appStore.siteName || 'Sub2API')
-const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
 const isDark = ref(document.documentElement.classList.contains('dark'))
 const aifooLogo = computed(() => isDark.value
   ? '/landing-assets/foo_ai_logo_white.svg'
