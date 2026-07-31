@@ -56,7 +56,20 @@ jobs:
             "$VPS_USER@$VPS_HOST" \
             "sudo /usr/local/sbin/deploy-sub2api-frontend login '$GITHUB_ACTOR'"
 
-      - name: Deploy the validated digest
+      - name: Stage and verify the validated digest
+        env:
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh \
+            -i "$RUNNER_TEMP/ssh/id_ed25519" \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -o IdentitiesOnly=yes \
+            "$VPS_USER@$VPS_HOST" \
+            "sudo /usr/local/sbin/deploy-sub2api-frontend stage '$IMAGE_DIGEST'"
+
+      - name: Deploy the staged digest
         env:
           IMAGE_DIGEST: ${{ inputs.image_digest }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
@@ -68,6 +81,19 @@ jobs:
             -o IdentitiesOnly=yes \
             "$VPS_USER@$VPS_HOST" \
             "sudo /usr/local/sbin/deploy-sub2api-frontend deploy '$IMAGE_DIGEST'"
+
+      - name: Remove staging container
+        if: always()
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh \
+            -i "$RUNNER_TEMP/ssh/id_ed25519" \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -o IdentitiesOnly=yes \
+            "$VPS_USER@$VPS_HOST" \
+            "sudo /usr/local/sbin/deploy-sub2api-frontend cleanup-stage" || true
 
       - name: Remove temporary GHCR credentials
         if: always()
