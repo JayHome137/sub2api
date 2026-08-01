@@ -31,7 +31,7 @@ corepack pnpm@10.28.2 run test:e2e
 corepack pnpm@10.28.2 run build
 ```
 
-GitHub Actions 运行官方关键 Vitest、AIFoo 集成测试、全量 Vitest、桌面与移动端 Playwright。前端镜像通过容器 smoke test 后才推送到私有 `ghcr.io/jayhome137/sub2api-frontend`。
+GitHub Actions 运行官方关键 Vitest、AIFoo 集成测试、全量 Vitest、桌面与移动端 Playwright。随后使用临时本地 Registry、旧版无 HEALTHCHECK 的 Nginx 前端和真实 Docker Compose，执行完整的 `stage -> backup -> deploy -> restore` 集成测试；全部通过后才把同一前端镜像推送到私有 `ghcr.io/jayhome137/sub2api-frontend`。
 
 ## 部署与回滚
 

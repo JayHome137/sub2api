@@ -9,6 +9,7 @@ SYNC_WORKFLOW=$ROOT/.github/workflows/upstream-sync.yml
 VALIDATE_WORKFLOW=$ROOT/.github/workflows/validate.yml
 DEPLOY_WORKFLOW=$ROOT/.github/workflows/deploy.yml
 DEPLOY_HELPER=$ROOT/deploy/frontend/deploy-frontend.sh
+DOCKER_INTEGRATION=$ROOT/deploy/frontend/docker-workflow-integration-test.sh
 
 fail() {
   echo "workflow contract test failed: $1" >&2
@@ -52,9 +53,26 @@ require_text "$VALIDATE_WORKFLOW" "Full frontend Vitest suite"
 require_text "$VALIDATE_WORKFLOW" "Publish the smoke-tested image"
 require_text "$VALIDATE_WORKFLOW" "Download the smoke-tested image"
 require_text "$VALIDATE_WORKFLOW" "sub2api-frontend:candidate-"
+require_text "$VALIDATE_WORKFLOW" "Run deployment backup and restore integration"
 if grep -Fq "file: Dockerfile" "$VALIDATE_WORKFLOW"; then
   fail "AIFoo validation must not build the full backend image"
 fi
+
+sh -n "$DOCKER_INTEGRATION"
+if command -v dash >/dev/null 2>&1; then
+  dash -n "$DOCKER_INTEGRATION"
+fi
+require_text "$DOCKER_INTEGRATION" 'stage_digest "$DIGEST"'
+require_text "$DOCKER_INTEGRATION" 'create_backup "$DIGEST"'
+require_text "$DOCKER_INTEGRATION" 'deploy_digest "$DIGEST" "$backup_id"'
+require_text "$DOCKER_INTEGRATION" 'restore_backup "$DIGEST" "$backup_id"'
+require_text "$DOCKER_INTEGRATION" 'LEGACY-AIFOO-MARKER'
+require_text "$DOCKER_INTEGRATION" 'HOST-MUTATED-MARKER'
+require_text "$DOCKER_INTEGRATION" 'healthcheck:'
+require_text "$DOCKER_INTEGRATION" 'disable: true'
+require_text "$DOCKER_INTEGRATION" 'INTEGRATION_LABEL=cc.aifoo.integration-run'
+require_text "$DOCKER_INTEGRATION" 'mount_count=$(docker inspect'
+require_text "$VALIDATE_WORKFLOW" 'timeout-minutes: 30'
 
 require_text "$DEPLOY_HELPER" 'backup)'
 require_text "$DEPLOY_HELPER" 'require_backup "$digest" "$backup_id"'
