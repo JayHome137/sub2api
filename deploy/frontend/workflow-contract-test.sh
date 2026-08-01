@@ -115,6 +115,8 @@ cat > "$TEST_ROOT/app/docker-compose.yml" <<'EOF'
 services:
   frontend:
     image: nginx:stable
+    healthcheck:
+      disable: true
     volumes:
       - ./landing:/usr/share/nginx/html:ro
     ports:
@@ -275,6 +277,13 @@ first_backup_dir=$BACKUP_ROOT/$first_backup_id
 [ -s "$first_backup_dir/html/index.html" ] || fail "running HTML state was not captured"
 [ -s "$first_backup_dir/candidate-compose.yml" ] || fail "candidate Compose was not recorded"
 [ -s "$first_backup_dir/rollback-compose.yml" ] || fail "rollback Compose was not recorded"
+for rewritten_compose in \
+  "$first_backup_dir/candidate-compose.yml" \
+  "$first_backup_dir/rollback-compose.yml"; do
+  if grep -Eq '^    (volumes|healthcheck):' "$rewritten_compose"; then
+    fail "rewritten frontend Compose retained legacy service overrides"
+  fi
+done
 require_backup "$TEST_DIGEST" "$first_backup_id"
 
 MOCK_MOUNTS=/etc/ssl/private
@@ -318,6 +327,9 @@ grep -q 'image: aifoo-frontend-rollback:' "$COMPOSE_FILE" \
   || fail "restore did not pin the verified rollback image"
 if grep -q '^    volumes:' "$COMPOSE_FILE"; then
   fail "restore retained mutable frontend bind mounts"
+fi
+if grep -q '^    healthcheck:' "$COMPOSE_FILE"; then
+  fail "restore retained the legacy Compose healthcheck override"
 fi
 compose_up_before_repeat=$(wc -l < "$TEST_ROOT/compose-up" | tr -d ' ')
 restore_backup "$TEST_DIGEST" "$second_backup_id" >/dev/null

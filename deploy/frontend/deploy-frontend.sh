@@ -589,20 +589,20 @@ rewrite_frontend_service() {
     }
     in_frontend && /^  [[:alnum:]_-]+:/ {
       in_frontend = 0
-      skip_volumes = 0
+      skip_service_block = 0
     }
     in_frontend && /^    image:/ {
       print "    image: " image
       found_image = 1
       next
     }
-    in_frontend && /^    volumes:/ {
-      skip_volumes = 1
+    in_frontend && /^    (volumes|healthcheck):/ {
+      skip_service_block = 1
       next
     }
-    in_frontend && skip_volumes {
+    in_frontend && skip_service_block {
       if (/^      / || /^[[:space:]]*$/) next
-      skip_volumes = 0
+      skip_service_block = 0
     }
     { print }
     END {
