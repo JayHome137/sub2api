@@ -3,6 +3,13 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_call:
+    inputs:
+      checkout_ref:
+        description: Exact branch or commit to validate
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -12,6 +19,8 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
       - name: Check deployment scripts
         run: |
           /bin/bash -n deploy/apple-container.sh
@@ -19,20 +28,20 @@ jobs:
           /bin/sh deploy/tests/docker-compose-security-test.sh
           /bin/sh deploy/tests/docker-runtime-resources-test.sh
           /bin/sh deploy/test-caddyfile-cache.sh
+          /bin/sh deploy/frontend/workflow-contract-test.sh
 
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
       - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
           check-latest: false
           cache: true
           cache-dependency-path: backend/go.sum
-      - name: Verify Go version
-        run: |
-          go version | grep -q 'go1.26.5'
       - name: Unit tests
         working-directory: backend
         run: make test-unit
@@ -44,10 +53,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 9
+          version: 10.28.2
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
@@ -64,15 +75,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
       - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
           check-latest: false
           cache: true
           cache-dependency-path: backend/go.sum
-      - name: Verify Go version
-        run: |
-          go version | grep -q 'go1.26.5'
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:

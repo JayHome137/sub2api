@@ -9,13 +9,42 @@ on:
     branches:
       - production
   workflow_dispatch:
+    inputs:
+      checkout_ref:
+        description: Exact branch or commit to validate
+        required: false
+        type: string
+        default: ''
+      publish_image:
+        description: Publish the validated frontend image to private GHCR
+        required: false
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      checkout_ref:
+        description: Exact branch or commit to validate
+        required: false
+        type: string
+        default: ''
+      publish_image:
+        description: Publish the validated frontend image to private GHCR
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      image_digest:
+        description: Immutable digest produced by the frontend image build
+        value: ${{ jobs.publish.outputs.image_digest }}
+      source_sha:
+        description: Exact source commit used by the image build
+        value: ${{ jobs.image.outputs.source_sha }}
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
-  group: aifoo-frontend-${{ github.workflow }}-${{ github.ref }}
+  group: aifoo-frontend-${{ github.workflow }}-${{ inputs.checkout_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -26,6 +55,13 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
+
+      - name: Record source commit
+        id: source
+        working-directory: .
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
@@ -53,6 +89,9 @@ jobs:
           src/components/layout/__tests__/siteLogoSanitization.spec.ts
           src/features/prompt-audit/__tests__/integrationSurface.spec.ts
 
+      - name: Full frontend Vitest suite
+        run: pnpm exec vitest run
+
       - name: Production build
         run: pnpm run build
 
@@ -68,7 +107,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: aifoo-playwright-${{ github.sha }}
+          name: aifoo-playwright-${{ steps.source.outputs.sha }}
           path: |
             frontend/playwright-report/
             frontend/test-results/
@@ -78,45 +117,207 @@ jobs:
   image:
     needs: frontend
     runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.source.outputs.sha }}
+      publish_enabled: ${{ steps.publish_policy.outputs.enabled }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
+
+      - name: Record source commit
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Normalize GHCR owner
         id: owner
         shell: bash
         run: echo "value=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
 
+      - name: Decide whether to publish
+        id: publish_policy
+        env:
+          DIRECT_PRODUCTION_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/production' }}
+          REQUESTED_PUBLISH: ${{ inputs.publish_image }}
+        run: |
+          set -euo pipefail
+          if [ "$DIRECT_PRODUCTION_PUSH" = "true" ] || [ "$REQUESTED_PUBLISH" = "true" ]; then
+            source_sha=$(git rev-parse HEAD)
+            production_sha=$(git ls-remote origin refs/heads/production | awk '{print $1}')
+            if [ "$source_sha" != "$production_sha" ]; then
+              echo "Refusing to publish a frontend image that is no longer current production" >&2
+              exit 1
+            fi
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Build candidate image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/frontend/Dockerfile
+          load: true
+          push: false
+          tags: ghcr.io/${{ steps.owner.outputs.value }}/sub2api-frontend:candidate-${{ steps.source.outputs.sha }}
+          build-args: |
+            BUILD_VERSION=candidate-${{ steps.source.outputs.sha }}
+            VCS_REF=${{ steps.source.outputs.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+          sbom: false
+
+      - name: Run container smoke tests
+        env:
+          IMAGE: ghcr.io/${{ steps.owner.outputs.value }}/sub2api-frontend:candidate-${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          suffix="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          network="aifoo-smoke-$suffix"
+          backend="aifoo-smoke-backend-$suffix"
+          frontend="aifoo-smoke-frontend-$suffix"
+
+          cleanup() {
+            docker rm -f "$frontend" "$backend" >/dev/null 2>&1 || true
+            docker network rm "$network" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker network create "$network" >/dev/null
+          docker run -d \
+            --name "$backend" \
+            --network "$network" \
+            --network-alias sub2api \
+            busybox:1.36 \
+            sh -c 'mkdir -p /www && printf "{\"status\":\"ok\"}\n" > /www/health && httpd -f -p 8080 -h /www' \
+            >/dev/null
+          docker run -d \
+            --name "$frontend" \
+            --network "$network" \
+            --publish 127.0.0.1:18080:8080 \
+            "$IMAGE" \
+            >/dev/null
+
+          status=starting
+          for _ in $(seq 1 30); do
+            status=$(docker inspect "$frontend" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
+            [ "$status" = "healthy" ] && break
+            [ "$status" = "unhealthy" ] && break
+            sleep 2
+          done
+          [ "$status" = "healthy" ]
+
+          base_url=http://127.0.0.1:18080
+          curl --fail --silent --show-error --connect-timeout 2 --max-time 5 "$base_url/frontend-health" | grep -q '"status":"ok"'
+          curl --fail --silent --show-error --connect-timeout 2 --max-time 5 "$base_url/health" | grep -q '"status":"ok"'
+          curl --fail --silent --show-error --connect-timeout 2 --max-time 5 "$base_url/" | grep -q 'AIFoo'
+
+          for route in login admin/dashboard custom/preflight; do
+            page=$(curl --fail --silent --show-error --connect-timeout 2 --max-time 5 "$base_url/$route")
+            printf '%s' "$page" | grep -q '<div id="app"></div>'
+            if printf '%s' "$page" | grep -Eq 'shell-bootstrap|console-override|auth-override|auth-preload|auth-theme-toggle'; then
+              echo "Legacy override reference detected on /$route" >&2
+              exit 1
+            fi
+          done
+
+          for asset in shell-bootstrap.js console-override.js console-override.css auth-override.js auth-override.css auth-preload.js auth-theme-toggle.js; do
+            code=$(curl --silent --output /dev/null --write-out '%{http_code}' --connect-timeout 2 --max-time 5 "$base_url/$asset")
+            [ "$code" = "404" ]
+          done
+
+      - name: Export the smoke-tested image
+        if: steps.publish_policy.outputs.enabled == 'true'
+        env:
+          IMAGE: ghcr.io/${{ steps.owner.outputs.value }}/sub2api-frontend:candidate-${{ steps.source.outputs.sha }}
+        run: |
+          docker image save --output "$RUNNER_TEMP/frontend-image.tar" "$IMAGE"
+          cd "$RUNNER_TEMP"
+          sha256sum frontend-image.tar > frontend-image.tar.sha256
+
+      - name: Upload the smoke-tested image
+        if: steps.publish_policy.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: aifoo-frontend-image-${{ steps.source.outputs.sha }}
+          path: |
+            ${{ runner.temp }}/frontend-image.tar
+            ${{ runner.temp }}/frontend-image.tar.sha256
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: image
+    if: needs.image.outputs.publish_enabled == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_digest: ${{ steps.publish.outputs.digest }}
+    steps:
+      - name: Normalize GHCR owner
+        id: owner
+        shell: bash
+        run: echo "value=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Download the smoke-tested image
+        uses: actions/download-artifact@v8
+        with:
+          name: aifoo-frontend-image-${{ needs.image.outputs.source_sha }}
+          path: ${{ runner.temp }}/frontend-image
+
+      - name: Verify and load the smoke-tested image
+        env:
+          IMAGE: ghcr.io/${{ steps.owner.outputs.value }}/sub2api-frontend:candidate-${{ needs.image.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/frontend-image"
+          sha256sum -c frontend-image.tar.sha256
+          docker image load --input frontend-image.tar >/dev/null
+          image_id=$(docker image inspect "$IMAGE" --format '{{.Id}}')
+          if ! printf '%s' "$image_id" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "The verified artifact did not load the expected frontend image" >&2
+            exit 1
+          fi
+
       - name: Log in to GHCR
-        if: github.event_name == 'push' && github.ref == 'refs/heads/production'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build candidate image
-        id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/frontend/Dockerfile
-          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/production' }}
-          tags: ghcr.io/${{ steps.owner.outputs.value }}/sub2api-frontend:candidate-${{ github.sha }}
-          build-args: |
-            BUILD_VERSION=candidate-${{ github.sha }}
-            VCS_REF=${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          provenance: true
-          sbom: true
+      - name: Publish the smoke-tested image
+        id: publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ghcr.io/${{ steps.owner.outputs.value }}/sub2api-frontend:candidate-${{ needs.image.outputs.source_sha }}
+          SOURCE_SHA: ${{ needs.image.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          production_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
+          if [ "$SOURCE_SHA" != "$production_sha" ]; then
+            echo "Production moved after image validation; the stale image will not be published" >&2
+            exit 1
+          fi
+          docker push "$IMAGE"
+          digest=$(docker image inspect "$IMAGE" --format '{{range .RepoDigests}}{{println .}}{{end}}' \
+            | sed -n "s|^${IMAGE%:*}@||p" | sed -n '1p')
+          if ! printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "Unable to resolve the immutable digest of the published image" >&2
+            exit 1
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Record immutable candidate
-        if: github.event_name == 'push' && github.ref == 'refs/heads/production'
         run: |
           echo "### Candidate frontend image" >> "$GITHUB_STEP_SUMMARY"
           echo '```text' >> "$GITHUB_STEP_SUMMARY"
-          echo "ghcr.io/${{ steps.owner.outputs.value }}/sub2api-frontend@${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "ghcr.io/${{ steps.owner.outputs.value }}/sub2api-frontend@${{ steps.publish.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"

@@ -2,78 +2,566 @@ name: Sync official Sub2API releases
 
 on:
   schedule:
-    - cron: '17 3 * * *'
+    - cron: '17 */6 * * *'
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Optional stable release tag; blank uses the latest official release
+        required: false
+        type: string
+        default: ''
+      retry_existing:
+        description: Re-run validation for an existing upgrade branch
+        required: false
+        type: boolean
+        default: false
+      approve_ui:
+        description: Approve an already reviewed UI-related candidate for merge
+        required: false
+        type: boolean
+        default: false
+      retry_final:
+        description: Rebuild and republish an already merged release whose final delivery failed
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
   issues: write
   pull-requests: write
+  packages: write
 
 concurrency:
-  group: upstream-sync
+  group: upstream-release-sync
   cancel-in-progress: false
 
+env:
+  GH_REPO: ${{ github.repository }}
+
 jobs:
-  sync:
+  prepare:
     runs-on: ubuntu-latest
+    outputs:
+      release_detected: ${{ steps.prepare.outputs.release_detected }}
+      release_tag: ${{ steps.prepare.outputs.release_tag }}
+      candidate_ready: ${{ steps.prepare.outputs.candidate_ready }}
+      candidate_branch: ${{ steps.prepare.outputs.candidate_branch }}
+      base_sha: ${{ steps.prepare.outputs.base_sha }}
+      candidate_sha: ${{ steps.prepare.outputs.candidate_sha }}
+      ui_related: ${{ steps.prepare.outputs.ui_related }}
+      issue_number: ${{ steps.prepare.outputs.issue_number }}
+      pr_number: ${{ steps.prepare.outputs.pr_number }}
+      blocked: ${{ steps.prepare.outputs.blocked }}
+      final_retry: ${{ steps.prepare.outputs.final_retry }}
+      final_sha: ${{ steps.prepare.outputs.final_sha }}
     steps:
-      - name: Checkout production history
+      - name: Checkout AIFoo production history
         uses: actions/checkout@v6
         with:
           ref: production
           fetch-depth: 0
 
-      - name: Configure Git
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git remote add upstream https://github.com/Wei-Shaw/sub2api.git
-
-      - name: Mirror official main and tags
-        run: |
-          git fetch upstream main --tags --force
-          git push origin refs/remotes/upstream/main:refs/heads/main
-          git push origin --tags
-
-      - name: Create release upgrade pull request
+      - name: Prepare stable release candidate
+        id: prepare
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REQUESTED_TAG: ${{ inputs.release_tag }}
+          RETRY_EXISTING: ${{ inputs.retry_existing }}
+          APPROVE_UI: ${{ inputs.approve_ui }}
+          RETRY_FINAL: ${{ inputs.retry_final }}
         run: |
-          latest_tag=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
-          test -n "$latest_tag"
+          set -euo pipefail
 
-          git fetch origin production
-          if git merge-base --is-ancestor "$latest_tag" origin/production; then
-            echo "production already contains $latest_tag"
-            exit 0
+          echo "release_detected=false" >> "$GITHUB_OUTPUT"
+          echo "release_tag=" >> "$GITHUB_OUTPUT"
+          echo "candidate_ready=false" >> "$GITHUB_OUTPUT"
+          echo "candidate_branch=" >> "$GITHUB_OUTPUT"
+          echo "base_sha=" >> "$GITHUB_OUTPUT"
+          echo "candidate_sha=" >> "$GITHUB_OUTPUT"
+          echo "ui_related=false" >> "$GITHUB_OUTPUT"
+          echo "issue_number=" >> "$GITHUB_OUTPUT"
+          echo "pr_number=" >> "$GITHUB_OUTPUT"
+          echo "blocked=false" >> "$GITHUB_OUTPUT"
+          echo "final_retry=false" >> "$GITHUB_OUTPUT"
+          echo "final_sha=" >> "$GITHUB_OUTPUT"
+
+          if [ "$APPROVE_UI" = "true" ] && [ "$RETRY_EXISTING" != "true" ]; then
+            echo "approve_ui=true requires retry_existing=true" >&2
+            exit 1
           fi
-
-          branch="upgrade/$latest_tag"
-          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
-            echo "$branch already exists"
-            exit 0
-          fi
-
-          git checkout -b "$branch" origin/production
-          if ! git merge --no-edit "$latest_tag"; then
-            git merge --abort
-            title="Upgrade $latest_tag needs manual conflict resolution"
-            if ! gh issue list --state open --search "$title in:title" --json title --jq '.[].title' | grep -Fxq "$title"; then
-              gh issue create --title "$title" --body "The scheduled upstream merge into production has conflicts. Resolve it on a local upgrade/$latest_tag branch; validation and deployment remain blocked until a reviewed PR passes."
-            fi
+          if [ "$RETRY_FINAL" = "true" ] \
+            && { [ "$RETRY_EXISTING" = "true" ] || [ "$APPROVE_UI" = "true" ]; }; then
+            echo "retry_final cannot be combined with candidate retry or UI approval" >&2
             exit 1
           fi
 
-          git push origin "$branch"
-
-          migration_note="No migration files changed against production."
-          if git diff --name-only origin/production...HEAD | grep -q '^backend/migrations/'; then
-            migration_note="Database migration files changed. Backup restore validation and explicit production approval are required."
+          official_repo=Wei-Shaw/sub2api
+          if [ -n "$REQUESTED_TAG" ]; then
+            release_json=$(gh api "repos/$official_repo/releases/tags/$REQUESTED_TAG")
+          else
+            release_json=$(gh api "repos/$official_repo/releases/latest")
           fi
 
-          gh pr create \
-            --base production \
-            --head "$branch" \
-            --title "Upgrade Sub2API to $latest_tag" \
-            --body "Automated stable-release candidate from official Wei-Shaw/sub2api.\n\n$migration_note\n\nThis PR must pass frontend, browser, backend, and image validation. Merging creates a candidate image but does not deploy it."
+          tag=$(printf '%s' "$release_json" | jq -r '.tag_name')
+          draft=$(printf '%s' "$release_json" | jq -r '.draft')
+          prerelease=$(printf '%s' "$release_json" | jq -r '.prerelease')
+          release_url=$(printf '%s' "$release_json" | jq -r '.html_url')
+          published_at=$(printf '%s' "$release_json" | jq -r '.published_at')
+
+          if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Official release tag is not a stable semantic version: $tag" >&2
+            exit 1
+          fi
+          if [ "$draft" != "false" ] || [ "$prerelease" != "false" ]; then
+            echo "Refusing draft or prerelease tag $tag" >&2
+            exit 1
+          fi
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git remote add upstream https://github.com/Wei-Shaw/sub2api.git
+          git fetch origin production
+          git fetch --no-tags --force upstream "refs/tags/$tag:refs/tags/$tag"
+
+          issue_title="[Upstream $tag] AIFoo frontend compatibility"
+
+          ensure_labels() {
+            for label in upstream-release candidate-testing ui-review-required sync-failed ready-for-vps; do
+              case "$label" in
+                upstream-release) color=0969DA ;;
+                candidate-testing) color=FBCA04 ;;
+                ui-review-required) color=D93F0B ;;
+                sync-failed) color=B60205 ;;
+                ready-for-vps) color=0E8A16 ;;
+              esac
+              gh label create "$label" --color "$color" --force >/dev/null
+            done
+          }
+
+          find_issue_number() {
+            gh api --paginate \
+              "repos/$GITHUB_REPOSITORY/issues?state=all&labels=upstream-release&per_page=100" \
+              --jq ".[] | select(.pull_request == null and .title == \"$issue_title\") | .number" \
+              | sed -n '1p'
+          }
+
+          release_commit=$(git rev-parse "$tag^{}")
+          production_sha=$(git rev-parse origin/production)
+          if git merge-base --is-ancestor "$release_commit" "$production_sha"; then
+            issue_number=$(find_issue_number)
+            branch="upgrade/$tag"
+            candidate_sha=$(git ls-remote --heads origin "refs/heads/$branch" \
+              | awk '{print $1}' | sed -n '1p')
+            ready_for_vps=false
+            if [ -n "$issue_number" ] \
+              && gh issue view "$issue_number" --json labels --jq '.labels[].name' \
+                | grep -Fxq ready-for-vps; then
+              ready_for_vps=true
+            fi
+
+            if [ "$RETRY_FINAL" != "true" ] \
+              && { [ -z "$issue_number" ] \
+                || [ "$candidate_sha" != "$production_sha" ] \
+                || [ "$ready_for_vps" = "true" ]; }; then
+              echo "production already contains official stable release $tag"
+              {
+                echo "### Stable release check"
+                echo
+                echo "No update required. Production already contains [$tag]($release_url)."
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+
+            if [ -z "$issue_number" ]; then
+              echo "Cannot retry final delivery because the exact release issue is missing" >&2
+              exit 1
+            fi
+            if [ "$candidate_sha" != "$production_sha" ]; then
+              gh issue comment "$issue_number" \
+                --body "Final delivery retry was blocked because candidate branch \`$branch\` is not the exact current production commit \`$production_sha\`. No image was published or deployed."
+              exit 1
+            fi
+
+            ensure_labels
+            gh issue reopen "$issue_number" >/dev/null 2>&1 || true
+            gh issue edit "$issue_number" \
+              --add-label upstream-release \
+              --add-label candidate-testing >/dev/null
+            for stale_label in ready-for-vps sync-failed; do
+              gh issue edit "$issue_number" --remove-label "$stale_label" >/dev/null 2>&1 || true
+            done
+            echo "release_detected=true" >> "$GITHUB_OUTPUT"
+            echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
+            echo "candidate_branch=$branch" >> "$GITHUB_OUTPUT"
+            echo "issue_number=$issue_number" >> "$GITHUB_OUTPUT"
+            echo "final_retry=true" >> "$GITHUB_OUTPUT"
+            echo "final_sha=$production_sha" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Final delivery retry"
+              echo
+              echo "Rebuilding and publishing exact production commit \`$production_sha\` for [$tag]($release_url)."
+              echo "No VPS deployment will be attempted."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ "$RETRY_FINAL" = "true" ]; then
+            echo "Cannot retry final delivery before $tag is merged into production" >&2
+            exit 1
+          fi
+
+          echo "release_detected=true" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
+          ensure_labels
+
+          issue_number=$(find_issue_number)
+          if [ -z "$issue_number" ]; then
+            issue_body=$(mktemp)
+            {
+              echo "Official stable release: [$tag]($release_url)"
+              echo
+              echo "Published: $published_at"
+              echo
+              echo "This issue tracks candidate merge, UI impact analysis, remote validation, the private frontend image, and the final VPS approval gate. No VPS deployment is automatic."
+            } > "$issue_body"
+            issue_url=$(gh issue create \
+              --title "$issue_title" \
+              --body-file "$issue_body" \
+              --assignee "$GITHUB_REPOSITORY_OWNER" \
+              --label upstream-release \
+              --label candidate-testing)
+            issue_number=${issue_url##*/}
+          else
+            gh issue reopen "$issue_number" >/dev/null 2>&1 || true
+            gh issue edit "$issue_number" --add-label upstream-release --add-label candidate-testing >/dev/null
+          fi
+          echo "issue_number=$issue_number" >> "$GITHUB_OUTPUT"
+
+          branch="upgrade/$tag"
+          echo "candidate_branch=$branch" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            if [ "$RETRY_EXISTING" != "true" ] && [ "$APPROVE_UI" != "true" ]; then
+              echo "Existing candidate $branch is awaiting review; scheduled validation will not repeat."
+              echo "release_detected=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            git fetch origin "refs/heads/$branch:refs/remotes/origin/$branch"
+            git checkout -B "$branch" "origin/$branch"
+          else
+            if [ "$APPROVE_UI" = "true" ]; then
+              gh issue edit "$issue_number" --add-label sync-failed >/dev/null
+              gh issue comment "$issue_number" \
+                --body "UI approval was requested before candidate branch \`$branch\` existed. Run once without \`approve_ui\` to create and review the PR; nothing was merged or deployed."
+              echo "blocked=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            git checkout -b "$branch" origin/production
+            if ! git merge --no-edit "$tag"; then
+              git merge --abort
+              gh issue edit "$issue_number" --add-label sync-failed >/dev/null
+              gh issue comment "$issue_number" \
+                --body "The official $tag release conflicts with AIFoo production. No candidate branch was published and no deployment was attempted."
+              echo "blocked=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            git push origin "$branch"
+          fi
+
+          for stale_label in ready-for-vps sync-failed ui-review-required; do
+            gh issue edit "$issue_number" --remove-label "$stale_label" >/dev/null 2>&1 || true
+          done
+
+          base_sha=$(git rev-parse origin/production)
+          candidate_sha=$(git rev-parse HEAD)
+          if ! git merge-base --is-ancestor "$release_commit" "$candidate_sha"; then
+            gh issue edit "$issue_number" --add-label sync-failed >/dev/null
+            gh issue comment "$issue_number" \
+              --body "Candidate \`$candidate_sha\` no longer contains official release commit \`$release_commit\` for $tag. Restore the exact Release merge before retrying; nothing was merged or deployed."
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git merge-base --is-ancestor "$base_sha" "$candidate_sha"; then
+            gh issue edit "$issue_number" --add-label sync-failed >/dev/null
+            gh issue comment "$issue_number" \
+              --body "Candidate \`$candidate_sha\` is not based on current production \`$base_sha\`. Rebase or recreate the candidate before retrying; nothing was merged or deployed."
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed_paths="$RUNNER_TEMP/upstream-changed-paths.txt"
+          git diff --name-only "$base_sha...$candidate_sha" | sort -u > "$changed_paths"
+
+          direct_ui=false
+          backend_contract=false
+          ui_related=false
+          if grep -Eq '^(frontend/|deploy/frontend/|docs/legal/|backend/internal/web/)' "$changed_paths"; then
+            direct_ui=true
+          fi
+          if grep -E '^(backend/ent/schema/|backend/internal/(domain|middleware|model|pkg/response|setup)/|backend/internal/server/(routes|middleware)/|backend/internal/handler/.*\.go$|backend/internal/service/(admin_|auth|channel_|group_|payment|setting|settings|subscription|user_).*\.go$)' "$changed_paths" \
+            | grep -Ev '(_test\.go$|/testdata/)' >/dev/null; then
+            backend_contract=true
+          fi
+          if [ "$direct_ui" = "true" ] || [ "$backend_contract" = "true" ]; then
+            ui_related=true
+            gh issue edit "$issue_number" --add-label ui-review-required >/dev/null
+          fi
+
+          migration_note="No database migration files changed."
+          if grep -q '^backend/migrations/' "$changed_paths"; then
+            migration_note="Database migrations changed. This frontend workflow will not deploy or alter the backend."
+          fi
+
+          pr_number=$(gh pr list --state open --base production --head "$branch" --json number --jq '.[0].number // empty')
+          if [ -z "$pr_number" ]; then
+            if [ "$APPROVE_UI" = "true" ]; then
+              gh issue edit "$issue_number" --add-label sync-failed >/dev/null
+              gh issue comment "$issue_number" \
+                --body "UI approval was requested, but candidate branch \`$branch\` has no open PR to review. Reopen or recreate the PR before retrying; nothing was merged or deployed."
+              echo "blocked=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            pr_body=$(mktemp)
+            {
+              echo "Automated candidate from official stable release [$tag]($release_url)."
+              echo
+              echo "- UI-related paths changed: \`$ui_related\`"
+              echo "- Direct frontend surface changed: \`$direct_ui\`"
+              echo "- Potential backend-to-frontend contract changed: \`$backend_contract\`"
+              echo "- $migration_note"
+              echo "- Candidate commit: \`$candidate_sha\`"
+              echo
+              echo "Candidate CI, security, AIFoo browser tests, and image smoke tests run inside the release-sync workflow. UI-related releases are never auto-merged. Merging and building a frontend image do not deploy it to the VPS."
+            } > "$pr_body"
+            pr_url=$(gh pr create \
+              --base production \
+              --head "$branch" \
+              --title "Upgrade Sub2API to $tag" \
+              --body-file "$pr_body")
+            pr_number=${pr_url##*/}
+          fi
+
+          gh issue comment "$issue_number" --body "Candidate PR #$pr_number is ready for remote validation. Direct frontend changes: \`$direct_ui\`; potential backend-to-frontend contract changes: \`$backend_contract\`; UI review required: \`$ui_related\`."
+
+          echo "candidate_ready=true" >> "$GITHUB_OUTPUT"
+          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
+          echo "candidate_sha=$candidate_sha" >> "$GITHUB_OUTPUT"
+          echo "ui_related=$ui_related" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Official stable release candidate"
+            echo
+            echo "- Release: [$tag]($release_url)"
+            echo "- Candidate: \`$candidate_sha\`"
+            echo "- Production base: \`$base_sha\`"
+            echo "- UI-related paths: \`$ui_related\`"
+            echo "- Direct frontend surface: \`$direct_ui\`"
+            echo "- Backend-to-frontend contract: \`$backend_contract\`"
+            echo "- Tracking issue: #$issue_number"
+            echo "- Pull request: #$pr_number"
+            echo
+            echo "#### Changed paths"
+            sed -n '1,100p' "$changed_paths" | sed 's/^/- `/' | sed 's/$/`/'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  candidate_ci:
+    needs: prepare
+    if: needs.prepare.outputs.candidate_ready == 'true'
+    uses: ./.github/workflows/backend-ci.yml
+    with:
+      checkout_ref: ${{ needs.prepare.outputs.candidate_sha }}
+
+  candidate_security:
+    needs: prepare
+    if: needs.prepare.outputs.candidate_ready == 'true'
+    uses: ./.github/workflows/security-scan.yml
+    with:
+      checkout_ref: ${{ needs.prepare.outputs.candidate_sha }}
+
+  candidate_frontend:
+    needs: prepare
+    if: needs.prepare.outputs.candidate_ready == 'true'
+    uses: ./.github/workflows/validate.yml
+    with:
+      checkout_ref: ${{ needs.prepare.outputs.candidate_sha }}
+      publish_image: false
+
+  gate:
+    needs:
+      - prepare
+      - candidate_ci
+      - candidate_security
+      - candidate_frontend
+    if: always() && needs.prepare.outputs.candidate_ready == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      merged: ${{ steps.gate.outputs.merged }}
+      final_sha: ${{ steps.gate.outputs.final_sha }}
+    steps:
+      - name: Apply validation and UI gates
+        id: gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CI_RESULT: ${{ needs.candidate_ci.result }}
+          SECURITY_RESULT: ${{ needs.candidate_security.result }}
+          FRONTEND_RESULT: ${{ needs.candidate_frontend.result }}
+          UI_RELATED: ${{ needs.prepare.outputs.ui_related }}
+          UI_APPROVED: ${{ github.event_name == 'workflow_dispatch' && inputs.approve_ui == true }}
+          ISSUE_NUMBER: ${{ needs.prepare.outputs.issue_number }}
+          PR_NUMBER: ${{ needs.prepare.outputs.pr_number }}
+          BASE_SHA: ${{ needs.prepare.outputs.base_sha }}
+          CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          echo "merged=false" >> "$GITHUB_OUTPUT"
+          echo "final_sha=" >> "$GITHUB_OUTPUT"
+
+          if [ "$CI_RESULT" != "success" ] \
+            || [ "$SECURITY_RESULT" != "success" ] \
+            || [ "$FRONTEND_RESULT" != "success" ]; then
+            gh issue edit "$ISSUE_NUMBER" --add-label sync-failed >/dev/null
+            gh issue comment "$ISSUE_NUMBER" \
+              --body "Candidate validation failed. CI: \`$CI_RESULT\`; security: \`$SECURITY_RESULT\`; AIFoo frontend: \`$FRONTEND_RESULT\`. Nothing was merged or deployed."
+            exit 1
+          fi
+
+          if [ "$UI_RELATED" = "true" ] && [ "$UI_APPROVED" != "true" ]; then
+            gh issue edit "$ISSUE_NUMBER" --add-label ui-review-required >/dev/null
+            gh issue comment "$ISSUE_NUMBER" \
+              --body "All automated checks passed, but the official release changes UI-related paths. PR #$PR_NUMBER remains open for AIFoo UI review. After adapting and reviewing the candidate, manually run this workflow with \`retry_existing=true\` and \`approve_ui=true\`; no image was published and no deployment was attempted."
+            exit 0
+          fi
+
+          current_base=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
+          if [ "$current_base" != "$BASE_SHA" ]; then
+            gh issue edit "$ISSUE_NUMBER" --add-label sync-failed >/dev/null
+            gh issue comment "$ISSUE_NUMBER" \
+              --body "Production changed from validated base \`$BASE_SHA\` to \`$current_base\` while candidate checks were running. Merge is blocked until the candidate is rebased and the full workflow is rerun."
+            exit 1
+          fi
+
+          pr_head=$(gh pr view "$PR_NUMBER" --json headRefOid --jq '.headRefOid')
+          if [ "$pr_head" != "$CANDIDATE_SHA" ]; then
+            gh issue edit "$ISSUE_NUMBER" --add-label sync-failed >/dev/null
+            gh issue comment "$ISSUE_NUMBER" \
+              --body "PR #$PR_NUMBER moved from validated candidate \`$CANDIDATE_SHA\` to \`$pr_head\`. Merge is blocked until the exact new head is validated."
+            exit 1
+          fi
+
+          if [ "$UI_RELATED" = "true" ]; then
+            gh issue comment "$ISSUE_NUMBER" \
+              --body "Manual AIFoo UI approval was supplied for exact candidate \`$CANDIDATE_SHA\`; the locked-base merge is continuing."
+          fi
+
+          if ! gh api \
+            --method PATCH \
+            "repos/$GITHUB_REPOSITORY/git/refs/heads/production" \
+            -f sha="$CANDIDATE_SHA" \
+            -F force=false >/dev/null; then
+            actual_base=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
+            gh issue edit "$ISSUE_NUMBER" --add-label sync-failed >/dev/null
+            gh issue comment "$ISSUE_NUMBER" \
+              --body "GitHub rejected the atomic fast-forward from \`$BASE_SHA\` to \`$CANDIDATE_SHA\`; production is now \`$actual_base\`. Nothing unvalidated was merged. Rebase and rerun the full workflow."
+            exit 1
+          fi
+          final_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
+          if [ "$final_sha" != "$CANDIDATE_SHA" ]; then
+            gh issue edit "$ISSUE_NUMBER" --add-label sync-failed >/dev/null
+            gh issue comment "$ISSUE_NUMBER" \
+              --body "Production did not remain at the atomically validated candidate \`$CANDIDATE_SHA\`. Final image publication is blocked."
+            exit 1
+          fi
+
+          candidate_tree=$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$CANDIDATE_SHA" --jq '.tree.sha')
+          final_tree=$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$final_sha" --jq '.tree.sha')
+          if [ "$candidate_tree" != "$final_tree" ]; then
+            gh issue edit "$ISSUE_NUMBER" --add-label sync-failed >/dev/null
+            gh issue comment "$ISSUE_NUMBER" \
+              --body "The merged production tree does not match the validated candidate tree. Final image publication is blocked."
+            exit 1
+          fi
+
+          echo "merged=true" >> "$GITHUB_OUTPUT"
+          echo "final_sha=$final_sha" >> "$GITHUB_OUTPUT"
+          gh issue comment "$ISSUE_NUMBER" \
+            --body "Candidate checks passed and PR #$PR_NUMBER was atomically fast-forwarded into production as \`$final_sha\`. Final frontend rebuild and smoke tests are starting." \
+            || echo "Unable to post the non-critical post-merge comment" >&2
+
+  final_frontend:
+    needs:
+      - prepare
+      - gate
+    if: >-
+      always() &&
+      (needs.gate.outputs.merged == 'true' ||
+      needs.prepare.outputs.final_retry == 'true')
+    uses: ./.github/workflows/validate.yml
+    with:
+      checkout_ref: ${{ needs.prepare.outputs.final_retry == 'true' && needs.prepare.outputs.final_sha || needs.gate.outputs.final_sha }}
+      publish_image: true
+
+  notify:
+    needs:
+      - prepare
+      - gate
+      - final_frontend
+    if: always() && needs.prepare.outputs.release_detected == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update release status issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ needs.prepare.outputs.issue_number }}
+          BLOCKED: ${{ needs.prepare.outputs.blocked }}
+          UI_RELATED: ${{ needs.prepare.outputs.ui_related }}
+          GATE_RESULT: ${{ needs.gate.result }}
+          MERGED: ${{ needs.gate.outputs.merged }}
+          FINAL_RETRY: ${{ needs.prepare.outputs.final_retry }}
+          FINAL_RESULT: ${{ needs.final_frontend.result }}
+          FINAL_SHA: ${{ needs.final_frontend.outputs.source_sha }}
+          IMAGE_DIGEST: ${{ needs.final_frontend.outputs.image_digest }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$ISSUE_NUMBER" ]; then
+            echo "No tracking issue was created; see the prepare job for the failure." >&2
+            exit 1
+          fi
+          if [ "$BLOCKED" = "true" ]; then
+            exit 0
+          fi
+          if [ "$UI_RELATED" = "true" ] && [ "$MERGED" != "true" ]; then
+            exit 0
+          fi
+          if [ "$FINAL_RETRY" != "true" ] && [ "$GATE_RESULT" != "success" ]; then
+            gh issue edit "$ISSUE_NUMBER" --remove-label ready-for-vps >/dev/null 2>&1 || true
+            gh issue edit "$ISSUE_NUMBER" --add-label sync-failed >/dev/null
+            exit 1
+          fi
+          if [ "$FINAL_RETRY" != "true" ] && [ "$MERGED" != "true" ]; then
+            exit 0
+          fi
+          if [ "$FINAL_RESULT" != "success" ] || [ -z "$IMAGE_DIGEST" ]; then
+            gh issue edit "$ISSUE_NUMBER" --remove-label ready-for-vps >/dev/null 2>&1 || true
+            gh issue edit "$ISSUE_NUMBER" --add-label sync-failed >/dev/null
+            gh issue comment "$ISSUE_NUMBER" \
+              --body "Production merged, but the final frontend rebuild or container smoke test failed. VPS deployment remains blocked."
+            exit 1
+          fi
+
+          gh issue edit "$ISSUE_NUMBER" --add-label ready-for-vps >/dev/null
+          for label in candidate-testing ui-review-required sync-failed; do
+            gh issue edit "$ISSUE_NUMBER" --remove-label "$label" >/dev/null 2>&1 || true
+          done
+          comment_file=$(mktemp)
+          {
+            echo "Remote validation completed for $RELEASE_TAG."
+            echo
+            echo "- Final commit: \`$FINAL_SHA\`"
+            echo "- Private frontend image: \`ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sub2api-frontend@$IMAGE_DIGEST\`"
+            echo "- Status: \`ready-for-vps\`"
+            echo
+            echo "No VPS connection or deployment was attempted. Deployment still requires explicit approval and a verified pre-deployment backup."
+          } > "$comment_file"
+          gh issue comment "$ISSUE_NUMBER" --body-file "$comment_file"

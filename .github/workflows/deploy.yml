@@ -19,6 +19,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     environment:
       name: production
       url: https://aifoo.cc.cd/login
@@ -53,6 +54,9 @@ jobs:
             -i "$RUNNER_TEMP/ssh/id_ed25519" \
             -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
             -o IdentitiesOnly=yes \
+            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=3 \
             "$VPS_USER@$VPS_HOST" \
             "sudo /usr/local/sbin/deploy-sub2api-frontend login '$GITHUB_ACTOR'"
 
@@ -66,12 +70,42 @@ jobs:
             -i "$RUNNER_TEMP/ssh/id_ed25519" \
             -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
             -o IdentitiesOnly=yes \
+            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=3 \
             "$VPS_USER@$VPS_HOST" \
             "sudo /usr/local/sbin/deploy-sub2api-frontend stage '$IMAGE_DIGEST'"
 
-      - name: Deploy the staged digest
+      - name: Back up the current frontend
+        id: backup
         env:
           IMAGE_DIGEST: ${{ inputs.image_digest }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          output=$(ssh \
+            -i "$RUNNER_TEMP/ssh/id_ed25519" \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -o IdentitiesOnly=yes \
+            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=3 \
+            "$VPS_USER@$VPS_HOST" \
+            "sudo /usr/local/sbin/deploy-sub2api-frontend backup '$IMAGE_DIGEST'")
+          printf '%s\n' "$output"
+          backup_id=$(printf '%s\n' "$output" | sed -n 's/^backup_id=//p' | tail -n 1)
+          if ! printf '%s' "$backup_id" \
+            | grep -Eq '^[0-9]{8}-[0-9]{6}-[A-Za-z0-9]{6}-source-ui-frontend$'; then
+            echo "The VPS did not return a valid verified backup ID" >&2
+            exit 1
+          fi
+          echo "backup_id=$backup_id" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy the staged digest after verified backup
+        id: deploy
+        env:
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+          BACKUP_ID: ${{ steps.backup.outputs.backup_id }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
@@ -79,8 +113,11 @@ jobs:
             -i "$RUNNER_TEMP/ssh/id_ed25519" \
             -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
             -o IdentitiesOnly=yes \
+            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=3 \
             "$VPS_USER@$VPS_HOST" \
-            "sudo /usr/local/sbin/deploy-sub2api-frontend deploy '$IMAGE_DIGEST'"
+            "sudo /usr/local/sbin/deploy-sub2api-frontend deploy '$IMAGE_DIGEST' '$BACKUP_ID'"
 
       - name: Remove staging container
         if: always()
@@ -92,6 +129,9 @@ jobs:
             -i "$RUNNER_TEMP/ssh/id_ed25519" \
             -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
             -o IdentitiesOnly=yes \
+            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=3 \
             "$VPS_USER@$VPS_HOST" \
             "sudo /usr/local/sbin/deploy-sub2api-frontend cleanup-stage" || true
 
@@ -105,14 +145,17 @@ jobs:
             -i "$RUNNER_TEMP/ssh/id_ed25519" \
             -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
             -o IdentitiesOnly=yes \
+            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=3 \
             "$VPS_USER@$VPS_HOST" \
             "sudo /usr/local/sbin/deploy-sub2api-frontend logout" || true
 
       - name: Public smoke checks
         run: |
-          curl --fail --silent --show-error https://aifoo.cc.cd/frontend-health | grep -q '"status":"ok"'
-          curl --fail --silent --show-error https://aifoo.cc.cd/health | grep -q '"status":"ok"'
-          login_html=$(curl --fail --silent --show-error https://aifoo.cc.cd/login)
+          curl --fail --silent --show-error --connect-timeout 5 --max-time 15 https://aifoo.cc.cd/frontend-health | grep -q '"status":"ok"'
+          curl --fail --silent --show-error --connect-timeout 5 --max-time 15 https://aifoo.cc.cd/health | grep -q '"status":"ok"'
+          login_html=$(curl --fail --silent --show-error --connect-timeout 5 --max-time 15 https://aifoo.cc.cd/login)
           printf '%s' "$login_html" | grep -q '<div id="app"></div>'
           if printf '%s' "$login_html" | grep -Eq 'shell-bootstrap|console-override|auth-override|auth-preload|auth-theme-toggle'; then
             echo "Legacy override reference detected in production HTML" >&2
@@ -120,6 +163,33 @@ jobs:
           fi
 
           for legacy_asset in shell-bootstrap.js console-override.js console-override.css auth-override.js auth-override.css auth-preload.js auth-theme-toggle.js; do
-            status=$(curl --silent --output /dev/null --write-out '%{http_code}' "https://aifoo.cc.cd/$legacy_asset")
+            status=$(curl --silent --output /dev/null --write-out '%{http_code}' --connect-timeout 5 --max-time 15 "https://aifoo.cc.cd/$legacy_asset")
             test "$status" = "404"
           done
+
+      - name: Restore the backup after a failed deployment check
+        if: failure() && steps.backup.outputs.backup_id != ''
+        env:
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+          BACKUP_ID: ${{ steps.backup.outputs.backup_id }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh \
+            -i "$RUNNER_TEMP/ssh/id_ed25519" \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -o IdentitiesOnly=yes \
+            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=3 \
+            "$VPS_USER@$VPS_HOST" \
+            "sudo /usr/local/sbin/deploy-sub2api-frontend restore '$IMAGE_DIGEST' '$BACKUP_ID'"
+
+          curl --fail --silent --show-error --connect-timeout 5 --max-time 15 \
+            https://aifoo.cc.cd/health | grep -q '"status":"ok"'
+          landing_html=$(curl --fail --location --silent --show-error \
+            --connect-timeout 5 --max-time 15 https://aifoo.cc.cd/)
+          test -n "$landing_html"
+          login_html=$(curl --fail --location --silent --show-error \
+            --connect-timeout 5 --max-time 15 https://aifoo.cc.cd/login)
+          test -n "$login_html"

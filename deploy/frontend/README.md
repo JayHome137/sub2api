@@ -4,11 +4,18 @@
 
 ## 分支
 
-- `main`：官方 `Wei-Shaw/sub2api` 主分支镜像。
 - `production`：AIFoo 生产代码。
-- `upgrade/vX.Y.Z`：由 `upstream-sync.yml` 创建的官方稳定版升级候选。
+- `upgrade/vX.Y.Z`：由 `upstream-sync.yml` 从官方正式 Release tag 创建的升级候选。
 
-上游版本只通过 Pull Request 进入 `production`。合并后 `validate.yml` 生成候选镜像；生成镜像不会自动部署。
+`upstream-sync.yml` 每 6 小时查询一次 `Wei-Shaw/sub2api` 最新正式 Release，不同步官方 `main`、draft 或 prerelease。候选分支依次运行 CI、安全扫描、AIFoo 测试、生产构建与容器 smoke test：
+
+- 没有 UI 相关路径变更时，验证通过后自动合入 `production`，对最终提交重新验证并生成私有前端镜像。
+- `frontend/`、`deploy/frontend/`、`docs/legal/`、`backend/internal/web/` 或可能改变前端 API 契约的后端路径发生变化时，PR 保留等待 AIFoo UI 检查，不自动合并或发布镜像。
+- UI 适配和人工检查完成后，手动运行同步工作流并设置 `retry_existing=true`、`approve_ui=true`；工作流会重新验证精确候选 SHA 和未变化的 `production` 基线后才允许合并。
+- 若 `production` 已更新但最终 Runner、Artifact 或 GHCR 发布失败，后续定时检查会在候选分支仍精确指向当前 `production` 时自动重跑最终构建和发布；也可手动设置 `retry_final=true`。
+- 每个新 Release 创建一个分配给仓库所有者的 Issue，使用 `candidate-testing`、`ui-review-required`、`sync-failed` 和 `ready-for-vps` 标记进度。
+
+所有自动化只构建 `deploy/frontend/Dockerfile`。后端差异参与兼容性测试，但不会生成或部署后端镜像。镜像生成不会自动部署到 VPS。
 
 ## 验证
 
@@ -19,11 +26,12 @@ cd frontend
 corepack pnpm@10.28.2 install --frozen-lockfile
 corepack pnpm@10.28.2 run lint:check
 corepack pnpm@10.28.2 run typecheck
+corepack pnpm@10.28.2 exec vitest run
 corepack pnpm@10.28.2 run test:e2e
 corepack pnpm@10.28.2 run build
 ```
 
-GitHub Actions 额外运行官方关键 Vitest、AIFoo 集成测试、桌面与移动端 Playwright，并构建 `ghcr.io/jayhome137/sub2api-frontend`。
+GitHub Actions 运行官方关键 Vitest、AIFoo 集成测试、全量 Vitest、桌面与移动端 Playwright。前端镜像通过容器 smoke test 后才推送到私有 `ghcr.io/jayhome137/sub2api-frontend`。
 
 ## 部署与回滚
 
@@ -32,8 +40,11 @@ GitHub Actions 额外运行官方关键 Vitest、AIFoo 集成测试、桌面与�
 1. 拉取并核对指定 digest。
 2. 在 `127.0.0.1:18080` 启动带固定标签的隔离候选容器。
 3. 验证 Landing、SPA、后端代理和旧 override 资源的 `404`，通过后才进入生产部署。
-4. 备份 Compose 与旧 Landing，只重建 `frontend` service。
-5. 验证生产前端和后端健康状态，失败时恢复原 Compose 并重建旧前端。
-6. 无论部署成功或失败都清理候选容器。
+4. 显式执行 `backup <digest>`，把运行容器快照、实际 Nginx 配置和 HTML 封装成唯一的回滚镜像，同时备份 Compose、旧 Landing 与容器元数据，并校验 `SHA256SUMS`。前端挂载只能位于 `/etc/nginx` 或 `/usr/share/nginx/html`，出现其他挂载时拒绝继续。
+5. 备份记录旧版、候选和回滚三份 Compose 的 SHA-256。`deploy <digest> <backup-id>` 仅接受与候选 digest、当前镜像和当前 Compose 精确匹配的备份，并写入本次部署状态后只重建 `frontend` service。
+6. 候选镜像必须通过 Docker HEALTHCHECK、`/frontend-health`、后端代理和关键路由验证。旧版或回滚镜像允许没有 Docker HEALTHCHECK 和 `/frontend-health`，但仍必须处于 `running` 并通过 `/health`、Landing 与登录路由验证。
+7. 部署失败或 SSH 命令被中断时，载入已验证的回滚镜像并恢复旧前端。`restore` 只接受备份记录的精确镜像、Compose 和部署状态；已经处于旧版或回滚状态时只验证，不重复重建。
+8. 公网 smoke test 失败时，Actions 调用 `restore <digest> <backup-id>`，随后再次从公网验证 `/health`、Landing 与 `/login`。
+9. 无论部署成功或失败都清理候选容器。
 
 后端、PostgreSQL 和 Redis 不在此部署脚本的修改范围内。
