@@ -55,7 +55,17 @@ export default {
     deployScript: '脚本部署',
     deployDocker: 'Docker',
     dockerEditCompose: '修改 docker-compose.yml 中的镜像版本',
-    dockerRecreate: '重新创建容器'
+    dockerRecreate: '重新创建容器',
+    upgradeStatus: 'AIFoo 升级状态',
+    checkingRelease: '正在检查官方稳定版...',
+    stableReleaseDetected: '检测到新的官方稳定版',
+    noStableReleaseDetected: '暂未检测到新的官方稳定版',
+    statusUnavailable: '升级状态暂时不可用',
+    statusUnavailableHint: '无法确认远端状态，请前往私有 GitHub 查看，勿将此状态视为已是最新版。',
+    githubStatusHint: '候选验证、UI 审批和镜像状态以私有 GitHub Issue 标签为准。',
+    viewGithubStatus: '查看 GitHub 升级状态',
+    viewOfficialRelease: '查看官方 Release',
+    manualDeploymentRequired: '升级验证不会自动部署到 VPS，生产替换仍需人工批准。'
   },
 
   // Recharge / Subscription Page

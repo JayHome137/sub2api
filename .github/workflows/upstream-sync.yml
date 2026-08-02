@@ -70,6 +70,8 @@ jobs:
           RETRY_EXISTING: ${{ inputs.retry_existing }}
           APPROVE_UI: ${{ inputs.approve_ui }}
           RETRY_FINAL: ${{ inputs.retry_final }}
+          REQUEST_ACTOR: ${{ github.actor }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
 
@@ -88,6 +90,10 @@ jobs:
 
           if [ "$APPROVE_UI" = "true" ] && [ "$RETRY_EXISTING" != "true" ]; then
             echo "approve_ui=true requires retry_existing=true" >&2
+            exit 1
+          fi
+          if [ "$APPROVE_UI" = "true" ] && [ "$REQUEST_ACTOR" != "$REPOSITORY_OWNER" ]; then
+            echo "Only the repository owner can approve an AIFoo UI candidate" >&2
             exit 1
           fi
           if [ "$RETRY_FINAL" = "true" ] \
@@ -406,7 +412,7 @@ jobs:
           SECURITY_RESULT: ${{ needs.candidate_security.result }}
           FRONTEND_RESULT: ${{ needs.candidate_frontend.result }}
           UI_RELATED: ${{ needs.prepare.outputs.ui_related }}
-          UI_APPROVED: ${{ github.event_name == 'workflow_dispatch' && inputs.approve_ui == true }}
+          UI_APPROVED: ${{ github.event_name == 'workflow_dispatch' && inputs.approve_ui == true && github.actor == github.repository_owner }}
           ISSUE_NUMBER: ${{ needs.prepare.outputs.issue_number }}
           PR_NUMBER: ${{ needs.prepare.outputs.pr_number }}
           BASE_SHA: ${{ needs.prepare.outputs.base_sha }}

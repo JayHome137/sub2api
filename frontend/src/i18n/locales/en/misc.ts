@@ -56,7 +56,20 @@ export default {
     deployScript: 'Script',
     deployDocker: 'Docker',
     dockerEditCompose: 'Edit the image tag in docker-compose.yml',
-    dockerRecreate: 'Recreate the container'
+    dockerRecreate: 'Recreate the container',
+    upgradeStatus: 'AIFoo Upgrade Status',
+    checkingRelease: 'Checking the official stable release...',
+    stableReleaseDetected: 'New official stable release detected',
+    noStableReleaseDetected: 'No new official stable release detected',
+    statusUnavailable: 'Upgrade status is unavailable',
+    statusUnavailableHint:
+      'The remote status could not be confirmed. Check the private GitHub repository; do not treat this as up to date.',
+    githubStatusHint:
+      'Candidate validation, UI approval, and image status are tracked by labels in the private GitHub issue.',
+    viewGithubStatus: 'View GitHub Upgrade Status',
+    viewOfficialRelease: 'View Official Release',
+    manualDeploymentRequired:
+      'Upgrade validation never deploys to the VPS automatically. Production replacement still requires manual approval.'
   },
 
   // Recharge / Subscription Page

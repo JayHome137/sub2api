@@ -44,6 +44,10 @@ require_text "$SYNC_WORKFLOW" "prerelease"
 require_text "$SYNC_WORKFLOW" "ui-review-required"
 require_text "$SYNC_WORKFLOW" "backend_contract=true"
 require_text "$SYNC_WORKFLOW" "approve_ui"
+require_text "$SYNC_WORKFLOW" 'REQUEST_ACTOR: ${{ github.actor }}'
+require_text "$SYNC_WORKFLOW" 'REPOSITORY_OWNER: ${{ github.repository_owner }}'
+require_text "$SYNC_WORKFLOW" 'Only the repository owner can approve an AIFoo UI candidate'
+require_text "$SYNC_WORKFLOW" 'github.actor == github.repository_owner'
 require_text "$SYNC_WORKFLOW" "retry_final"
 require_text "$SYNC_WORKFLOW" 'current_base=$(gh api'
 require_text "$SYNC_WORKFLOW" 'git merge-base --is-ancestor "$release_commit" "$candidate_sha"'
