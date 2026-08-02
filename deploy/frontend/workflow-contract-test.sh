@@ -7,6 +7,7 @@ set -eu
 ROOT=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd)
 SYNC_WORKFLOW=$ROOT/.github/workflows/upstream-sync.yml
 VALIDATE_WORKFLOW=$ROOT/.github/workflows/validate.yml
+RELEASE_WORKFLOW=$ROOT/.github/workflows/release.yml
 DEPLOY_WORKFLOW=$ROOT/.github/workflows/deploy.yml
 PREFLIGHT_WORKFLOW=$ROOT/.github/workflows/preflight.yml
 DEPLOY_HELPER=$ROOT/deploy/frontend/deploy-frontend.sh
@@ -69,6 +70,17 @@ require_text "$VALIDATE_WORKFLOW" "Run deployment backup and restore integration
 if grep -Fq "file: Dockerfile" "$VALIDATE_WORKFLOW"; then
   fail "AIFoo validation must not build the full backend image"
 fi
+
+require_text "$RELEASE_WORKFLOW" "workflow_dispatch:"
+require_text "$RELEASE_WORKFLOW" "uses: ./.github/workflows/validate.yml"
+require_text "$RELEASE_WORKFLOW" "publish_image: true"
+require_text "$RELEASE_WORKFLOW" 'checkout_ref: ${{ github.sha }}'
+reject_text "$RELEASE_WORKFLOW" "push:"
+reject_text "$RELEASE_WORKFLOW" "tags:"
+reject_text "$RELEASE_WORKFLOW" "goreleaser"
+reject_text "$RELEASE_WORKFLOW" "DockerHub"
+reject_text "$RELEASE_WORKFLOW" "backend/"
+reject_text "$RELEASE_WORKFLOW" "contents: write"
 
 require_text "$ROOT_DOCKERFILE" 'frontend/pnpm-workspace.yaml'
 require_text "$DEPLOY_DOCKERFILE" 'frontend/pnpm-workspace.yaml'
