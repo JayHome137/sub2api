@@ -1,0 +1,76 @@
+name: VPS Read-only Preflight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-frontend-preflight
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure restricted SSH key
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
+        run: |
+          install -d -m 700 "$RUNNER_TEMP/ssh"
+          printf '%s\n' "$VPS_SSH_KEY" > "$RUNNER_TEMP/ssh/id_ed25519"
+          chmod 600 "$RUNNER_TEMP/ssh/id_ed25519"
+          printf '%s\n' "$VPS_HOST_KEY" > "$RUNNER_TEMP/ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/ssh/known_hosts"
+
+      - name: Run read-only VPS preflight
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          expected_helper_sha=$(sha256sum deploy/frontend/deploy-frontend.sh | awk '{print $1}')
+
+          set +e
+          preflight_output=$(ssh \
+            -i "$RUNNER_TEMP/ssh/id_ed25519" \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=3 \
+            "$VPS_USER@$VPS_HOST" \
+            "EXPECTED_HELPER_SHA='$expected_helper_sha' bash --noprofile --norc -s" \
+            < deploy/frontend/preflight-frontend.sh 2>&1)
+          preflight_status=$?
+          set -e
+
+          printf '%s\n' "$preflight_output"
+          preflight_result=$(printf '%s\n' "$preflight_output" \
+            | sed -n 's/^preflight_result=//p' \
+            | tail -n 1)
+          blocker_count=$(printf '%s\n' "$preflight_output" \
+            | sed -n 's/.*blocker_count=\([0-9][0-9]*\).*/\1/p' \
+            | tail -n 1)
+
+          {
+            echo "### VPS read-only preflight"
+            echo
+            echo "- Result: \`${preflight_result:-ssh-failed}\`"
+            echo "- Blockers: \`${blocker_count:-unknown}\`"
+            echo "- Remote files created: \`0\`"
+            echo "- Containers changed: \`0 expected\`"
+            echo "- Services restarted: \`0 expected\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$preflight_status" -ne 0 ] \
+            || [ "$preflight_result" != "ready" ]; then
+            echo "VPS preflight blocked deployment; no remote changes were attempted" >&2
+            exit 1
+          fi

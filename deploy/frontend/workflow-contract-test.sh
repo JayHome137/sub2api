@@ -8,7 +8,9 @@ ROOT=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd)
 SYNC_WORKFLOW=$ROOT/.github/workflows/upstream-sync.yml
 VALIDATE_WORKFLOW=$ROOT/.github/workflows/validate.yml
 DEPLOY_WORKFLOW=$ROOT/.github/workflows/deploy.yml
+PREFLIGHT_WORKFLOW=$ROOT/.github/workflows/preflight.yml
 DEPLOY_HELPER=$ROOT/deploy/frontend/deploy-frontend.sh
+PREFLIGHT_HELPER=$ROOT/deploy/frontend/preflight-frontend.sh
 DOCKER_INTEGRATION=$ROOT/deploy/frontend/docker-workflow-integration-test.sh
 
 fail() {
@@ -99,6 +101,49 @@ require_text "$DEPLOY_WORKFLOW" 'steps.backup.outputs.backup_id'
 require_text "$DEPLOY_WORKFLOW" 'Restore the backup after a failed deployment check'
 require_text "$DEPLOY_WORKFLOW" 'deploy-sub2api-frontend restore'
 require_text "$DEPLOY_WORKFLOW" 'landing_html=$(curl --fail --location'
+
+bash -n "$PREFLIGHT_HELPER"
+require_text "$PREFLIGHT_WORKFLOW" 'workflow_dispatch:'
+require_text "$PREFLIGHT_WORKFLOW" 'permissions:'
+require_text "$PREFLIGHT_WORKFLOW" 'contents: read'
+require_text "$PREFLIGHT_WORKFLOW" 'Run read-only VPS preflight'
+require_text "$PREFLIGHT_WORKFLOW" '< deploy/frontend/preflight-frontend.sh'
+require_text "$PREFLIGHT_WORKFLOW" 'EXPECTED_HELPER_SHA='
+require_text "$PREFLIGHT_HELPER" 'preflight_result=blocked'
+require_text "$PREFLIGHT_HELPER" 'preflight_result=ready'
+require_text "$PREFLIGHT_HELPER" 'compose_unchanged='
+require_text "$PREFLIGHT_HELPER" 'containers_unchanged='
+require_text "$PREFLIGHT_HELPER" 'services_unchanged='
+
+for forbidden_preflight_command in \
+  'docker pull' \
+  'docker push' \
+  'docker run' \
+  'docker exec' \
+  'docker cp' \
+  'docker login' \
+  'docker logout' \
+  'docker compose up' \
+  'docker-compose up' \
+  'systemctl restart' \
+  'systemctl reload' \
+  'systemctl start' \
+  'systemctl stop' \
+  'service restart' \
+  'mkdir' \
+  'install' \
+  'touch' \
+  'truncate' \
+  'chmod' \
+  'chown' \
+  'rm' \
+  'mv' \
+  'cp'; do
+  if grep -Eq -- "(^|[[:space:];|&])${forbidden_preflight_command}([[:space:]]|$)" \
+    "$PREFLIGHT_HELPER"; then
+    fail "read-only preflight contains forbidden command: $forbidden_preflight_command"
+  fi
+done
 
 TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/aifoo-deploy-contract.XXXXXX")
 cleanup_test_root() {

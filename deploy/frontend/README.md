@@ -33,6 +33,12 @@ corepack pnpm@10.28.2 run build
 
 GitHub Actions 运行官方关键 Vitest、AIFoo 集成测试、全量 Vitest、桌面与移动端 Playwright。随后使用临时本地 Registry、旧版无 HEALTHCHECK 的 Nginx 前端和真实 Docker Compose，执行完整的 `stage -> backup -> deploy -> restore` 集成测试；全部通过后才把同一前端镜像推送到私有 `ghcr.io/jayhome137/sub2api-frontend`。
 
+## VPS 只读预检
+
+`VPS Read-only Preflight` 只能手动触发。工作流通过 SSH 标准输入直接执行 `preflight-frontend.sh`，不使用 `scp`，不在 VPS 创建脚本或临时文件，也不会拉取镜像、启动容器、备份、重启服务或修改配置。它检查主机资源、Docker/Compose、服务和容器状态、前端挂载、内部健康端点、staging 端口，以及 root 持有的部署 helper 是否与仓库 SHA-256 一致。
+
+任何阻断项都会让工作流失败。部署 helper 缺失、权限不安全或哈希不一致时，只报告问题；安装或更新 helper 必须等到用户另行授权。
+
 ## 部署与回滚
 
 `deploy.yml` 只接受完整的 `sha256:` 镜像 digest。VPS 上的受限用户只能调用 root 持有的 `deploy-frontend.sh` 规定命令；脚本会：
