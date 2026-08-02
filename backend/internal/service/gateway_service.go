@@ -258,10 +258,7 @@ func shortSessionHash(sessionHash string) string {
 	if sessionHash == "" {
 		return ""
 	}
-	if len(sessionHash) <= 8 {
-		return sessionHash
-	}
-	return sessionHash[:8]
+	return "[redacted]"
 }
 
 func redactAuthHeaderValue(v string) string {
@@ -808,16 +805,15 @@ func (s *GatewayService) GenerateSessionHash(parsed *ParsedRequest) string {
 	if parsed.MetadataUserID != "" {
 		uid := ParseMetadataUserID(parsed.MetadataUserID)
 		if uid != nil && uid.SessionID != "" {
-			slog.Info("sticky.hash_source",
+			slog.Debug("sticky.hash_source",
 				"source", "metadata_user_id",
-				"session_id", uid.SessionID,
-				"device_id", uid.DeviceID,
+				"has_device_id", uid.DeviceID != "",
 				"is_new_format", uid.IsNewFormat,
 			)
 			return uid.SessionID
 		}
-		slog.Info("sticky.hash_metadata_parse_failed",
-			"metadata_user_id", parsed.MetadataUserID,
+		slog.Debug("sticky.hash_metadata_parse_failed",
+			"metadata_user_id_len", len(parsed.MetadataUserID),
 			"parsed_nil", uid == nil,
 		)
 	}
@@ -826,9 +822,9 @@ func (s *GatewayService) GenerateSessionHash(parsed *ParsedRequest) string {
 	cacheableContent := s.extractCacheableContent(parsed)
 	if cacheableContent != "" {
 		hash := s.hashContent(cacheableContent)
-		slog.Info("sticky.hash_source",
+		slog.Debug("sticky.hash_source",
 			"source", "cacheable_content",
-			"hash", hash,
+			"content_len", len(cacheableContent),
 		)
 		return hash
 	}
@@ -854,9 +850,8 @@ func (s *GatewayService) GenerateSessionHash(parsed *ParsedRequest) string {
 	}
 	if combined.Len() > 0 {
 		hash := s.hashContent(combined.String())
-		slog.Info("sticky.hash_source",
+		slog.Debug("sticky.hash_source",
 			"source", "message_content_fallback",
-			"hash", hash,
 			"content_len", combined.Len(),
 		)
 		return hash
