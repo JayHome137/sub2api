@@ -92,6 +92,8 @@ func TestStickyServiceLogsDoNotUseIdentifyingFields(t *testing.T) {
 	require.Contains(t, schedulingText, `"has_group", groupID != nil`)
 	require.Contains(t, schedulingText, `"has_session_hash", sessionHash != ""`)
 	require.Contains(t, schedulingText, `"has_sticky_account", stickyAccountID > 0`)
+	require.NotContains(t, schedulingText, "set session account failed: session=%s")
+	require.Equal(t, 4, strings.Count(schedulingText, "set session account failed: has_session=%t"))
 }
 
 func TestShortSessionHashRedactsEveryNonEmptyIdentifier(t *testing.T) {

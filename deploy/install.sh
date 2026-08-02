@@ -473,11 +473,28 @@ check_dependencies() {
         missing+=("tar")
     fi
 
+    if [ "${OS:-}" = "darwin" ]; then
+        if ! command -v shasum &> /dev/null; then
+            missing+=("shasum")
+        fi
+    elif ! command -v sha256sum &> /dev/null; then
+        missing+=("sha256sum")
+    fi
+
     if [ ${#missing[@]} -gt 0 ]; then
         print_error "$(msg 'missing_deps'): ${missing[*]}"
         print_info "$(msg 'install_deps_first')"
         exit 1
     fi
+}
+
+calculate_sha256() {
+    local file="$1"
+    if [ "${OS:-}" = "darwin" ]; then
+        shasum -a 256 "$file" | awk '{print $1}'
+        return
+    fi
+    sha256sum "$file" | awk '{print $1}'
 }
 
 # Authenticate only GitHub REST API requests. Release asset downloads must stay anonymous.
@@ -655,12 +672,11 @@ download_and_extract() {
         exit 1
     fi
 
-    local checksum_output
-    if ! checksum_output=$(sha256sum "$TEMP_DIR/$archive_name"); then
+    local actual_checksum
+    if ! actual_checksum=$(calculate_sha256 "$TEMP_DIR/$archive_name"); then
         print_error "$(msg 'checksum_failed')"
         exit 1
     fi
-    local actual_checksum=${checksum_output%%[[:space:]]*}
     if [[ ! "$actual_checksum" =~ ^[[:xdigit:]]{64}$ ]] || [ "$expected_checksum" != "$actual_checksum" ]; then
         print_error "$(msg 'checksum_failed')"
         print_error "Expected: $expected_checksum"
