@@ -32,6 +32,7 @@ COPY --from=frontend-builder /workspace/backend/internal/web/dist/ /usr/share/ng
 RUN mv /usr/share/nginx/html/index.html /usr/share/nginx/html/app.html
 
 COPY deploy/frontend/landing/ /usr/share/nginx/html/
+COPY deploy/frontend/security-headers.conf /etc/nginx/snippets/aifoo-security-headers.conf
 COPY deploy/frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
 RUN nginx -t

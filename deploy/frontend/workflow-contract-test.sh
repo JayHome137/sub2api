@@ -8,10 +8,13 @@ ROOT=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd)
 SYNC_WORKFLOW=$ROOT/.github/workflows/upstream-sync.yml
 VALIDATE_WORKFLOW=$ROOT/.github/workflows/validate.yml
 RELEASE_WORKFLOW=$ROOT/.github/workflows/release.yml
+BACKEND_CI_WORKFLOW=$ROOT/.github/workflows/backend-ci.yml
 DEPLOY_WORKFLOW=$ROOT/.github/workflows/deploy.yml
 PREFLIGHT_WORKFLOW=$ROOT/.github/workflows/preflight.yml
 DEPLOY_HELPER=$ROOT/deploy/frontend/deploy-frontend.sh
 DOCKER_INTEGRATION=$ROOT/deploy/frontend/docker-workflow-integration-test.sh
+NGINX_CONFIG=$ROOT/deploy/frontend/nginx.conf
+SECURITY_HEADERS=$ROOT/deploy/frontend/security-headers.conf
 ROOT_DOCKERFILE=$ROOT/Dockerfile
 DEPLOY_DOCKERFILE=$ROOT/deploy/Dockerfile
 FRONTEND_DOCKERFILE=$ROOT/deploy/frontend/Dockerfile
@@ -72,7 +75,9 @@ if grep -Fq "file: Dockerfile" "$VALIDATE_WORKFLOW"; then
 fi
 
 require_text "$RELEASE_WORKFLOW" "workflow_dispatch:"
+require_text "$RELEASE_WORKFLOW" "uses: ./.github/workflows/security-scan.yml"
 require_text "$RELEASE_WORKFLOW" "uses: ./.github/workflows/validate.yml"
+require_text "$RELEASE_WORKFLOW" "needs: security"
 require_text "$RELEASE_WORKFLOW" "publish_image: true"
 require_text "$RELEASE_WORKFLOW" 'checkout_ref: ${{ github.sha }}'
 reject_text "$RELEASE_WORKFLOW" "push:"
@@ -88,6 +93,13 @@ require_text "$FRONTEND_DOCKERFILE" 'frontend/pnpm-workspace.yaml'
 require_text "$ROOT_DOCKERFILE" 'pnpm@10.28.2'
 require_text "$DEPLOY_DOCKERFILE" 'pnpm@10.28.2'
 require_text "$FRONTEND_DOCKERFILE" 'pnpm@10.28.2'
+require_text "$FRONTEND_DOCKERFILE" 'security-headers.conf /etc/nginx/snippets/aifoo-security-headers.conf'
+require_text "$NGINX_CONFIG" 'include /etc/nginx/snippets/aifoo-security-headers.conf;'
+require_text "$SECURITY_HEADERS" 'X-Frame-Options "DENY"'
+require_text "$SECURITY_HEADERS" 'Content-Security-Policy-Report-Only'
+require_text "$VALIDATE_WORKFLOW" 'assert_security_headers'
+require_text "$BACKEND_CI_WORKFLOW" 'deploy/tests/install-checksum-test.sh'
+require_text "$BACKEND_CI_WORKFLOW" 'deploy/tests/install-github-token-test.sh'
 
 sh -n "$DOCKER_INTEGRATION"
 if command -v dash >/dev/null 2>&1; then
