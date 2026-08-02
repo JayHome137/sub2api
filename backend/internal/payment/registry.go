@@ -8,8 +8,9 @@ import (
 
 // Registry is a thread-safe registry mapping PaymentType to Provider.
 type Registry struct {
-	mu        sync.RWMutex
-	providers map[PaymentType]Provider
+	mu             sync.RWMutex
+	providers      map[PaymentType]Provider
+	providersByKey map[string]Provider
 }
 
 // ErrProviderNotFound is returned when a requested payment provider is not registered.
@@ -18,7 +19,8 @@ var ErrProviderNotFound = infraerrors.NotFound("PROVIDER_NOT_FOUND", "payment pr
 // NewRegistry creates a new empty provider registry.
 func NewRegistry() *Registry {
 	return &Registry{
-		providers: make(map[PaymentType]Provider),
+		providers:      make(map[PaymentType]Provider),
+		providersByKey: make(map[string]Provider),
 	}
 }
 
@@ -30,6 +32,9 @@ func (r *Registry) Register(p Provider) {
 	for _, t := range p.SupportedTypes() {
 		r.providers[t] = p
 	}
+	// Provider keys are used by persisted orders and webhook routing. Keep an
+	// explicit last-registration-wins index instead of depending on map order.
+	r.providersByKey[p.ProviderKey()] = p
 }
 
 // GetProvider returns the provider registered for the given payment type.
@@ -43,16 +48,15 @@ func (r *Registry) GetProvider(t PaymentType) (Provider, error) {
 	return p, nil
 }
 
-// GetProviderByKey returns the first provider whose ProviderKey matches the given key.
+// GetProviderByKey returns the provider most recently registered for the key.
 func (r *Registry) GetProviderByKey(key string) (Provider, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	for _, p := range r.providers {
-		if p.ProviderKey() == key {
-			return p, nil
-		}
+	p, ok := r.providersByKey[key]
+	if !ok {
+		return nil, ErrProviderNotFound
 	}
-	return nil, ErrProviderNotFound
+	return p, nil
 }
 
 // GetProviderKey returns the provider key for the given payment type, or empty string if not found.
@@ -82,4 +86,5 @@ func (r *Registry) Clear() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.providers = make(map[PaymentType]Provider)
+	r.providersByKey = make(map[string]Provider)
 }

@@ -218,6 +218,18 @@ jobs:
           curl --fail --silent --show-error --connect-timeout 2 --max-time 5 "$base_url/health" | grep -q '"status":"ok"'
           curl --fail --silent --show-error --connect-timeout 2 --max-time 5 "$base_url/" | grep -q 'AIFoo'
 
+          assert_security_headers() {
+            headers=$(curl --fail --silent --show-error --dump-header - --output /dev/null --connect-timeout 2 --max-time 5 "$1" | tr -d '\r')
+            printf '%s\n' "$headers" | grep -Eqi '^X-Content-Type-Options: nosniff$'
+            printf '%s\n' "$headers" | grep -Eqi '^Referrer-Policy: strict-origin-when-cross-origin$'
+            printf '%s\n' "$headers" | grep -Eqi '^X-Frame-Options: DENY$'
+            printf '%s\n' "$headers" | grep -Eqi '^Content-Security-Policy-Report-Only:'
+          }
+
+          for route in / /login /aifoo-docs-api-scripts.js /health; do
+            assert_security_headers "$base_url$route"
+          done
+
           for route in login admin/dashboard custom/preflight; do
             page=$(curl --fail --silent --show-error --connect-timeout 2 --max-time 5 "$base_url/$route")
             printf '%s' "$page" | grep -q '<div id="app"></div>'

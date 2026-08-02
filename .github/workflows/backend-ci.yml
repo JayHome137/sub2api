@@ -28,6 +28,8 @@ jobs:
           /bin/sh deploy/tests/docker-compose-security-test.sh
           /bin/sh deploy/tests/docker-runtime-resources-test.sh
           /bin/sh deploy/test-caddyfile-cache.sh
+          /bin/bash deploy/tests/install-checksum-test.sh
+          /bin/bash deploy/tests/install-github-token-test.sh
           /bin/sh deploy/frontend/workflow-contract-test.sh
 
   test:

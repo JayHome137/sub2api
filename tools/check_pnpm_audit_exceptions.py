@@ -8,7 +8,15 @@ from datetime import date
 
 
 HIGH_SEVERITIES = {"high", "critical"}
-REQUIRED_FIELDS = {"package", "advisory", "severity", "mitigation", "expires_on"}
+REQUIRED_FIELDS = {
+    "package",
+    "advisory",
+    "severity",
+    "mitigation",
+    "expires_on",
+    "owner",
+}
+PLACEHOLDER_OWNER_MARKERS = ("your-domain", "example.com", "todo", "tbd")
 
 
 def split_kv(line: str) -> tuple[str, str]:
@@ -151,6 +159,11 @@ def parse_date(value: str) -> date | None:
         return None
 
 
+def is_placeholder_owner(value: str) -> bool:
+    owner = (value or "").strip().lower()
+    return not owner or any(marker in owner for marker in PLACEHOLDER_OWNER_MARKERS)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--audit", required=True)
@@ -175,6 +188,11 @@ def main() -> int:
         exc_severity = normalize_severity(exc.get("severity"))
         exc_package = normalize_package(exc.get("package"))
         exc_advisory = normalize_advisory(exc.get("advisory"))
+        if is_placeholder_owner(exc.get("owner")):
+            errors.append(
+                f"Exception has placeholder owner: {exc.get('package', '<unknown>')}"
+            )
+            continue
         exc_date = parse_date(exc.get("expires_on"))
         if exc_date is None:
             errors.append(

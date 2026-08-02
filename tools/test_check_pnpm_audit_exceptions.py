@@ -37,6 +37,11 @@ class AuditPolicyTest(unittest.TestCase):
         self.assertTrue(vulnerabilities[0][4])
         self.assertFalse(vulnerabilities[1][4])
 
+    def test_rejects_placeholder_exception_owners(self):
+        self.assertTrue(checker.is_placeholder_owner("security@your-domain"))
+        self.assertTrue(checker.is_placeholder_owner("TODO"))
+        self.assertFalse(checker.is_placeholder_owner("JayHome137"))
+
 
 if __name__ == "__main__":
     unittest.main()

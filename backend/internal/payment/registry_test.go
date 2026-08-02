@@ -98,6 +98,30 @@ func TestRegistryGetProviderByKeyNotFound(t *testing.T) {
 	}
 }
 
+func TestRegistryGetProviderByKeyUsesLastRegistration(t *testing.T) {
+	t.Parallel()
+	r := NewRegistry()
+
+	r.Register(&mockProvider{
+		name:           "OldEasyPay",
+		key:            "easypay",
+		supportedTypes: []PaymentType{TypeAlipay},
+	})
+	r.Register(&mockProvider{
+		name:           "NewEasyPay",
+		key:            "easypay",
+		supportedTypes: []PaymentType{TypeWxpay},
+	})
+
+	got, err := r.GetProviderByKey("easypay")
+	if err != nil {
+		t.Fatalf("GetProviderByKey error: %v", err)
+	}
+	if got.Name() != "NewEasyPay" {
+		t.Fatalf("GetProviderByKey name = %q, want %q", got.Name(), "NewEasyPay")
+	}
+}
+
 func TestRegistryGetProviderKeyUnknownType(t *testing.T) {
 	t.Parallel()
 	r := NewRegistry()
@@ -168,6 +192,22 @@ func TestRegistrySupportedTypesEmpty(t *testing.T) {
 	}
 }
 
+func TestRegistryClearRemovesProviderKeyIndex(t *testing.T) {
+	t.Parallel()
+	r := NewRegistry()
+	r.Register(&mockProvider{
+		name:           "EasyPay",
+		key:            "easypay",
+		supportedTypes: []PaymentType{TypeAlipay},
+	})
+
+	r.Clear()
+
+	if _, err := r.GetProviderByKey("easypay"); err == nil {
+		t.Fatal("GetProviderByKey should fail after Clear")
+	}
+}
+
 func TestRegistryOverwriteExisting(t *testing.T) {
 	t.Parallel()
 	r := NewRegistry()
@@ -221,6 +261,7 @@ func TestRegistryConcurrentAccess(t *testing.T) {
 			defer wg.Done()
 			_ = r.SupportedTypes()
 			_, _ = r.GetProvider("some-type")
+			_, _ = r.GetProviderByKey("some-key")
 			_ = r.GetProviderKey("some-type")
 		}()
 	}
