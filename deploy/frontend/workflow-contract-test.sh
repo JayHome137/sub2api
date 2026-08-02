@@ -10,7 +10,6 @@ VALIDATE_WORKFLOW=$ROOT/.github/workflows/validate.yml
 DEPLOY_WORKFLOW=$ROOT/.github/workflows/deploy.yml
 PREFLIGHT_WORKFLOW=$ROOT/.github/workflows/preflight.yml
 DEPLOY_HELPER=$ROOT/deploy/frontend/deploy-frontend.sh
-PREFLIGHT_HELPER=$ROOT/deploy/frontend/preflight-frontend.sh
 DOCKER_INTEGRATION=$ROOT/deploy/frontend/docker-workflow-integration-test.sh
 
 fail() {
@@ -22,6 +21,14 @@ require_text() {
   file=$1
   text=$2
   grep -Fq -- "$text" "$file" || fail "$file is missing: $text"
+}
+
+reject_text() {
+  file=$1
+  text=$2
+  if grep -Fq -- "$text" "$file"; then
+    fail "$file contains forbidden text: $text"
+  fi
 }
 
 require_text "$SYNC_WORKFLOW" 'repos/$official_repo/releases/latest'
@@ -74,6 +81,8 @@ require_text "$DOCKER_INTEGRATION" 'healthcheck:'
 require_text "$DOCKER_INTEGRATION" 'disable: true'
 require_text "$DOCKER_INTEGRATION" 'INTEGRATION_LABEL=cc.aifoo.integration-run'
 require_text "$DOCKER_INTEGRATION" 'mount_count=$(docker inspect'
+require_text "$DOCKER_INTEGRATION" 'remove_owned_container "$PRODUCTION_CONTAINER"'
+require_text "$DEPLOY_HELPER" '"$rollback_image_id"|missing)'
 require_text "$VALIDATE_WORKFLOW" 'timeout-minutes: 30'
 
 require_text "$DEPLOY_HELPER" 'backup)'
@@ -102,18 +111,27 @@ require_text "$DEPLOY_WORKFLOW" 'Restore the backup after a failed deployment ch
 require_text "$DEPLOY_WORKFLOW" 'deploy-sub2api-frontend restore'
 require_text "$DEPLOY_WORKFLOW" 'landing_html=$(curl --fail --location'
 
-bash -n "$PREFLIGHT_HELPER"
 require_text "$PREFLIGHT_WORKFLOW" 'workflow_dispatch:'
 require_text "$PREFLIGHT_WORKFLOW" 'permissions:'
 require_text "$PREFLIGHT_WORKFLOW" 'contents: read'
 require_text "$PREFLIGHT_WORKFLOW" 'Run read-only VPS preflight'
-require_text "$PREFLIGHT_WORKFLOW" '< deploy/frontend/preflight-frontend.sh'
-require_text "$PREFLIGHT_WORKFLOW" 'EXPECTED_HELPER_SHA='
-require_text "$PREFLIGHT_HELPER" 'preflight_result=blocked'
-require_text "$PREFLIGHT_HELPER" 'preflight_result=ready'
-require_text "$PREFLIGHT_HELPER" 'compose_unchanged='
-require_text "$PREFLIGHT_HELPER" 'containers_unchanged='
-require_text "$PREFLIGHT_HELPER" 'services_unchanged='
+require_text "$PREFLIGHT_WORKFLOW" 'environment:'
+require_text "$PREFLIGHT_WORKFLOW" 'name: production'
+require_text "$PREFLIGHT_WORKFLOW" 'sudo -n /usr/local/sbin/deploy-sub2api-frontend preflight'
+reject_text "$PREFLIGHT_WORKFLOW" 'bash --noprofile --norc -s'
+reject_text "$PREFLIGHT_WORKFLOW" '< deploy/frontend/'
+reject_text "$PREFLIGHT_WORKFLOW" 'scp '
+require_text "$DEPLOY_HELPER" '# BEGIN READ-ONLY PREFLIGHT'
+require_text "$DEPLOY_HELPER" '# END READ-ONLY PREFLIGHT'
+require_text "$DEPLOY_HELPER" 'preflight_result=blocked'
+require_text "$DEPLOY_HELPER" 'preflight_result=ready'
+require_text "$DEPLOY_HELPER" 'compose_unchanged='
+require_text "$DEPLOY_HELPER" 'containers_unchanged='
+require_text "$DEPLOY_HELPER" 'services_unchanged='
+
+preflight_section=$(sed -n \
+  '/# BEGIN READ-ONLY PREFLIGHT/,/# END READ-ONLY PREFLIGHT/p' "$DEPLOY_HELPER")
+[ -n "$preflight_section" ] || fail 'read-only preflight section is empty'
 
 for forbidden_preflight_command in \
   'docker pull' \
@@ -139,8 +157,8 @@ for forbidden_preflight_command in \
   'rm' \
   'mv' \
   'cp'; do
-  if grep -Eq -- "(^|[[:space:];|&])${forbidden_preflight_command}([[:space:]]|$)" \
-    "$PREFLIGHT_HELPER"; then
+  if printf '%s\n' "$preflight_section" \
+    | grep -Eq -- "(^|[[:space:];|&])${forbidden_preflight_command}([[:space:]]|$)"; then
     fail "read-only preflight contains forbidden command: $forbidden_preflight_command"
   fi
 done

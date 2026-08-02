@@ -35,9 +35,9 @@ GitHub Actions 运行官方关键 Vitest、AIFoo 集成测试、全量 Vitest、
 
 ## VPS 只读预检
 
-`VPS Read-only Preflight` 只能手动触发。工作流通过 SSH 标准输入直接执行 `preflight-frontend.sh`，不使用 `scp`，不在 VPS 创建脚本或临时文件，也不会拉取镜像、启动容器、备份、重启服务或修改配置。它检查主机资源、Docker/Compose、服务和容器状态、前端挂载、内部健康端点、staging 端口，以及 root 持有的部署 helper 是否与仓库 SHA-256 一致。
+`VPS Read-only Preflight` 只能手动触发，并绑定现有 `production` Environment。工作流沿用受限 SSH 用户，只允许通过无交互 `sudo` 调用 root 持有的 `deploy-sub2api-frontend preflight` 固定子命令；不传输或执行任意远端脚本，也不会拉取镜像、启动容器、备份、重启服务或修改配置。它检查主机资源、Docker/Compose、服务和容器状态、前端挂载、staging 端口，以及部署 helper 是否与仓库 SHA-256 一致。
 
-任何阻断项都会让工作流失败。部署 helper 缺失、权限不安全或哈希不一致时，只报告问题；安装或更新 helper 必须等到用户另行授权。
+任何阻断项都会让工作流失败。部署 helper 缺失、权限不安全或哈希不一致时，只报告问题；安装或更新 helper 必须等到用户另行授权。预检不会写入部署文件，但 SSH 连接仍可能由系统自动追加认证或审计日志，这类系统日志不属于可承诺消除的“零写入”。
 
 ## 部署与回滚
 

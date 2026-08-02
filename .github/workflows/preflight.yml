@@ -7,13 +7,15 @@ permissions:
   contents: read
 
 concurrency:
-  group: production-frontend-preflight
+  group: production-frontend
   cancel-in-progress: false
 
 jobs:
   preflight:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment:
+      name: production
     steps:
       - uses: actions/checkout@v6
 
@@ -46,8 +48,8 @@ jobs:
             -o ServerAliveInterval=15 \
             -o ServerAliveCountMax=3 \
             "$VPS_USER@$VPS_HOST" \
-            "EXPECTED_HELPER_SHA='$expected_helper_sha' bash --noprofile --norc -s" \
-            < deploy/frontend/preflight-frontend.sh 2>&1)
+            "sudo -n /usr/local/sbin/deploy-sub2api-frontend preflight '$expected_helper_sha'" \
+            2>&1)
           preflight_status=$?
           set -e
 
@@ -64,9 +66,10 @@ jobs:
             echo
             echo "- Result: \`${preflight_result:-ssh-failed}\`"
             echo "- Blockers: \`${blocker_count:-unknown}\`"
-            echo "- Remote files created: \`0\`"
+            echo "- Deployment files changed: \`0 expected\`"
             echo "- Containers changed: \`0 expected\`"
             echo "- Services restarted: \`0 expected\`"
+            echo "- SSH/system audit logs: \`may be appended by the VPS\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
           if [ "$preflight_status" -ne 0 ] \

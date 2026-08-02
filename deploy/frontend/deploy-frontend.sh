@@ -33,6 +33,283 @@ validate_digest() {
   fi
 }
 
+# BEGIN READ-ONLY PREFLIGHT
+preflight_block() {
+  preflight_blocker_count=$((preflight_blocker_count + 1))
+  printf 'blocker=%s\n' "$1"
+}
+
+preflight_warn() {
+  preflight_warning_count=$((preflight_warning_count + 1))
+  printf 'warning=%s\n' "$1"
+}
+
+preflight_file_hash() {
+  if [ -r "$1" ]; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    printf 'missing\n'
+  fi
+}
+
+preflight_container_fingerprint() {
+  if ! command -v docker >/dev/null 2>&1; then
+    printf 'docker-missing\n'
+    return
+  fi
+
+  for container_id in $(docker ps -aq 2>/dev/null); do
+    docker inspect "$container_id" \
+      --format '{{.Id}}|{{.State.Status}}|{{.RestartCount}}|{{.Config.Image}}|{{.State.StartedAt}}' \
+      2>/dev/null
+  done | sort | sha256sum | awk '{print $1}'
+}
+
+preflight_service_fingerprint() {
+  for unit_name in docker nginx containerd; do
+    printf '%s|' "$unit_name"
+    systemctl show "$unit_name" \
+      --property=ActiveState \
+      --property=SubState \
+      --value 2>/dev/null | tr '\n' ':' || true
+    printf '\n'
+  done | sha256sum | awk '{print $1}'
+}
+
+preflight_readonly() {
+  set +e
+
+  expected_helper_sha=${1:-}
+  preflight_blocker_count=0
+  preflight_warning_count=0
+  min_available_memory_mb=${AIFOO_MIN_AVAILABLE_MEMORY_MB:-512}
+  min_available_disk_kb=${AIFOO_MIN_AVAILABLE_DISK_KB:-2097152}
+
+  compose_hash_before=$(preflight_file_hash "$COMPOSE_FILE")
+  helper_hash_before=$(preflight_file_hash "$0")
+  containers_before=$(preflight_container_fingerprint)
+  services_before=$(preflight_service_fingerprint)
+
+  printf 'preflight_time_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf 'preflight_user=%s uid=%s\n' "$(id -un)" "$(id -u)"
+
+  if ! printf '%s' "$expected_helper_sha" | grep -Eq '^[0-9a-f]{64}$'; then
+    preflight_block expected_helper_sha_missing_or_invalid
+  elif [ "$helper_hash_before" != "$expected_helper_sha" ]; then
+    preflight_block deploy_helper_sha_mismatch
+  fi
+
+  helper_owner=$(stat -c '%U' "$0" 2>/dev/null || true)
+  helper_mode=$(stat -c '%a' "$0" 2>/dev/null || true)
+  printf 'deploy_helper_owner=%s mode=%s sha256=%s\n' \
+    "$helper_owner" "$helper_mode" "$helper_hash_before"
+  if [ "$helper_owner" != "root" ]; then
+    preflight_block deploy_helper_not_owned_by_root
+  fi
+  if find "$0" -perm /022 -print -quit 2>/dev/null | grep -q .; then
+    preflight_block deploy_helper_group_or_world_writable
+  fi
+
+  if [ -r /etc/os-release ]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    printf 'os=%s\n' "${PRETTY_NAME:-unknown}"
+  fi
+  printf 'kernel=%s architecture=%s cpu_count=%s\n' \
+    "$(uname -r)" \
+    "$(uname -m)" \
+    "$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc)"
+  printf 'load_average=%s\n' "$(cat /proc/loadavg)"
+
+  available_memory_mb=$(awk '/^MemAvailable:/ {print int($2 / 1024)}' /proc/meminfo)
+  printf 'available_memory_mb=%s\n' "$available_memory_mb"
+  if [ -z "$available_memory_mb" ] \
+    || [ "$available_memory_mb" -lt "$min_available_memory_mb" ]; then
+    preflight_block insufficient_available_memory
+  fi
+
+  if [ -e "$APP_DIR" ]; then
+    available_disk_kb=$(df -Pk "$APP_DIR" | awk 'NR == 2 {print $4}')
+  else
+    available_disk_kb=$(df -Pk / | awk 'NR == 2 {print $4}')
+  fi
+  printf 'available_disk_kb=%s\n' "$available_disk_kb"
+  if [ -z "$available_disk_kb" ] \
+    || [ "$available_disk_kb" -lt "$min_available_disk_kb" ]; then
+    preflight_block insufficient_available_disk
+  fi
+
+  for unit_name in docker nginx containerd; do
+    unit_state=$(systemctl is-active "$unit_name" 2>/dev/null || true)
+    printf 'service[%s]=%s\n' "$unit_name" "$unit_state"
+    if [ "$unit_state" != "active" ]; then
+      preflight_block "service_${unit_name}_not_active"
+    fi
+  done
+
+  if ! command -v docker >/dev/null 2>&1; then
+    preflight_block docker_missing
+  else
+    docker_client=$(docker version --format '{{.Client.Version}}' 2>/dev/null || true)
+    docker_server=$(docker version --format '{{.Server.Version}}' 2>/dev/null || true)
+    printf 'docker_client=%s docker_server=%s\n' "$docker_client" "$docker_server"
+    if [ -z "$docker_client" ] || [ -z "$docker_server" ]; then
+      preflight_block docker_unavailable
+    fi
+  fi
+
+  compose_command=missing
+  if command -v docker-compose >/dev/null 2>&1 \
+    && docker-compose version >/dev/null 2>&1; then
+    compose_command=v1
+    compose_version=$(docker-compose version --short 2>/dev/null || true)
+  else
+    compose_version=
+    preflight_block docker_compose_missing
+  fi
+  printf 'compose_command=%s compose_version=%s\n' "$compose_command" "$compose_version"
+
+  if [ ! -r "$COMPOSE_FILE" ]; then
+    preflight_block compose_missing_or_unreadable
+  else
+    compose_owner=$(stat -c '%U' "$COMPOSE_FILE" 2>/dev/null || true)
+    compose_mode=$(stat -c '%a' "$COMPOSE_FILE" 2>/dev/null || true)
+    printf 'compose_owner=%s compose_mode=%s compose_sha256=%s\n' \
+      "$compose_owner" "$compose_mode" "$compose_hash_before"
+    if [ "$compose_owner" != "root" ]; then
+      preflight_block compose_not_owned_by_root
+    fi
+    if find "$COMPOSE_FILE" -perm /022 -print -quit 2>/dev/null | grep -q .; then
+      preflight_block compose_group_or_world_writable
+    fi
+
+    if [ "$compose_command" = "v1" ]; then
+      compose_services=$(docker-compose -f "$COMPOSE_FILE" config --services 2>/dev/null | sort)
+    else
+      compose_services=
+    fi
+    printf 'compose_services=%s\n' "$(printf '%s\n' "$compose_services" | paste -sd, -)"
+    for required_service in frontend postgres redis sub2api; do
+      if ! printf '%s\n' "$compose_services" | grep -Fxq "$required_service"; then
+        preflight_block "compose_service_${required_service}_missing"
+      fi
+    done
+  fi
+
+  if ! docker network inspect "$STAGE_NETWORK" >/dev/null 2>&1; then
+    preflight_block staging_network_missing
+  else
+    printf 'staging_network=%s\n' "$STAGE_NETWORK"
+  fi
+
+  if ! command -v ss >/dev/null 2>&1; then
+    preflight_block socket_inspection_tool_missing
+  elif ss -lntH 2>/dev/null \
+    | awk '{print $4}' \
+    | awk -F: -v port="$STAGE_PORT" '$NF == port {found=1} END {exit !found}'; then
+    preflight_block staging_port_occupied
+  else
+    printf 'staging_port_%s=free\n' "$STAGE_PORT"
+  fi
+
+  for required_container in sub2api sub2api-postgres sub2api-redis "$PRODUCTION_CONTAINER"; do
+    if ! docker container inspect "$required_container" >/dev/null 2>&1; then
+      preflight_block "container_${required_container}_missing"
+      continue
+    fi
+
+    container_state=$(docker inspect "$required_container" --format '{{.State.Status}}')
+    container_health=$(docker inspect "$required_container" \
+      --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}')
+    container_restarts=$(docker inspect "$required_container" --format '{{.RestartCount}}')
+    printf 'container[%s]_state=%s health=%s restarts=%s\n' \
+      "$required_container" "$container_state" "$container_health" "$container_restarts"
+    if [ "$container_state" != "running" ]; then
+      preflight_block "container_${required_container}_not_running"
+    fi
+    if [ "$required_container" = "$PRODUCTION_CONTAINER" ]; then
+      if [ "$container_health" = "unhealthy" ]; then
+        preflight_block frontend_container_unhealthy
+      fi
+    elif [ "$container_health" != "healthy" ]; then
+      preflight_block "container_${required_container}_not_healthy"
+    fi
+  done
+
+  if docker container inspect "$PRODUCTION_CONTAINER" >/dev/null 2>&1; then
+    frontend_image_ref=$(docker inspect "$PRODUCTION_CONTAINER" --format '{{.Config.Image}}')
+    frontend_ports=$(docker port "$PRODUCTION_CONTAINER" 2>/dev/null)
+    printf 'frontend_image_ref=%s\n' "$frontend_image_ref"
+    printf 'frontend_ports=%s\n' "$(printf '%s\n' "$frontend_ports" | paste -sd, -)"
+    if ! printf '%s\n' "$frontend_ports" | grep -Eq '127\.0\.0\.1:8080$'; then
+      preflight_block frontend_loopback_port_mapping_missing
+    fi
+
+    mount_destinations=$(docker inspect "$PRODUCTION_CONTAINER" \
+      --format '{{range .Mounts}}{{println .Destination}}{{end}}')
+    printf 'frontend_mount_destinations=%s\n' \
+      "$(printf '%s\n' "$mount_destinations" | sed '/^$/d' | sort | paste -sd, -)"
+    unsupported_mounts=$(printf '%s\n' "$mount_destinations" | awk '
+      NF && !/^\/etc\/nginx(\/|$)/ && !/^\/usr\/share\/nginx\/html(\/|$)/ { print }
+    ')
+    if [ -n "$unsupported_mounts" ]; then
+      preflight_block unsupported_frontend_mounts
+      printf 'unsupported_mount_destinations=%s\n' \
+        "$(printf '%s\n' "$unsupported_mounts" | paste -sd, -)"
+    else
+      printf 'frontend_mounts_compatible=true\n'
+    fi
+  fi
+
+  if [ -e "$BACKUP_ROOT" ]; then
+    backup_owner=$(stat -c '%U' "$BACKUP_ROOT" 2>/dev/null || true)
+    backup_mode=$(stat -c '%a' "$BACKUP_ROOT" 2>/dev/null || true)
+    printf 'backup_root=present owner=%s mode=%s\n' "$backup_owner" "$backup_mode"
+    if [ "$backup_owner" != "root" ]; then
+      preflight_block backup_root_not_owned_by_root
+    fi
+    if [ "$backup_mode" != "700" ]; then
+      preflight_warn backup_root_requires_hardening_before_deployment
+    fi
+  else
+    printf 'backup_root=absent\n'
+    preflight_warn backup_root_requires_authorized_creation
+  fi
+
+  compose_hash_after=$(preflight_file_hash "$COMPOSE_FILE")
+  helper_hash_after=$(preflight_file_hash "$0")
+  containers_after=$(preflight_container_fingerprint)
+  services_after=$(preflight_service_fingerprint)
+
+  if [ "$compose_hash_before" != "$compose_hash_after" ]; then
+    preflight_block compose_changed_during_preflight
+  fi
+  if [ "$helper_hash_before" != "$helper_hash_after" ]; then
+    preflight_block deploy_helper_changed_during_preflight
+  fi
+  if [ "$containers_before" != "$containers_after" ]; then
+    preflight_block container_state_changed_during_preflight
+  fi
+  if [ "$services_before" != "$services_after" ]; then
+    preflight_block service_state_changed_during_preflight
+  fi
+
+  printf 'compose_unchanged=%s\n' "$([ "$compose_hash_before" = "$compose_hash_after" ] && printf true || printf false)"
+  printf 'helper_unchanged=%s\n' "$([ "$helper_hash_before" = "$helper_hash_after" ] && printf true || printf false)"
+  printf 'containers_unchanged=%s\n' "$([ "$containers_before" = "$containers_after" ] && printf true || printf false)"
+  printf 'services_unchanged=%s\n' "$([ "$services_before" = "$services_after" ] && printf true || printf false)"
+  printf 'warning_count=%s blocker_count=%s\n' \
+    "$preflight_warning_count" "$preflight_blocker_count"
+
+  if [ "$preflight_blocker_count" -ne 0 ]; then
+    printf 'preflight_result=blocked\n'
+    return 1
+  fi
+
+  printf 'preflight_result=ready\n'
+}
+# END READ-ONLY PREFLIGHT
+
 cleanup_stage() {
   if ! docker container inspect "$STAGE_CONTAINER" >/dev/null 2>&1; then
     return
@@ -514,8 +791,16 @@ require_backup() {
   previous_compose_sha=$(metadata_value previous_compose_sha256 "$backup_dir/metadata.env")
   candidate_compose_sha=$(metadata_value candidate_compose_sha256 "$backup_dir/metadata.env")
   rollback_compose_sha=$(metadata_value rollback_compose_sha256 "$backup_dir/metadata.env")
-  current_image_id=$(docker inspect "$PRODUCTION_CONTAINER" --format '{{.Image}}')
-  current_compose_sha=$(compose_sha256 "$COMPOSE_FILE")
+  if docker container inspect "$PRODUCTION_CONTAINER" >/dev/null 2>&1; then
+    current_image_id=$(docker inspect "$PRODUCTION_CONTAINER" --format '{{.Image}}')
+  else
+    current_image_id=missing
+  fi
+  if [ -r "$COMPOSE_FILE" ]; then
+    current_compose_sha=$(compose_sha256 "$COMPOSE_FILE")
+  else
+    current_compose_sha=missing
+  fi
 
   for image_id in "$previous_image_id" "$requested_image_id" "$rollback_image_id"; do
     if ! printf '%s' "$image_id" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
@@ -547,16 +832,19 @@ require_backup() {
       elif [ "$current_image_id" = "$rollback_image_id" ] \
         && [ "$current_compose_sha" = "$rollback_compose_sha" ]; then
         backup_restore_state=rollback
+      elif [ "$current_image_id" = "missing" ] \
+        && [ "$current_compose_sha" = "$previous_compose_sha" ]; then
+        backup_restore_state=transition
       elif deployment_state_matches "$digest" "$backup_id"; then
         case "$current_image_id" in
-          "$previous_image_id"|"$requested_image_id"|"$rollback_image_id") ;;
+          "$previous_image_id"|"$requested_image_id"|"$rollback_image_id"|missing) ;;
           *)
             echo "Refusing to restore against an unrelated frontend image" >&2
             exit 1
             ;;
         esac
         case "$current_compose_sha" in
-          "$previous_compose_sha"|"$candidate_compose_sha"|"$rollback_compose_sha") ;;
+          "$previous_compose_sha"|"$candidate_compose_sha"|"$rollback_compose_sha"|missing) ;;
           *)
             echo "Refusing to restore against an unrelated frontend Compose file" >&2
             exit 1
@@ -752,6 +1040,9 @@ if [ "${AIFOO_DEPLOY_LIBRARY_ONLY:-0}" != "1" ]; then
 
   command=${1:-}
   case "$command" in
+  preflight)
+    preflight_readonly "${2:-}"
+    ;;
   login)
     actor=${2:-}
     case "$actor" in
@@ -781,7 +1072,7 @@ if [ "${AIFOO_DEPLOY_LIBRARY_ONLY:-0}" != "1" ]; then
     cleanup_stage
     ;;
     *)
-      echo "Usage: $0 {login <actor>|logout|stage <sha256:digest>|backup <sha256:digest>|deploy <sha256:digest> <backup-id>|restore <sha256:digest> <backup-id>|cleanup-stage}" >&2
+      echo "Usage: $0 {preflight <helper-sha256>|login <actor>|logout|stage <sha256:digest>|backup <sha256:digest>|deploy <sha256:digest> <backup-id>|restore <sha256:digest> <backup-id>|cleanup-stage}" >&2
       exit 1
       ;;
   esac

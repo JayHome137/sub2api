@@ -253,6 +253,13 @@ curl --fail --silent --show-error --connect-timeout 2 --max-time 5 \
 curl --fail --silent --show-error --connect-timeout 2 --max-time 5 \
   "http://127.0.0.1:$PRODUCTION_PORT/" | grep -q AIFoo
 
+# Exercise disaster recovery when the candidate container no longer exists.
+remove_owned_container "$PRODUCTION_CONTAINER"
+if docker container inspect "$PRODUCTION_CONTAINER" >/dev/null 2>&1; then
+  echo "Candidate frontend container was not removed before restore" >&2
+  exit 1
+fi
+
 restore_backup "$DIGEST" "$backup_id"
 curl --fail --silent --show-error --connect-timeout 2 --max-time 5 \
   "http://127.0.0.1:$PRODUCTION_PORT/health" | grep -q '"status":"ok"'
