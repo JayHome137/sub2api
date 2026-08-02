@@ -7,6 +7,10 @@ on:
         description: 'Validated candidate digest (sha256:...)'
         required: true
         type: string
+      approval:
+        description: 'Type DEPLOY-AIFOO-FRONTEND to approve the production deployment'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -24,6 +28,27 @@ jobs:
       name: production
       url: https://aifoo.cc.cd/login
     steps:
+      - name: Require repository owner approval
+        env:
+          DEPLOY_APPROVAL: ${{ inputs.approval }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/production" ]; then
+            echo "Production deployment must run from the production branch" >&2
+            exit 1
+          fi
+          actor=$(printf '%s' "$GITHUB_ACTOR" | tr '[:upper:]' '[:lower:]')
+          owner=$(printf '%s' "$REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          if [ "$actor" != "$owner" ]; then
+            echo "Only the repository owner can approve a production deployment" >&2
+            exit 1
+          fi
+          if [ "$DEPLOY_APPROVAL" != "DEPLOY-AIFOO-FRONTEND" ]; then
+            echo "Production deployment approval phrase is invalid" >&2
+            exit 1
+          fi
+
       - name: Validate immutable digest
         env:
           IMAGE_DIGEST: ${{ inputs.image_digest }}

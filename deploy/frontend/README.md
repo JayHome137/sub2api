@@ -43,6 +43,8 @@ GitHub Actions 运行官方关键 Vitest、AIFoo 集成测试、全量 Vitest、
 
 `deploy.yml` 只接受完整的 `sha256:` 镜像 digest。VPS 上的受限用户只能调用 root 持有的 `deploy-frontend.sh` 规定命令；脚本会：
 
+部署只能从 `production` 分支手动触发，触发者必须是仓库所有者，并输入 `DEPLOY-AIFOO-FRONTEND` 确认短语。该代码级门禁用于私人仓库套餐不支持 Environment Required Reviewer 时，确保镜像发布不会自动进入 VPS 部署。
+
 1. 拉取并核对指定 digest。
 2. 在 `127.0.0.1:18080` 启动带固定标签的隔离候选容器。
 3. 验证 Landing、SPA、后端代理和旧 override 资源的 `404`，通过后才进入生产部署。
