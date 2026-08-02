@@ -60,7 +60,7 @@ func NewUserHandler(
 // CreateUserRequest represents admin create user request
 type CreateUserRequest struct {
 	Email         string   `json:"email" binding:"required,email"`
-	Password      string   `json:"password" binding:"required,min=6"`
+	Password      string   `json:"password" binding:"required,min=8"`
 	Username      string   `json:"username"`
 	Notes         string   `json:"notes"`
 	Role          string   `json:"role" binding:"omitempty,oneof=admin user"`
@@ -74,7 +74,7 @@ type CreateUserRequest struct {
 // 使用指针类型来区分"未提供"和"设置为0"
 type UpdateUserRequest struct {
 	Email         string   `json:"email" binding:"omitempty,email"`
-	Password      string   `json:"password" binding:"omitempty,min=6"`
+	Password      string   `json:"password" binding:"omitempty,min=8"`
 	Username      *string  `json:"username"`
 	Notes         *string  `json:"notes"`
 	Role          string   `json:"role" binding:"omitempty,oneof=admin user"`

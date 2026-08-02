@@ -78,7 +78,7 @@ declare -A MSG_ZH=(
     ["verifying_checksum"]="正在校验文件..."
     ["checksum_verified"]="校验通过"
     ["checksum_failed"]="校验失败"
-    ["checksum_not_found"]="无法验证校验和（checksums.txt 未找到）"
+    ["checksum_not_found"]="无法下载校验和，安装已中止"
     ["extracting"]="正在解压..."
     ["binary_installed"]="二进制文件已安装到"
     ["user_exists"]="用户已存在"
@@ -203,7 +203,7 @@ declare -A MSG_EN=(
     ["verifying_checksum"]="Verifying checksum..."
     ["checksum_verified"]="Checksum verified"
     ["checksum_failed"]="Checksum verification failed"
-    ["checksum_not_found"]="Could not verify checksum (checksums.txt not found)"
+    ["checksum_not_found"]="Could not download checksum; installation aborted"
     ["extracting"]="Extracting..."
     ["binary_installed"]="Binary installed to"
     ["user_exists"]="User already exists"
@@ -473,11 +473,28 @@ check_dependencies() {
         missing+=("tar")
     fi
 
+    if [ "${OS:-}" = "darwin" ]; then
+        if ! command -v shasum &> /dev/null; then
+            missing+=("shasum")
+        fi
+    elif ! command -v sha256sum &> /dev/null; then
+        missing+=("sha256sum")
+    fi
+
     if [ ${#missing[@]} -gt 0 ]; then
         print_error "$(msg 'missing_deps'): ${missing[*]}"
         print_info "$(msg 'install_deps_first')"
         exit 1
     fi
+}
+
+calculate_sha256() {
+    local file="$1"
+    if [ "${OS:-}" = "darwin" ]; then
+        shasum -a 256 "$file" | awk '{print $1}'
+        return
+    fi
+    sha256sum "$file" | awk '{print $1}'
 }
 
 # Authenticate only GitHub REST API requests. Release asset downloads must stay anonymous.
@@ -634,20 +651,39 @@ download_and_extract() {
 
     # Download and verify checksum
     print_info "$(msg 'verifying_checksum')"
-    if curl -sL "$checksum_url" -o "$TEMP_DIR/checksums.txt" 2>/dev/null; then
-        local expected_checksum=$(grep "$archive_name" "$TEMP_DIR/checksums.txt" | awk '{print $1}')
-        local actual_checksum=$(sha256sum "$TEMP_DIR/$archive_name" | awk '{print $1}')
-
-        if [ "$expected_checksum" != "$actual_checksum" ]; then
-            print_error "$(msg 'checksum_failed')"
-            print_error "Expected: $expected_checksum"
-            print_error "Actual: $actual_checksum"
-            exit 1
-        fi
-        print_success "$(msg 'checksum_verified')"
-    else
-        print_warning "$(msg 'checksum_not_found')"
+    if ! curl -fsSL "$checksum_url" -o "$TEMP_DIR/checksums.txt" 2>/dev/null; then
+        print_error "$(msg 'checksum_not_found')"
+        exit 1
     fi
+
+    local expected_checksum
+    if ! expected_checksum=$(awk -v archive="$archive_name" \
+        '$2 == archive || $2 == "*" archive { print $1; exit }' \
+        "$TEMP_DIR/checksums.txt"); then
+        print_error "$(msg 'checksum_failed')"
+        exit 1
+    fi
+    if [[ ! "$expected_checksum" =~ ^[[:xdigit:]]{64}$ ]]; then
+        print_error "$(msg 'checksum_failed')"
+        exit 1
+    fi
+    if ! expected_checksum=$(printf '%s' "$expected_checksum" | tr '[:upper:]' '[:lower:]'); then
+        print_error "$(msg 'checksum_failed')"
+        exit 1
+    fi
+
+    local actual_checksum
+    if ! actual_checksum=$(calculate_sha256 "$TEMP_DIR/$archive_name"); then
+        print_error "$(msg 'checksum_failed')"
+        exit 1
+    fi
+    if [[ ! "$actual_checksum" =~ ^[[:xdigit:]]{64}$ ]] || [ "$expected_checksum" != "$actual_checksum" ]; then
+        print_error "$(msg 'checksum_failed')"
+        print_error "Expected: $expected_checksum"
+        print_error "Actual: $actual_checksum"
+        exit 1
+    fi
+    print_success "$(msg 'checksum_verified')"
 
     # Extract
     print_info "$(msg 'extracting')"

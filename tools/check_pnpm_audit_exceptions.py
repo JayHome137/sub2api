@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import argparse
 import json
 import sys
@@ -75,7 +77,12 @@ def iter_vulns(data: dict):
                 or advisory.get("overview")
                 or advisory.get("url")
             )
-            yield name, severity, advisory_id, title
+            direct = any(
+                path == f".>{name}"
+                for finding in advisory.get("findings", [])
+                for path in finding.get("paths", [])
+            )
+            yield name, severity, advisory_id, title, direct
 
     vulnerabilities = data.get("vulnerabilities")
     if isinstance(vulnerabilities, dict):
@@ -108,12 +115,17 @@ def iter_vulns(data: dict):
                 titles.append(via)
             title = "; ".join([t for t in titles if t])
             for advisory_id in [a for a in advisories if a]:
-                yield name, severity, advisory_id, title
+                yield name, severity, advisory_id, title, bool(vuln.get("isDirect"))
 
 
 def normalize_severity(severity: str) -> str:
     # 统一大小写，避免比较失败。
     return (severity or "").strip().lower()
+
+
+def is_blocking(severity: str, direct: bool) -> bool:
+    severity = normalize_severity(severity)
+    return severity in HIGH_SEVERITIES or (severity == "moderate" and direct)
 
 
 def normalize_package(name: str) -> str:
@@ -190,14 +202,14 @@ def main() -> int:
 
     # 去重处理：同一包名 + advisory 可能在不同字段重复出现。
     seen = set()
-    for name, severity, advisory_id, title in iter_vulns(audit):
+    for name, severity, advisory_id, title, direct in iter_vulns(audit):
         sev = normalize_severity(severity)
-        if sev not in HIGH_SEVERITIES or not name:
+        if not is_blocking(sev, direct) or not name:
             continue
         advisory_key = normalize_advisory(advisory_id)
         if not advisory_key:
             errors.append(
-                f"High/Critical vulnerability missing advisory id: {name} ({sev})"
+                f"Blocking vulnerability missing advisory id: {name} ({sev})"
             )
             continue
         key = (normalize_package(name), advisory_key)
@@ -219,7 +231,9 @@ def main() -> int:
             )
 
     if missing_exceptions:
-        errors.append("High/Critical vulnerabilities missing exceptions:")
+        errors.append(
+            "High/Critical or direct-production Moderate vulnerabilities missing exceptions:"
+        )
         for name, sev, advisory_id, title in missing_exceptions:
             label = f"{name} ({sev})"
             if advisory_id:

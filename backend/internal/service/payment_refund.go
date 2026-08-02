@@ -205,7 +205,7 @@ func (s *PaymentService) validateRefundRequest(ctx context.Context, oid, uid int
 	return o, nil
 }
 
-func (s *PaymentService) PrepareRefund(ctx context.Context, oid int64, amt float64, reason string, force, deduct bool) (*RefundPlan, *RefundResult, error) {
+func (s *PaymentService) PrepareRefund(ctx context.Context, oid int64, requestedAmount *float64, reason string, force, deduct bool) (*RefundPlan, *RefundResult, error) {
 	o, err := s.entClient.PaymentOrder.Get(ctx, oid)
 	if err != nil {
 		return nil, nil, infraerrors.NotFound("NOT_FOUND", "order not found")
@@ -227,11 +227,12 @@ func (s *PaymentService) PrepareRefund(ctx context.Context, oid int64, amt float
 	if !inst.RefundEnabled {
 		return nil, nil, infraerrors.Forbidden("REFUND_DISABLED", "refund is not enabled for this provider")
 	}
-	if math.IsNaN(amt) || math.IsInf(amt, 0) {
-		return nil, nil, infraerrors.BadRequest("INVALID_AMOUNT", "invalid refund amount")
-	}
-	if amt <= 0 {
-		amt = o.Amount
+	amt := o.Amount
+	if requestedAmount != nil {
+		amt = *requestedAmount
+		if math.IsNaN(amt) || math.IsInf(amt, 0) || amt <= 0 {
+			return nil, nil, infraerrors.BadRequest("INVALID_AMOUNT", "invalid refund amount")
+		}
 	}
 	orderCurrency := PaymentOrderCurrency(o)
 	if amt-o.Amount > paymentAmountToleranceForCurrency(orderCurrency) {

@@ -15,6 +15,7 @@ EOF
 chmod +x "$TEMP_DIR/curl"
 
 mkdir "$TEMP_DIR/home"
+sed -n '/^github_api_curl() {/,/^}/p' "$ROOT_DIR/deploy/install.sh" > "$TEMP_DIR/github-api-curl.sh"
 cat > "$TEMP_DIR/home/.curlrc" <<'EOF'
 url = "https://example.com/collect"
 header = "X-Leaked-From-Curlrc: yes"
@@ -23,8 +24,8 @@ EOF
 run_api_curl() {
     CURL_ARGS_LOG="$1" HOME="$TEMP_DIR/home" PATH="$TEMP_DIR:$PATH" UPDATE_GITHUB_TOKEN="${2:-}" \
         GITHUB_TOKEN="github-fallback" GH_TOKEN="gh-fallback" \
-        bash -c 'source <(head -n -1 "$1"); github_api_curl -s "$2"' bash \
-        "$ROOT_DIR/deploy/install.sh" "https://api.github.com/repos/Wei-Shaw/sub2api/releases/latest"
+        bash -c 'source "$1"; github_api_curl -s "$2"' bash \
+        "$TEMP_DIR/github-api-curl.sh" "https://api.github.com/repos/Wei-Shaw/sub2api/releases/latest"
 }
 
 run_api_curl "$TEMP_DIR/authenticated" "update-secret"
@@ -70,8 +71,8 @@ assert_unsafe_invocation_rejected() {
     shift
     rm -f "$TEMP_DIR/$name" "$TEMP_DIR/$name.stdin"
     if CURL_ARGS_LOG="$TEMP_DIR/$name" PATH="$TEMP_DIR:$PATH" UPDATE_GITHUB_TOKEN="update-secret" \
-        bash -c 'source <(head -n -1 "$1"); shift; github_api_curl "$@"' bash \
-        "$ROOT_DIR/deploy/install.sh" "$@" 2>/dev/null; then
+        bash -c 'source "$1"; shift; github_api_curl "$@"' bash \
+        "$TEMP_DIR/github-api-curl.sh" "$@" 2>/dev/null; then
         echo "installer accepted unsafe curl invocation: $name" >&2
         exit 1
     fi
@@ -98,6 +99,6 @@ test "$(grep -c 'github_api_curl .*https://api.github.com/' "$ROOT_DIR/deploy/in
 
 # Asset and checksum downloads must continue to call curl directly.
 grep -Fq 'curl -sL "$download_url"' "$ROOT_DIR/deploy/install.sh"
-grep -Fq 'curl -sL "$checksum_url"' "$ROOT_DIR/deploy/install.sh"
+grep -Fq 'curl -fsSL "$checksum_url"' "$ROOT_DIR/deploy/install.sh"
 
 echo "install GitHub token checks passed"

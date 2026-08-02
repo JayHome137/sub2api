@@ -272,6 +272,46 @@ func TestAuthService_Register_DisabledByDefault(t *testing.T) {
 	require.ErrorIs(t, err, ErrRegDisabled)
 }
 
+func TestAuthService_Register_RejectsShortPassword(t *testing.T) {
+	repo := &userRepoStub{}
+	service := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled: "true",
+	}, nil, nil)
+
+	_, _, err := service.Register(context.Background(), "user@test.com", "1234567")
+	require.ErrorIs(t, err, ErrPasswordTooShort)
+	require.Empty(t, repo.created)
+}
+
+func TestAuthService_Login_AllowsLegacyShortPassword(t *testing.T) {
+	repo := &userRepoStub{}
+	service := newAuthService(repo, nil, nil, nil)
+	hash, err := service.HashPassword("1234567")
+	require.NoError(t, err)
+	repo.user = &User{
+		ID:           7,
+		Email:        "legacy@test.com",
+		PasswordHash: hash,
+		Role:         RoleUser,
+		Status:       StatusActive,
+	}
+
+	_, user, err := service.Login(context.Background(), "legacy@test.com", "1234567")
+	require.NoError(t, err)
+	require.Equal(t, int64(7), user.ID)
+}
+
+func TestAuthService_ResetPassword_RejectsShortPasswordBeforeTokenConsumption(t *testing.T) {
+	repo := &userRepoStub{}
+	service := newAuthService(repo, map[string]string{
+		SettingKeyEmailVerifyEnabled:   "true",
+		SettingKeyPasswordResetEnabled: "true",
+	}, &emailCacheStub{}, nil)
+
+	err := service.ResetPassword(context.Background(), "user@test.com", "reset-token", "1234567")
+	require.ErrorIs(t, err, ErrPasswordTooShort)
+}
+
 func TestAuthService_Register_SnapshotsPlatformQuotaDefaults(t *testing.T) {
 	repo := &userRepoStub{nextID: 77}
 	quotaRepo := &userPlatformQuotaRepoStub{}

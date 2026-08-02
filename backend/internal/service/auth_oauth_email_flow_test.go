@@ -147,6 +147,51 @@ func newOAuthEmailFlowAuthService(
 	)
 }
 
+func TestRegisterOAuthEmailAccountRejectsShortPassword(t *testing.T) {
+	userRepo := &userRepoStub{}
+	authService := newOAuthEmailFlowAuthService(
+		userRepo,
+		&redeemCodeRepoStub{},
+		nil,
+		map[string]string{SettingKeyRegistrationEnabled: "true"},
+		nil,
+		nil,
+	)
+
+	_, _, err := authService.RegisterOAuthEmailAccount(
+		context.Background(),
+		"fresh@example.com",
+		"1234567",
+		"246810",
+		"",
+		"oidc",
+	)
+	require.ErrorIs(t, err, ErrPasswordTooShort)
+	require.Empty(t, userRepo.created)
+}
+
+func TestRegisterVerifiedOAuthEmailAccountRejectsShortPassword(t *testing.T) {
+	userRepo := &userRepoStub{}
+	authService := newOAuthEmailFlowAuthService(
+		userRepo,
+		&redeemCodeRepoStub{},
+		nil,
+		map[string]string{SettingKeyRegistrationEnabled: "true"},
+		nil,
+		nil,
+	)
+
+	_, _, err := authService.RegisterVerifiedOAuthEmailAccount(
+		context.Background(),
+		"fresh@example.com",
+		"1234567",
+		"",
+		"google",
+	)
+	require.ErrorIs(t, err, ErrPasswordTooShort)
+	require.Empty(t, userRepo.created)
+}
+
 func TestRegisterOAuthEmailAccountRollsBackCreatedUserWhenTokenPairGenerationFails(t *testing.T) {
 	userRepo := &userRepoStub{nextID: 42}
 	redeemRepo := &redeemCodeRepoStub{
