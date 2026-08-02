@@ -225,10 +225,12 @@ export default {
     passwordPlaceholder: 'Enter your password',
     createPasswordPlaceholder: 'Create a strong password',
     passwordHint: 'At least 6 characters',
+    newPasswordHint: 'At least 8 characters',
     emailRequired: 'Email is required',
     invalidEmail: 'Please enter a valid email address',
     passwordRequired: 'Password is required',
     passwordMinLength: 'Password must be at least 6 characters',
+    newPasswordMinLength: 'Password must be at least 8 characters',
     loginFailed: 'Login failed. Please check your credentials and try again.',
     errors: {
       USER_NOT_ACTIVE: 'Account has been disabled.',

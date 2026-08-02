@@ -1796,8 +1796,13 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 
 	originalJWTSecret := cfg.JWT.Secret
 	if allowMissingJWTSecret && originalJWTSecret == "" {
-		// 启动阶段允许先无 JWT 密钥，后续在数据库初始化后补齐。
-		cfg.JWT.Secret = strings.Repeat("0", 32)
+		// 启动阶段允许先无 JWT 密钥，后续在数据库初始化后补齐。这里仅使用
+		// 一次性随机值完成其余配置校验，校验后立即恢复为空。
+		temporaryJWTSecret, err := generateJWTSecret(32)
+		if err != nil {
+			return nil, fmt.Errorf("generate temporary jwt secret error: %w", err)
+		}
+		cfg.JWT.Secret = temporaryJWTSecret
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -1815,9 +1820,6 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 		slog.Warn("security.response_headers.enabled=false; configurable header filtering disabled (default allowlist only).")
 	}
 
-	if cfg.JWT.Secret != "" && isWeakJWTSecret(cfg.JWT.Secret) {
-		slog.Warn("JWT secret appears weak; use a 32+ character random secret in production.")
-	}
 	if len(cfg.Security.ResponseHeaders.AdditionalAllowed) > 0 || len(cfg.Security.ResponseHeaders.ForceRemove) > 0 {
 		slog.Info("response header policy configured",
 			"additional_allowed", cfg.Security.ResponseHeaders.AdditionalAllowed,
@@ -2533,6 +2535,9 @@ func (c *Config) Validate() error {
 	// 选择 bytes 而不是 rune 计数，确保二进制/随机串的长度语义更接近“熵”而非“字符数”。
 	if len([]byte(jwtSecret)) < 32 {
 		return fmt.Errorf("jwt.secret must be at least 32 bytes")
+	}
+	if isWeakJWTSecret(jwtSecret) {
+		return fmt.Errorf("jwt.secret appears weak; use a random secret")
 	}
 	switch c.Log.Level {
 	case "debug", "info", "warn", "error":
@@ -3533,8 +3538,20 @@ func isWeakJWTSecret(secret string) bool {
 		"admin":                   {},
 		"jwt-secret":              {},
 	}
-	_, exists := weak[lower]
-	return exists
+	if _, exists := weak[lower]; exists {
+		return true
+	}
+
+	runes := []rune(lower)
+	if len(runes) < 2 {
+		return true
+	}
+	for _, r := range runes[1:] {
+		if r != runes[0] {
+			return false
+		}
+	}
+	return true
 }
 
 func generateJWTSecret(byteLength int) (string, error) {

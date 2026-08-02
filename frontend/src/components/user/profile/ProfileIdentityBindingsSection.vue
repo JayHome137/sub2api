@@ -604,8 +604,8 @@ function validateEmailBindingForm(requireCode: boolean): boolean {
     appStore.showError(t('auth.passwordRequired'))
     return false
   }
-  if (requireCode && !emailBound.value && emailBindingForm.password.length < 6) {
-    appStore.showError(t('auth.passwordMinLength'))
+  if (requireCode && !emailBound.value && emailBindingForm.password.length < 8) {
+    appStore.showError(t('auth.newPasswordMinLength'))
     return false
   }
   return true

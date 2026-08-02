@@ -3,11 +3,21 @@
 package payment
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/enttest"
+	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
+
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
+	_ "modernc.org/sqlite"
 )
 
 func TestInstanceSupportsType(t *testing.T) {
@@ -132,6 +142,91 @@ func makeLimitsJSON(paymentType string, cl ChannelLimits) string {
 	m := map[string]ChannelLimits{paymentType: cl}
 	b, _ := json.Marshal(m)
 	return string(b)
+}
+
+func TestSelectInstanceFailsClosedWhenAllInstancesExceedLimits(t *testing.T) {
+	ctx := context.Background()
+	client, _ := newLoadBalancerTestClient(t)
+
+	_, err := client.PaymentProviderInstance.Create().
+		SetProviderKey("easypay").
+		SetName("limited-instance").
+		SetConfig("{}").
+		SetSupportedTypes(string(TypeAlipay)).
+		SetEnabled(true).
+		SetLimits(makeLimitsJSON(string(TypeAlipay), ChannelLimits{SingleMax: 10})).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create provider instance: %v", err)
+	}
+
+	selection, err := NewDefaultLoadBalancer(client, nil).SelectInstance(
+		ctx, "", TypeAlipay, StrategyRoundRobin, 20,
+	)
+	if err == nil {
+		t.Fatal("SelectInstance() error = nil, want limit exhaustion error")
+	}
+	if selection != nil {
+		t.Fatalf("SelectInstance() selection = %#v, want nil", selection)
+	}
+	if !strings.Contains(err.Error(), "no provider instance satisfies limits") {
+		t.Fatalf("SelectInstance() error = %q, want limit exhaustion error", err)
+	}
+}
+
+func TestSelectInstanceFailsClosedWhenDailyUsageQueryFails(t *testing.T) {
+	ctx := context.Background()
+	client, db := newLoadBalancerTestClient(t)
+
+	_, err := client.PaymentProviderInstance.Create().
+		SetProviderKey("easypay").
+		SetName("query-error-instance").
+		SetConfig("{}").
+		SetSupportedTypes(string(TypeAlipay)).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create provider instance: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, "DROP TABLE "+paymentorder.Table); err != nil {
+		t.Fatalf("drop payment orders table: %v", err)
+	}
+
+	selection, err := NewDefaultLoadBalancer(client, nil).SelectInstance(
+		ctx, "", TypeAlipay, StrategyRoundRobin, 20,
+	)
+	if err == nil {
+		t.Fatal("SelectInstance() error = nil, want daily usage query error")
+	}
+	if selection != nil {
+		t.Fatalf("SelectInstance() selection = %#v, want nil", selection)
+	}
+	if !strings.Contains(err.Error(), "query provider instance daily usage") {
+		t.Fatalf("SelectInstance() error = %q, want daily usage query error", err)
+	}
+}
+
+func newLoadBalancerTestClient(t *testing.T) (*dbent.Client, *sql.DB) {
+	t.Helper()
+
+	dbName := fmt.Sprintf(
+		"file:%s?mode=memory&cache=shared&_fk=1",
+		strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()),
+	)
+	db, err := sql.Open("sqlite", dbName)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		t.Fatalf("enable sqlite foreign keys: %v", err)
+	}
+
+	drv := entsql.OpenDB(dialect.SQLite, db)
+	client := enttest.NewClient(t, enttest.WithOptions(dbent.Driver(drv)))
+	t.Cleanup(func() { _ = client.Close() })
+	return client, db
 }
 
 // ---------------------------------------------------------------------------

@@ -83,7 +83,7 @@
             </button>
           </div>
           <p class="input-hint">
-            {{ t('auth.passwordHint') }}
+            {{ t('auth.newPasswordHint') }}
           </p>
         </div>
 
@@ -805,8 +805,8 @@ function validateForm(): boolean {
   if (!formData.password) {
     errors.password = t('auth.passwordRequired')
     isValid = false
-  } else if (formData.password.length < 6) {
-    errors.password = t('auth.passwordMinLength')
+  } else if (formData.password.length < 8) {
+    errors.password = t('auth.newPasswordMinLength')
     isValid = false
   }
 

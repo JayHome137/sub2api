@@ -10,6 +10,52 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
+func TestAdminProcessRefundRequestAmountPresence(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		body    string
+		wantErr bool
+		wantNil bool
+		want    float64
+	}{
+		{name: "omitted amount", body: `{}`, wantNil: true},
+		{name: "explicit null", body: `{"amount":null}`, wantErr: true},
+		{name: "explicit zero", body: `{"amount":0}`, want: 0},
+		{name: "explicit negative", body: `{"amount":-1}`, want: -1},
+		{name: "explicit positive", body: `{"amount":25.5}`, want: 25.5},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var req AdminProcessRefundRequest
+			err := json.Unmarshal([]byte(tt.body), &req)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("unmarshal request error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unmarshal request: %v", err)
+			}
+			amount := req.Amount.Pointer()
+			if tt.wantNil {
+				if amount != nil {
+					t.Fatalf("Amount = %v, want nil", *amount)
+				}
+				return
+			}
+			if amount == nil || *amount != tt.want {
+				t.Fatalf("Amount = %v, want %v", amount, tt.want)
+			}
+		})
+	}
+}
+
 func TestSanitizeAdminPaymentOrderForResponseAddsCurrency(t *testing.T) {
 	now := time.Now()
 	order := &dbent.PaymentOrder{

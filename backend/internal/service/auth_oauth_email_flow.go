@@ -11,7 +11,6 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
 func normalizeOAuthSignupSource(signupSource string) string {
@@ -113,6 +112,9 @@ func (s *AuthService) RegisterOAuthEmailAccount(
 	if s.settingService == nil || (!s.settingService.IsRegistrationEnabled(ctx) && !s.canBypassRegistrationDisabledForOAuth(ctx, signupSource)) {
 		return nil, nil, ErrRegDisabled
 	}
+	if err := ValidateNewPassword(password); err != nil {
+		return nil, nil, err
+	}
 
 	email = strings.TrimSpace(strings.ToLower(email))
 	if isReservedEmail(email) {
@@ -191,6 +193,9 @@ func (s *AuthService) RegisterVerifiedOAuthEmailAccount(
 	if s.settingService == nil || (!s.settingService.IsRegistrationEnabled(ctx) && !s.canBypassRegistrationDisabledForOAuth(ctx, signupSource)) {
 		return nil, nil, ErrRegDisabled
 	}
+	if err := ValidateNewPassword(password); err != nil {
+		return nil, nil, err
+	}
 
 	email = strings.TrimSpace(strings.ToLower(email))
 	if email == "" || len(email) > 255 {
@@ -204,9 +209,6 @@ func (s *AuthService) RegisterVerifiedOAuthEmailAccount(
 	}
 	if err := s.validateRegistrationEmailPolicy(ctx, email); err != nil {
 		return nil, nil, err
-	}
-	if strings.TrimSpace(password) == "" {
-		return nil, nil, infraerrors.BadRequest("PASSWORD_REQUIRED", "password is required")
 	}
 	if _, err := s.validateOAuthRegistrationInvitation(ctx, invitationCode); err != nil {
 		return nil, nil, err

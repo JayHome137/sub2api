@@ -193,7 +193,7 @@ async function register() {
 
 // Invalid inputs
 ❌ Username: "jo" → Error: "Username must be at least 3 characters"
-❌ Password: "12345" → Error: "Password must be at least 6 characters"
+❌ Password: "12345" → Error: "Password must be at least 8 characters"
 ❌ Username: "" → Error: "Username is required"
 ❌ Password: "" → Error: "Password is required"
 ```

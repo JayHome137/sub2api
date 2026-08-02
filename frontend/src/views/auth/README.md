@@ -39,7 +39,7 @@ import { LoginView } from '@/views/auth'
 **Validation Rules:**
 
 - Username: Required, minimum 3 characters
-- Password: Required, minimum 6 characters
+- Password: Required, minimum 8 characters
 
 **Behavior:**
 

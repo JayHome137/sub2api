@@ -72,6 +72,30 @@ describe('PendingOAuthCreateAccountForm', () => {
     ])
   })
 
+  it('requires eight characters when creating a password', async () => {
+    const wrapper = mount(PendingOAuthCreateAccountForm, {
+      props: {
+        testIdPrefix: 'linuxdo',
+        initialEmail: 'user@example.com',
+        isSubmitting: false
+      }
+    })
+    const password = wrapper.get('[data-testid="linuxdo-create-account-password"]')
+    const submit = wrapper.get('[data-testid="linuxdo-create-account-submit"]')
+
+    await password.setValue('1234567')
+    expect(submit.attributes('disabled')).toBeDefined()
+    await wrapper.get('form').trigger('submit.prevent')
+    expect(wrapper.emitted('submit')).toBeUndefined()
+
+    await password.setValue('12345678')
+    expect(submit.attributes('disabled')).toBeUndefined()
+    await wrapper.get('form').trigger('submit.prevent')
+    expect(wrapper.emitted('submit')?.[0]?.[0]).toMatchObject({
+      password: '12345678'
+    })
+  })
+
   it('renders action labels through i18n keys', () => {
     const wrapper = mount(PendingOAuthCreateAccountForm, {
       props: {

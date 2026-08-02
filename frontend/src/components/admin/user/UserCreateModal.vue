@@ -14,7 +14,7 @@
         <label class="input-label">{{ t('admin.users.password') }}</label>
         <div class="flex gap-2">
           <div class="relative flex-1">
-            <input v-model="form.password" type="text" required class="input pr-10" :placeholder="t('admin.users.enterPassword')" />
+            <input v-model="form.password" type="text" required minlength="8" class="input pr-10" :placeholder="t('admin.users.enterPassword')" />
           </div>
           <button type="button" @click="generateRandomPassword" class="btn btn-secondary px-3">
             <Icon name="refresh" size="md" />

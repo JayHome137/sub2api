@@ -172,6 +172,31 @@ func TestAuthServiceBindEmailIdentity_UpdatesEmailAndAppliesFirstBindDefaults(t 
 	require.Equal(t, 1, countProviderGrantRecords(t, client, user.ID, "email", "first_bind"))
 }
 
+func TestAuthServiceBindEmailIdentity_RejectsShortPasswordForFirstRealEmail(t *testing.T) {
+	cache := &emailBindCacheStub{
+		data: &service.VerificationCodeData{
+			Code:      "123456",
+			CreatedAt: time.Now().UTC(),
+			ExpiresAt: time.Now().UTC().Add(10 * time.Minute),
+		},
+	}
+	svc, _, client := newAuthServiceForEmailBind(t, nil, cache, nil)
+	ctx := context.Background()
+	user := createEmailBindTestUser(
+		t,
+		client,
+		"legacy-user"+service.LinuxDoConnectSyntheticEmailDomain,
+		"legacy-user",
+		"old-hash",
+	)
+
+	_, err := svc.BindEmailIdentity(ctx, user.ID, "new@example.com", "123456", "1234567")
+	require.ErrorIs(t, err, service.ErrPasswordTooShort)
+	storedUser, getErr := client.User.Get(ctx, user.ID)
+	require.NoError(t, getErr)
+	require.Equal(t, user.Email, storedUser.Email)
+}
+
 func TestAuthServiceBindEmailIdentity_RejectsExistingEmailOnAnotherUser(t *testing.T) {
 	cache := &emailBindCacheStub{
 		data: &service.VerificationCodeData{
