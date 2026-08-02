@@ -214,16 +214,19 @@ jobs:
           [ "$status" = "healthy" ]
 
           base_url=http://127.0.0.1:18080
-          curl --fail --silent --show-error --connect-timeout 2 --max-time 5 "$base_url/frontend-health" | grep -q '"status":"ok"'
-          curl --fail --silent --show-error --connect-timeout 2 --max-time 5 "$base_url/health" | grep -q '"status":"ok"'
-          curl --fail --silent --show-error --connect-timeout 2 --max-time 5 "$base_url/" | grep -q 'AIFoo'
+          frontend_health=$(curl --fail --silent --show-error --connect-timeout 2 --max-time 5 "$base_url/frontend-health")
+          grep -q '"status":"ok"' <<< "$frontend_health"
+          backend_health=$(curl --fail --silent --show-error --connect-timeout 2 --max-time 5 "$base_url/health")
+          grep -q '"status":"ok"' <<< "$backend_health"
+          landing_html=$(curl --fail --silent --show-error --connect-timeout 2 --max-time 5 "$base_url/")
+          grep -q 'AIFoo' <<< "$landing_html"
 
           assert_security_headers() {
             headers=$(curl --fail --silent --show-error --dump-header - --output /dev/null --connect-timeout 2 --max-time 5 "$1" | tr -d '\r')
-            printf '%s\n' "$headers" | grep -Eqi '^X-Content-Type-Options: nosniff$'
-            printf '%s\n' "$headers" | grep -Eqi '^Referrer-Policy: strict-origin-when-cross-origin$'
-            printf '%s\n' "$headers" | grep -Eqi '^X-Frame-Options: DENY$'
-            printf '%s\n' "$headers" | grep -Eqi '^Content-Security-Policy-Report-Only:'
+            grep -Eqi '^X-Content-Type-Options: nosniff$' <<< "$headers"
+            grep -Eqi '^Referrer-Policy: strict-origin-when-cross-origin$' <<< "$headers"
+            grep -Eqi '^X-Frame-Options: DENY$' <<< "$headers"
+            grep -Eqi '^Content-Security-Policy-Report-Only:' <<< "$headers"
           }
 
           for route in / /login /aifoo-docs-api-scripts.js /health; do
@@ -232,8 +235,8 @@ jobs:
 
           for route in login admin/dashboard custom/preflight; do
             page=$(curl --fail --silent --show-error --connect-timeout 2 --max-time 5 "$base_url/$route")
-            printf '%s' "$page" | grep -q '<div id="app"></div>'
-            if printf '%s' "$page" | grep -Eq 'shell-bootstrap|console-override|auth-override|auth-preload|auth-theme-toggle'; then
+            grep -q '<div id="app"></div>' <<< "$page"
+            if grep -Eq 'shell-bootstrap|console-override|auth-override|auth-preload|auth-theme-toggle' <<< "$page"; then
               echo "Legacy override reference detected on /$route" >&2
               exit 1
             fi
