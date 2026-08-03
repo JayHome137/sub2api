@@ -165,7 +165,72 @@ fi
 docker compose \
   --project-name "$COMPOSE_PROJECT" \
   --file "$TEST_ROOT/app/docker-compose.yml" \
-  up -d >/dev/null
+  create frontend >/dev/null
+
+# Recreate the Compose-owned fixture with the volume metadata emitted by
+# Compose v1 while keeping the underlying nginx image free of VOLUME entries.
+legacy_labels=$(docker inspect "$PRODUCTION_CONTAINER" \
+  --format '{{json .Config.Labels}}')
+docker rm "$PRODUCTION_CONTAINER" >/dev/null
+docker_api_version=$(docker version --format '{{.Server.APIVersion}}')
+legacy_payload=$(jq -n \
+  --arg image nginx:1.27-alpine \
+  --arg bind_config "$TEST_ROOT/app/legacy-default.conf:/etc/nginx/conf.d/default.conf:ro" \
+  --arg bind_html "$TEST_ROOT/app/legacy-html:/usr/share/nginx/html:ro" \
+  --arg host_port "$PRODUCTION_PORT" \
+  --arg network "$NETWORK" \
+  --argjson labels "$legacy_labels" \
+  '{
+    Image: $image,
+    Labels: $labels,
+    ExposedPorts: {"8080/tcp": {}},
+    Volumes: {
+      "/etc/nginx/conf.d/default.conf": {},
+      "/usr/share/nginx/html": {}
+    },
+    HostConfig: {
+      Binds: [$bind_config, $bind_html],
+      NetworkMode: $network,
+      PortBindings: {
+        "8080/tcp": [{HostIp: "127.0.0.1", HostPort: $host_port}]
+      }
+    },
+    NetworkingConfig: {
+      EndpointsConfig: {($network): {Aliases: ["frontend"]}}
+    }
+  }')
+create_response=$(curl --fail --silent --show-error \
+  --unix-socket /var/run/docker.sock \
+  --header 'Content-Type: application/json' \
+  --data-binary "$legacy_payload" \
+  "http://localhost/v$docker_api_version/containers/create?name=$PRODUCTION_CONTAINER")
+legacy_container_id=$(printf '%s' "$create_response" | jq -r '.Id // empty')
+if [ -z "$legacy_container_id" ]; then
+  echo "Docker Engine did not create the Compose v1 metadata fixture" >&2
+  exit 1
+fi
+curl --fail --silent --show-error \
+  --request POST \
+  --unix-socket /var/run/docker.sock \
+  "http://localhost/v$docker_api_version/containers/$legacy_container_id/start"
+
+legacy_image_volumes=$(docker image inspect nginx:1.27-alpine \
+  --format '{{json .Config.Volumes}}')
+case "$legacy_image_volumes" in
+  null|'{}') ;;
+  *)
+    echo "Legacy fixture base image unexpectedly declares volumes" >&2
+    exit 1
+    ;;
+esac
+legacy_container_volumes=$(docker inspect "$PRODUCTION_CONTAINER" \
+  --format '{{json .Config.Volumes}}')
+case "$legacy_container_volumes" in
+  null|'{}')
+    echo "Legacy fixture did not reproduce Compose v1 volume metadata" >&2
+    exit 1
+    ;;
+esac
 
 legacy_ready=false
 for _ in $(seq 1 30); do
@@ -229,6 +294,15 @@ backup_id=$(printf '%s\n' "$backup_output" \
 validate_backup_id "$backup_id"
 TEST_ROLLBACK_IMAGE_REF=$(metadata_value rollback_image_ref \
   "$AIFOO_BACKUP_ROOT/$backup_id/metadata.env")
+rollback_image_volumes=$(docker image inspect "$TEST_ROLLBACK_IMAGE_REF" \
+  --format '{{json .Config.Volumes}}')
+case "$rollback_image_volumes" in
+  null|'{}') ;;
+  *)
+    echo "Rollback image retained the legacy container volume metadata" >&2
+    exit 1
+    ;;
+esac
 
 # Break the original bind sources after backup so deploy and restore can only
 # pass when their Compose files use the candidate and rollback image contents.

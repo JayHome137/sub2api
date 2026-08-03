@@ -120,6 +120,8 @@ require_text "$DOCKER_INTEGRATION" 'disable: true'
 require_text "$DOCKER_INTEGRATION" 'INTEGRATION_LABEL=cc.aifoo.integration-run'
 require_text "$DOCKER_INTEGRATION" 'mount_count=$(docker inspect'
 require_text "$DOCKER_INTEGRATION" 'remove_owned_container "$PRODUCTION_CONTAINER"'
+require_text "$DOCKER_INTEGRATION" 'Legacy fixture did not reproduce Compose v1 volume metadata'
+require_text "$DOCKER_INTEGRATION" 'Rollback image retained the legacy container volume metadata'
 require_text "$DEPLOY_HELPER" '"$rollback_image_id"|missing)'
 require_text "$VALIDATE_WORKFLOW" 'timeout-minutes: 30'
 
