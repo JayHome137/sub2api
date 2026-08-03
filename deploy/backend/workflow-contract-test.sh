@@ -114,6 +114,9 @@ require_text "$HELPER" 'Backend deployment state does not authorize this restore
 require_text "$HELPER" 'require_backup_metadata'
 require_text "$HELPER" 'candidate_compose_sha256'
 require_text "$HELPER" 'rollback_compose_sha256'
+require_text "$HELPER" 'target_image_id'
+require_text "$HELPER" "trap 'cleanup_incomplete_backup 143' TERM"
+require_text "$HELPER" 'Backend backup is missing a required non-empty file'
 require_text "$HELPER" 'trap restore_interrupted_deploy EXIT HUP INT TERM'
 require_text "$HELPER" 'docker_compose up -d --no-deps --force-recreate sub2api'
 require_text "$HELPER" 'database_restore=not_performed'
@@ -234,11 +237,21 @@ ROLLBACK_COMPOSE_SHA=fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 TEST_BACKUP_DIR=$AIFOO_BACKUP_ROOT/$TEST_BACKUP_ID
 mkdir -p "$TEST_BACKUP_DIR" "$TEST_ROOT/bin"
 
+cp "$TEST_ROOT/docker-compose.yml" "$TEST_BACKUP_DIR/docker-compose.yml"
+cp "$TEST_ROOT/docker-compose.yml" "$TEST_BACKUP_DIR/candidate-compose.yml"
+cp "$TEST_ROOT/docker-compose.yml" "$TEST_BACKUP_DIR/rollback-compose.yml"
+printf '# candidate image\n' >> "$TEST_BACKUP_DIR/candidate-compose.yml"
+printf '# rollback image\n' >> "$TEST_BACKUP_DIR/rollback-compose.yml"
+ORIGINAL_COMPOSE_SHA=$(sha256sum "$TEST_BACKUP_DIR/docker-compose.yml" | awk '{print $1}')
+CANDIDATE_COMPOSE_SHA=$(sha256sum "$TEST_BACKUP_DIR/candidate-compose.yml" | awk '{print $1}')
+ROLLBACK_COMPOSE_SHA=$(sha256sum "$TEST_BACKUP_DIR/rollback-compose.yml" | awk '{print $1}')
+
 cat > "$TEST_BACKUP_DIR/metadata.env" <<EOF
 backup_id=$TEST_BACKUP_ID
 target_digest=$TEST_DIGEST
 target_release=$TEST_RELEASE
 target_commit=$TEST_COMMIT
+target_image_id=$TARGET_IMAGE_ID
 expected_migrations=$TEST_MIGRATIONS
 previous_image_ref=weishaw/sub2api:old
 previous_image_id=$PREVIOUS_IMAGE_ID
@@ -250,14 +263,21 @@ compose_sha256=$ORIGINAL_COMPOSE_SHA
 candidate_compose_sha256=$CANDIDATE_COMPOSE_SHA
 rollback_compose_sha256=$ROLLBACK_COMPOSE_SHA
 EOF
-cp "$TEST_ROOT/docker-compose.yml" "$TEST_BACKUP_DIR/rollback-compose.yml"
-: > "$TEST_BACKUP_DIR/backend-image.tar"
-: > "$TEST_BACKUP_DIR/companion-containers.txt"
-(
-  cd "$TEST_BACKUP_DIR"
-  find . -type f -print0 | sort -z | xargs -0 sha256sum
-) > "$TEST_ROOT/backup-checksums"
-mv "$TEST_ROOT/backup-checksums" "$TEST_BACKUP_DIR/SHA256SUMS"
+printf 'backend image archive\n' > "$TEST_BACKUP_DIR/backend-image.tar"
+printf 'frontend|postgres|redis signatures\n' > "$TEST_BACKUP_DIR/companion-containers.txt"
+printf '001_bootstrap.sql\tchecksum\tapplied\n' > "$TEST_BACKUP_DIR/schema-migrations.tsv"
+printf 'postgres custom dump\n' > "$TEST_BACKUP_DIR/postgres.dump"
+printf 'postgres globals\n' > "$TEST_BACKUP_DIR/postgres-globals.sql"
+printf 'redis rdb\n' > "$TEST_BACKUP_DIR/redis.rdb"
+printf 'backend data archive\n' > "$TEST_BACKUP_DIR/backend-data.tar.gz"
+write_backup_checksums() {
+  (
+    cd "$TEST_BACKUP_DIR"
+    find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum
+  ) > "$TEST_ROOT/backup-checksums"
+  mv "$TEST_ROOT/backup-checksums" "$TEST_BACKUP_DIR/SHA256SUMS"
+}
+write_backup_checksums
 cat > "$DEPLOYMENT_STATE_FILE" <<EOF
 digest=$TEST_DIGEST
 backup_id=$TEST_BACKUP_ID
@@ -290,7 +310,7 @@ docker() {
   if [ "${1:-}" = "image" ] && [ "${2:-}" = "inspect" ]; then
     case "${3:-}" in
       aifoo/sub2api-backend-rollback:*) printf '%s\n' "$PREVIOUS_IMAGE_ID" ;;
-      *) printf '%s\n' "$TARGET_IMAGE_ID" ;;
+      *) return 1 ;;
     esac
     return
   fi
@@ -298,7 +318,8 @@ docker() {
 }
 
 docker_compose() {
-  [ "$RESTORE_FAILURE" != "compose_start" ]
+  [ "$RESTORE_FAILURE" != "compose_start" ] \
+    && [ "$RESTORE_FAILURE" != "idempotent_must_not_restart" ]
 }
 
 verify_backend_health() {
@@ -312,6 +333,34 @@ verify_companions_unchanged() {
 if restore_image "$TEST_DIGEST" "$TEST_RELEASE" "$TEST_COMMIT" \
   "$TEST_MIGRATIONS" 20260803-120000-fedcba-backend-v0.1.170 >/dev/null 2>&1; then
   fail "restore succeeded without a verified backup"
+fi
+
+mv "$TEST_BACKUP_DIR/postgres.dump" "$TEST_ROOT/postgres.dump"
+if require_backup "$TEST_DIGEST" "$TEST_RELEASE" "$TEST_COMMIT" \
+  "$TEST_MIGRATIONS" "$TEST_BACKUP_ID" >/dev/null 2>&1; then
+  fail "backup validation accepted a missing PostgreSQL dump"
+fi
+mv "$TEST_ROOT/postgres.dump" "$TEST_BACKUP_DIR/postgres.dump"
+
+cp "$TEST_BACKUP_DIR/candidate-compose.yml" "$TEST_ROOT/candidate-compose.yml"
+printf '# metadata drift\n' >> "$TEST_BACKUP_DIR/candidate-compose.yml"
+write_backup_checksums
+if require_backup "$TEST_DIGEST" "$TEST_RELEASE" "$TEST_COMMIT" \
+  "$TEST_MIGRATIONS" "$TEST_BACKUP_ID" >/dev/null 2>&1; then
+  fail "backup validation accepted Compose metadata drift"
+fi
+mv "$TEST_ROOT/candidate-compose.yml" "$TEST_BACKUP_DIR/candidate-compose.yml"
+write_backup_checksums
+
+if (
+  # shellcheck disable=SC2329
+  require_backup() {
+    return 1
+  }
+  restore_image "$TEST_DIGEST" "$TEST_RELEASE" "$TEST_COMMIT" \
+    "$TEST_MIGRATIONS" "$TEST_BACKUP_ID" >/dev/null 2>&1
+); then
+  fail "restore ignored an explicit require_backup failure"
 fi
 
 for RESTORE_FAILURE in image_load compose_start rollback_health; do

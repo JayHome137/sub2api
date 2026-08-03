@@ -500,6 +500,7 @@ create_backup() {
   validate_migrations "$migrations"
   image=$(image_ref "$digest")
   docker image inspect "$image" >/dev/null
+  target_image_id=$(docker image inspect "$image" --format '{{.Id}}')
   version_output=$(image_version_output "$image")
   verify_version_output "$version_output" "$release_tag" "$release_commit"
 
@@ -512,18 +513,26 @@ create_backup() {
   mkdir "$backup_dir"
 
   cleanup_incomplete_backup() {
-    status=$?
+    status=$1
     trap - EXIT HUP INT TERM
-    if [ "$status" -ne 0 ] && [ -d "$backup_dir" ]; then
+    if [ -d "$backup_dir" ]; then
       case "$backup_dir" in
         "$BACKUP_ROOT"/*-backend-v*) rm -rf -- "$backup_dir" ;;
       esac
     fi
     exit "$status"
   }
-  trap cleanup_incomplete_backup EXIT HUP INT TERM
+  trap 'cleanup_incomplete_backup $?' EXIT
+  trap 'cleanup_incomplete_backup 129' HUP
+  trap 'cleanup_incomplete_backup 130' INT
+  trap 'cleanup_incomplete_backup 143' TERM
 
   cp "$COMPOSE_FILE" "$backup_dir/docker-compose.yml"
+  original_compose_sha=$(sha256sum "$backup_dir/docker-compose.yml" | awk '{print $1}')
+  if [ "$(compose_sha256)" != "$original_compose_sha" ]; then
+    echo "Production Compose changed while the backend backup started" >&2
+    exit 1
+  fi
   previous_image_ref=$(container_field "$BACKEND_CONTAINER" '{{.Config.Image}}')
   previous_image_id=$(container_field "$BACKEND_CONTAINER" '{{.Image}}')
   previous_version_output=$(backend_version_output)
@@ -540,8 +549,10 @@ create_backup() {
   rollback_image_id=$(docker image inspect "$rollback_image_ref" --format '{{.Id}}')
   docker image save --output "$backup_dir/backend-image.tar" "$rollback_image_ref"
 
-  rewrite_backend_service "$COMPOSE_FILE" "$backup_dir/candidate-compose.yml" "$image"
-  rewrite_backend_service "$COMPOSE_FILE" "$backup_dir/rollback-compose.yml" "$rollback_image_ref"
+  rewrite_backend_service \
+    "$backup_dir/docker-compose.yml" "$backup_dir/candidate-compose.yml" "$image"
+  rewrite_backend_service \
+    "$backup_dir/docker-compose.yml" "$backup_dir/rollback-compose.yml" "$rollback_image_ref"
   docker-compose -f "$backup_dir/candidate-compose.yml" config -q
   docker-compose -f "$backup_dir/rollback-compose.yml" config -q
   candidate_compose_sha=$(sha256sum "$backup_dir/candidate-compose.yml" | awk '{print $1}')
@@ -564,6 +575,10 @@ create_backup() {
   docker run --rm --network none \
     -v "$backup_dir:/backup:ro" \
     "$redis_image_ref" redis-check-rdb /backup/redis.rdb >/dev/null
+  if [ "$(compose_sha256)" != "$original_compose_sha" ]; then
+    echo "Production Compose changed during the backend backup" >&2
+    exit 1
+  fi
 
   {
     printf 'backup_id=%s\n' "$backup_id"
@@ -571,6 +586,7 @@ create_backup() {
     printf 'target_digest=%s\n' "$digest"
     printf 'target_release=%s\n' "$release_tag"
     printf 'target_commit=%s\n' "$release_commit"
+    printf 'target_image_id=%s\n' "$target_image_id"
     printf 'expected_migrations=%s\n' "$migrations"
     printf 'previous_image_ref=%s\n' "$previous_image_ref"
     printf 'previous_image_id=%s\n' "$previous_image_id"
@@ -578,7 +594,7 @@ create_backup() {
     printf 'previous_commit=%s\n' "$previous_commit"
     printf 'rollback_image_ref=%s\n' "$rollback_image_ref"
     printf 'rollback_image_id=%s\n' "$rollback_image_id"
-    printf 'compose_sha256=%s\n' "$(compose_sha256)"
+    printf 'compose_sha256=%s\n' "$original_compose_sha"
     printf 'candidate_compose_sha256=%s\n' "$candidate_compose_sha"
     printf 'rollback_compose_sha256=%s\n' "$rollback_compose_sha"
   } > "$backup_dir/metadata.env"
@@ -595,6 +611,7 @@ create_backup() {
     sha256sum -c SHA256SUMS >/dev/null
   )
   chmod 700 "$backup_dir"
+  require_backup "$digest" "$release_tag" "$release_commit" "$migrations" "$backup_id"
   trap - EXIT HUP INT TERM
   printf 'backup_id=%s\n' "$backup_id"
   printf 'backup_verified=true\n'
@@ -611,14 +628,22 @@ require_backup_metadata() {
   meta_previous_commit=$(metadata_value previous_commit "$metadata_file") || return 1
   meta_rollback_image_ref=$(metadata_value rollback_image_ref "$metadata_file") || return 1
   meta_rollback_image_id=$(metadata_value rollback_image_id "$metadata_file") || return 1
+  meta_target_image_id=$(metadata_value target_image_id "$metadata_file") || return 1
+  meta_backup_id=$(metadata_value backup_id "$metadata_file") || return 1
+  meta_target_release=$(metadata_value target_release "$metadata_file") || return 1
   meta_compose_sha=$(metadata_value compose_sha256 "$metadata_file") || return 1
   meta_candidate_compose_sha=$(metadata_value candidate_compose_sha256 "$metadata_file") \
     || return 1
   meta_rollback_compose_sha=$(metadata_value rollback_compose_sha256 "$metadata_file") \
     || return 1
 
-  if ! is_sha256 "$meta_previous_image_id" \
+  if [ "$meta_backup_id" != "$backup_id" ] \
+    || ! printf '%s' "$meta_target_release" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+    || [ "${backup_id##*-backend-}" != "$meta_target_release" ] \
+    || ! is_sha256 "$meta_previous_image_id" \
     || ! is_sha256 "$meta_rollback_image_id" \
+    || ! is_sha256 "$meta_target_image_id" \
+    || [ "$meta_rollback_image_id" != "$meta_previous_image_id" ] \
     || ! is_version "$meta_previous_version" \
     || ! printf '%s' "$meta_previous_commit" | grep -Eq '^[0-9a-f]{40}$' \
     || [ "$meta_rollback_image_ref" != "aifoo/sub2api-backend-rollback:$backup_id" ] \
@@ -626,6 +651,12 @@ require_backup_metadata() {
     || ! is_hex_sha256 "$meta_candidate_compose_sha" \
     || ! is_hex_sha256 "$meta_rollback_compose_sha"; then
     echo "Backend backup metadata has an invalid format" >&2
+    return 1
+  fi
+  if [ "$(sha256sum "$backup_dir/docker-compose.yml" | awk '{print $1}')" != "$meta_compose_sha" ] \
+    || [ "$(sha256sum "$backup_dir/candidate-compose.yml" | awk '{print $1}')" != "$meta_candidate_compose_sha" ] \
+    || [ "$(sha256sum "$backup_dir/rollback-compose.yml" | awk '{print $1}')" != "$meta_rollback_compose_sha" ]; then
+    echo "Backend backup Compose metadata does not match the saved files" >&2
     return 1
   fi
 }
@@ -643,6 +674,32 @@ require_backup() {
   validate_backup_id "$backup_id"
   backup_dir=$BACKUP_ROOT/$backup_id
   [ -d "$backup_dir" ] || { echo "Backend backup does not exist" >&2; return 1; }
+  for required_file in \
+    docker-compose.yml \
+    candidate-compose.yml \
+    rollback-compose.yml \
+    companion-containers.txt \
+    schema-migrations.tsv \
+    postgres.dump \
+    postgres-globals.sql \
+    redis.rdb \
+    backend-data.tar.gz \
+    backend-image.tar \
+    metadata.env \
+    SHA256SUMS; do
+    if [ ! -f "$backup_dir/$required_file" ] \
+      || [ -L "$backup_dir/$required_file" ] \
+      || [ ! -s "$backup_dir/$required_file" ]; then
+      echo "Backend backup is missing a required non-empty file: $required_file" >&2
+      return 1
+    fi
+    if [ "$required_file" != "SHA256SUMS" ] \
+      && ! awk '{sub(/^\*/, "", $2); sub(/^\.\//, "", $2); print $2}' \
+        "$backup_dir/SHA256SUMS" | grep -Fxq "$required_file"; then
+      echo "Backend backup checksum manifest does not cover: $required_file" >&2
+      return 1
+    fi
+  done
   (
     cd "$backup_dir"
     sha256sum -c SHA256SUMS >/dev/null
@@ -708,8 +765,7 @@ restore_image() {
     return
   fi
 
-  target_ref=$(image_ref "$digest") || return 1
-  target_image_id=$(docker image inspect "$target_ref" --format '{{.Id}}') \
+  target_image_id=$(metadata_value target_image_id "$backup_dir/metadata.env") \
     || return 1
   if [ "$current_image_id" != "$previous_image_id" ] \
     && [ "$current_image_id" != "$rollback_image_id" ] \
@@ -798,6 +854,12 @@ deploy_backend() {
   backup_dir=$BACKUP_ROOT/$backup_id
   image=$(image_ref "$digest")
   expected_image_id=$(docker image inspect "$image" --format '{{.Id}}')
+  backed_target_image_id=$(metadata_value target_image_id "$backup_dir/metadata.env") \
+    || return 1
+  if [ "$expected_image_id" != "$backed_target_image_id" ]; then
+    echo "Target backend image changed after backup" >&2
+    return 1
+  fi
 
   if [ "$(container_field "$BACKEND_CONTAINER" '{{.Config.Image}}')" = "$image" ]; then
     verify_backend_health "$expected_image_id" "$release_tag" "$release_commit"
