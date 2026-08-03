@@ -503,6 +503,22 @@ wait_for_ready() {
   return 1
 }
 
+wait_for_backend_proxy() {
+  attempts=0
+  while [ "$attempts" -lt 15 ]; do
+    if health_response=$(curl --fail --silent --connect-timeout 1 --max-time 2 \
+      "$PRODUCTION_URL/health") \
+      && printf '%s' "$health_response" | grep -q '"status":"ok"'; then
+      return 0
+    fi
+    attempts=$((attempts + 1))
+    if [ "$attempts" -lt 15 ]; then
+      sleep 2
+    fi
+  done
+  return 1
+}
+
 verify_production() {
   expected_image_id=$1
   mode=${2:-strict}
@@ -529,8 +545,7 @@ verify_production() {
       return 1
     fi
   fi
-  if ! curl --fail --silent --show-error --connect-timeout 2 --max-time 5 \
-    "$PRODUCTION_URL/health" | grep -q '"status":"ok"'; then
+  if ! wait_for_backend_proxy; then
     echo "Production backend proxy health check failed" >&2
     return 1
   fi

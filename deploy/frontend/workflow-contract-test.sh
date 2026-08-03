@@ -59,6 +59,8 @@ require_text "$SYNC_WORKFLOW" "uses: ./.github/workflows/backend-ci.yml"
 require_text "$SYNC_WORKFLOW" "uses: ./.github/workflows/security-scan.yml"
 require_text "$SYNC_WORKFLOW" "uses: ./.github/workflows/validate.yml"
 require_text "$SYNC_WORKFLOW" "publish_image: true"
+require_text "$SYNC_WORKFLOW" "group: aifoo-production-mutation"
+require_text "$SYNC_WORKFLOW" "statuses: write"
 
 if grep -Eq 'git fetch .*upstream main|refs/remotes/upstream/main' "$SYNC_WORKFLOW"; then
   fail "stable release sync must not fetch or mirror upstream main"
@@ -74,6 +76,9 @@ require_text "$VALIDATE_WORKFLOW" "Publish the smoke-tested image"
 require_text "$VALIDATE_WORKFLOW" "Download the smoke-tested image"
 require_text "$VALIDATE_WORKFLOW" "sub2api-frontend:candidate-"
 require_text "$VALIDATE_WORKFLOW" "Run deployment backup and restore integration"
+require_text "$VALIDATE_WORKFLOW" "Record exact production validation"
+require_text "$VALIDATE_WORKFLOW" "aifoo/frontend-validation"
+require_text "$VALIDATE_WORKFLOW" "statuses: write"
 if grep -Fq "file: Dockerfile" "$VALIDATE_WORKFLOW"; then
   fail "AIFoo validation must not build the full backend image"
 fi
@@ -83,6 +88,7 @@ require_text "$RELEASE_WORKFLOW" "uses: ./.github/workflows/security-scan.yml"
 require_text "$RELEASE_WORKFLOW" "uses: ./.github/workflows/validate.yml"
 require_text "$RELEASE_WORKFLOW" "needs: security"
 require_text "$RELEASE_WORKFLOW" "publish_image: true"
+require_text "$RELEASE_WORKFLOW" "statuses: write"
 require_text "$RELEASE_WORKFLOW" 'checkout_ref: ${{ github.sha }}'
 reject_text "$RELEASE_WORKFLOW" "push:"
 reject_text "$RELEASE_WORKFLOW" "tags:"
@@ -146,17 +152,26 @@ require_text "$DEPLOY_HELPER" 'rollback_compose_sha256='
 require_text "$DEPLOY_HELPER" 'mount-destinations.txt'
 require_text "$DEPLOY_HELPER" 'trap restore_interrupted_deploy HUP INT TERM'
 require_text "$DEPLOY_HELPER" 'verify_production "$rollback_image_id" legacy'
+require_text "$DEPLOY_HELPER" 'wait_for_backend_proxy'
 
 backup_line=$(grep -n 'name: Back up the current frontend' "$DEPLOY_WORKFLOW" | cut -d: -f1)
 deploy_line=$(grep -n 'name: Deploy the staged digest after verified backup' "$DEPLOY_WORKFLOW" | cut -d: -f1)
 checkout_line=$(grep -n 'name: Checkout approved production revision' "$DEPLOY_WORKFLOW" | cut -d: -f1)
 preflight_line=$(grep -n 'name: Require a fresh read-only VPS preflight' "$DEPLOY_WORKFLOW" | cut -d: -f1)
+validation_line=$(grep -n 'name: Require successful validation for approved production revision' "$DEPLOY_WORKFLOW" | cut -d: -f1)
+reconfirm_line=$(grep -n 'name: Reconfirm approved production revision before deployment' "$DEPLOY_WORKFLOW" | cut -d: -f1)
 [ -n "$backup_line" ] || fail "deploy workflow has no backup step"
 [ -n "$deploy_line" ] || fail "deploy workflow has no guarded deploy step"
 [ -n "$checkout_line" ] || fail "deploy workflow has no checkout step"
 [ -n "$preflight_line" ] || fail "deploy workflow has no fresh preflight step"
+[ -n "$validation_line" ] || fail "deploy workflow has no current production validation gate"
+[ -n "$reconfirm_line" ] || fail "deploy workflow has no final production revision check"
 [ "$backup_line" -lt "$deploy_line" ] || fail "backup must run before deployment"
 [ "$checkout_line" -lt "$preflight_line" ] || fail "checkout must run before fresh preflight"
+[ "$checkout_line" -lt "$validation_line" ] || fail "checkout must run before the validation gate"
+[ "$validation_line" -lt "$preflight_line" ] || fail "validation must pass before VPS preflight"
+[ "$backup_line" -lt "$reconfirm_line" ] || fail "backup must run before the final production check"
+[ "$reconfirm_line" -lt "$deploy_line" ] || fail "production must be rechecked before deployment"
 require_text "$DEPLOY_WORKFLOW" 'steps.backup.outputs.backup_id'
 require_text "$DEPLOY_WORKFLOW" 'Restore the backup after a failed deployment check'
 require_text "$DEPLOY_WORKFLOW" 'deploy-sub2api-frontend restore'
@@ -165,6 +180,7 @@ require_text "$DEPLOY_WORKFLOW" 'approval:'
 require_text "$DEPLOY_WORKFLOW" 'DEPLOY-AIFOO-FRONTEND'
 require_text "$DEPLOY_WORKFLOW" 'refs/heads/production'
 require_text "$DEPLOY_WORKFLOW" 'Only the repository owner can approve a production deployment'
+require_text "$DEPLOY_WORKFLOW" 'statuses: read'
 require_text "$DEPLOY_WORKFLOW" 'issues: read'
 require_text "$DEPLOY_WORKFLOW" 'uses: actions/checkout@v6'
 require_text "$DEPLOY_WORKFLOW" 'Verify validated candidate provenance'
@@ -173,6 +189,9 @@ require_text "$DEPLOY_WORKFLOW" 'labels=ready-for-vps'
 require_text "$DEPLOY_WORKFLOW" 'Require a fresh read-only VPS preflight'
 require_text "$DEPLOY_WORKFLOW" "grep -Fxq 'preflight_result=ready'"
 require_text "$DEPLOY_WORKFLOW" "grep -Fxq 'backup_verified=true'"
+require_text "$DEPLOY_WORKFLOW" 'aifoo/frontend-validation'
+require_text "$DEPLOY_WORKFLOW" 'group: aifoo-production-mutation'
+require_text "$DEPLOY_WORKFLOW" 'production_sha=$(git ls-remote origin refs/heads/production'
 require_text "$DEPLOY_WORKFLOW" 'if: (failure() || cancelled()) && steps.backup.outputs.backup_id != '\'''\'''
 
 require_text "$PREFLIGHT_WORKFLOW" 'workflow_dispatch:'
@@ -270,6 +289,9 @@ MOCK_LOADED_ROLLBACK_ID=$ROLLBACK_IMAGE_ID
 MOCK_BASE_VOLUMES=null
 MOCK_ROLLBACK_VOLUMES=null
 MOCK_FRONTEND_HEALTH_AVAILABLE=false
+MOCK_BACKEND_HEALTH_FAILURES_FILE=$TEST_ROOT/backend-health-failures
+printf '0\n' > "$MOCK_BACKEND_HEALTH_FAILURES_FILE"
+MOCK_SLEEP_CALLS=0
 MOCK_MOUNTS='/etc/nginx/conf.d/default.conf
 /usr/share/nginx/html'
 
@@ -389,13 +411,21 @@ curl() {
       fi
       echo '{"status":"ok"}'
       ;;
-    */health) echo '{"status":"ok"}' ;;
+    */health)
+      remaining_failures=$(cat "$MOCK_BACKEND_HEALTH_FAILURES_FILE")
+      if [ "$remaining_failures" -gt 0 ]; then
+        printf '%s\n' "$((remaining_failures - 1))" \
+          > "$MOCK_BACKEND_HEALTH_FAILURES_FILE"
+        return 1
+      fi
+      echo '{"status":"ok"}'
+      ;;
   esac
   return 0
 }
 
 sleep() {
-  :
+  MOCK_SLEEP_CALLS=$((MOCK_SLEEP_CALLS + 1))
 }
 
 expect_failure() {
@@ -408,6 +438,23 @@ expect_failure() {
 
 expect_failure "strict candidate verification accepted a container without HEALTHCHECK" \
   verify_production "$OLD_IMAGE_ID" strict
+
+printf '2\n' > "$MOCK_BACKEND_HEALTH_FAILURES_FILE"
+MOCK_SLEEP_CALLS=0
+verify_production "$OLD_IMAGE_ID" legacy
+[ "$MOCK_SLEEP_CALLS" -eq 2 ] \
+  || fail "transient backend proxy startup failures were not retried"
+
+printf '15\n' > "$MOCK_BACKEND_HEALTH_FAILURES_FILE"
+MOCK_SLEEP_CALLS=0
+if verify_production "$OLD_IMAGE_ID" legacy >/dev/null 2>&1; then
+  fail "persistent backend proxy failure passed production verification"
+fi
+[ "$MOCK_SLEEP_CALLS" -eq 14 ] \
+  || fail "backend proxy retry limit was not enforced"
+[ "$(cat "$MOCK_BACKEND_HEALTH_FAILURES_FILE")" -eq 0 ] \
+  || fail "backend proxy retry limit did not perform all 15 health requests"
+printf '0\n' > "$MOCK_BACKEND_HEALTH_FAILURES_FILE"
 
 MOCK_BASE_VOLUMES='{"/usr/share/nginx/html":{}}'
 expect_failure "base image volume metadata was accepted" create_backup "$TEST_DIGEST"

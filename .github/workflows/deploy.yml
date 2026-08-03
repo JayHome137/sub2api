@@ -16,9 +16,10 @@ permissions:
   contents: read
   issues: read
   packages: read
+  statuses: read
 
 concurrency:
-  group: production-frontend
+  group: aifoo-production-mutation
   cancel-in-progress: false
 
 jobs:
@@ -63,6 +64,31 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      - name: Require successful validation for approved production revision
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          production_sha=$(git ls-remote origin refs/heads/production | awk '{print $1}')
+          if [ "$production_sha" != "$GITHUB_SHA" ]; then
+            echo "Approved revision is no longer the current production revision" >&2
+            exit 1
+          fi
+          statuses=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/status")
+          validation_url=$(jq -r '
+            [.statuses[] | select(
+              .context == "aifoo/frontend-validation"
+              and .state == "success"
+            )]
+            | .[0].target_url // empty
+          ' <<< "$statuses")
+          expected_prefix="https://github.com/$GITHUB_REPOSITORY/actions/runs/"
+          if [[ "$validation_url" != "$expected_prefix"* ]]; then
+            echo "No exact-source AIFoo validation attestation exists for approved production" >&2
+            exit 1
+          fi
+          echo "validated_run=$validation_url"
 
       - name: Verify validated candidate provenance
         env:
@@ -226,6 +252,15 @@ jobs:
             exit 1
           fi
           echo "backup_id=$backup_id" >> "$GITHUB_OUTPUT"
+
+      - name: Reconfirm approved production revision before deployment
+        run: |
+          set -euo pipefail
+          production_sha=$(git ls-remote origin refs/heads/production | awk '{print $1}')
+          if [ "$production_sha" != "$GITHUB_SHA" ]; then
+            echo "Production moved after validation; deployment is blocked" >&2
+            exit 1
+          fi
 
       - name: Deploy the staged digest after verified backup
         id: deploy

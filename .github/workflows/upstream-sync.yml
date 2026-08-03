@@ -31,9 +31,10 @@ permissions:
   issues: write
   pull-requests: write
   packages: write
+  statuses: write
 
 concurrency:
-  group: upstream-release-sync
+  group: aifoo-production-mutation
   cancel-in-progress: false
 
 env:
