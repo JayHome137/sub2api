@@ -679,7 +679,23 @@ create_backup() {
   docker_compose -f "$backup_work_dir/candidate-compose.yml" config -q
   candidate_compose_sha=$(compose_sha256 "$backup_work_dir/candidate-compose.yml")
 
-  docker commit "$PRODUCTION_CONTAINER" "$snapshot_base_ref" >/dev/null
+  # Compose v1 records bind-mount destinations in the container's Config.Volumes.
+  # Committing that metadata makes file mounts unusable as a rollback-image base.
+  base_volume_metadata=$(docker image inspect "$current_image_id" \
+    --format '{{json .Config.Volumes}}')
+  case "$base_volume_metadata" in
+    null|'{}') ;;
+    *)
+      echo "Production base image declares volumes and cannot be safely reconstructed" >&2
+      exit 1
+      ;;
+  esac
+  docker image tag "$current_image_id" "$snapshot_base_ref"
+  snapshot_base_id=$(docker image inspect "$snapshot_base_ref" --format '{{.Id}}')
+  if [ "$snapshot_base_id" != "$current_image_id" ]; then
+    echo "Rollback base image does not match the running frontend image" >&2
+    exit 1
+  fi
   {
     echo "FROM $snapshot_base_ref"
     echo "USER 0"
@@ -702,6 +718,15 @@ create_backup() {
     echo "Rollback image did not produce a valid image ID" >&2
     exit 1
   fi
+  rollback_volume_metadata=$(docker image inspect "$rollback_image_ref" \
+    --format '{{json .Config.Volumes}}')
+  case "$rollback_volume_metadata" in
+    null|'{}') ;;
+    *)
+      echo "Rollback image unexpectedly declares volumes" >&2
+      exit 1
+      ;;
+  esac
   docker image inspect "$rollback_image_ref" > "$backup_work_dir/rollback-image-inspect.json"
   docker image save --output "$backup_work_dir/frontend-image.tar" "$rollback_image_ref"
   rewrite_frontend_service \
@@ -737,8 +762,9 @@ create_backup() {
     exit 1
   fi
   chmod -R go-rwx "$backup_work_dir"
-  docker image rm "$snapshot_base_ref" >/dev/null 2>&1 || true
-  snapshot_base_ref=
+  if docker image rm "$snapshot_base_ref" >/dev/null 2>&1; then
+    snapshot_base_ref=
+  fi
   mv "$backup_work_dir" "$backup_dir"
   backup_work_dir=
   trap - EXIT HUP INT TERM
@@ -971,13 +997,36 @@ restore_backup() {
 }
 
 rollback_required=false
-active_backup_dir=
+active_digest=
+active_backup_id=
+
+restore_active_deploy() {
+  if ! (restore_backup "$active_digest" "$active_backup_id"); then
+    return 1
+  fi
+}
+
+restore_failed_deploy() {
+  status=$?
+  trap - EXIT HUP INT TERM
+  if [ "$rollback_required" = "true" ] \
+    && [ -n "$active_digest" ] \
+    && [ -n "$active_backup_id" ]; then
+    echo "Deployment exited unexpectedly; restoring the verified frontend backup" >&2
+    if ! restore_active_deploy; then
+      echo "Automatic restore failed; manual intervention is required" >&2
+    fi
+  fi
+  exit "$status"
+}
 
 restore_interrupted_deploy() {
-  trap - HUP INT TERM
-  if [ "$rollback_required" = "true" ] && [ -n "$active_backup_dir" ]; then
+  trap - EXIT HUP INT TERM
+  if [ "$rollback_required" = "true" ] \
+    && [ -n "$active_digest" ] \
+    && [ -n "$active_backup_id" ]; then
     echo "Deployment interrupted; restoring the verified frontend backup" >&2
-    if ! rollback_and_verify "$active_backup_dir"; then
+    if ! restore_active_deploy; then
       echo "Automatic restore failed; manual intervention is required" >&2
     fi
   fi
@@ -985,8 +1034,8 @@ restore_interrupted_deploy() {
 }
 
 fail_deploy_and_restore() {
-  trap - HUP INT TERM
-  if ! rollback_and_verify "$active_backup_dir"; then
+  trap - EXIT HUP INT TERM
+  if ! restore_active_deploy; then
     echo "Automatic restore failed; manual intervention is required" >&2
   fi
   exit 1
@@ -1006,13 +1055,16 @@ deploy_digest() {
 
   docker pull "$image"
   docker image inspect "$image" >/dev/null
+  expected_image=$(docker image inspect "$image" --format '{{.Id}}')
 
   rewrite_frontend_service "$COMPOSE_FILE" "$candidate_file" "$image"
   cd "$APP_DIR"
   docker_compose -f "$candidate_file" config -q
   write_deployment_state "$digest" "$backup_id"
-  active_backup_dir=$backup_dir
+  active_digest=$digest
+  active_backup_id=$backup_id
   rollback_required=true
+  trap restore_failed_deploy EXIT
   trap restore_interrupted_deploy HUP INT TERM
   mv "$candidate_file" "$COMPOSE_FILE"
 
@@ -1020,15 +1072,15 @@ deploy_digest() {
     fail_deploy_and_restore
   fi
 
-  expected_image=$(docker image inspect "$image" --format '{{.Id}}')
   if ! verify_production "$expected_image" strict; then
     docker logs --tail 80 "$PRODUCTION_CONTAINER" >&2 || true
     fail_deploy_and_restore
   fi
 
   rollback_required=false
-  active_backup_dir=
-  trap - HUP INT TERM
+  active_digest=
+  active_backup_id=
+  trap - EXIT HUP INT TERM
 
   echo "deployed_image=$image"
   echo "backup_dir=$backup_dir"

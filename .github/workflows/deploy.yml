@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: read
+  issues: read
   packages: read
 
 concurrency:
@@ -58,6 +59,79 @@ jobs:
             exit 1
           fi
 
+      - name: Checkout approved production revision
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify validated candidate provenance
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sub2api-frontend@$IMAGE_DIGEST"
+          cleanup() {
+            docker logout ghcr.io >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io \
+            --username "$GITHUB_ACTOR" --password-stdin >/dev/null
+          docker pull "$image" >/dev/null
+          image_source_sha=$(docker image inspect "$image" \
+            --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+          image_source_repo=$(docker image inspect "$image" \
+            --format '{{index .Config.Labels "org.opencontainers.image.source"}}')
+
+          if ! printf '%s' "$image_source_sha" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "Candidate image has no valid source revision" >&2
+            exit 1
+          fi
+          if [ "$image_source_repo" != "https://github.com/$GITHUB_REPOSITORY" ]; then
+            echo "Candidate image source repository does not match this repository" >&2
+            exit 1
+          fi
+          if ! git cat-file -e "$image_source_sha^{commit}" \
+            || ! git merge-base --is-ancestor "$image_source_sha" "$GITHUB_SHA"; then
+            echo "Candidate image revision is not an ancestor of approved production" >&2
+            exit 1
+          fi
+          if ! git diff --quiet "$image_source_sha" "$GITHUB_SHA" -- \
+            .dockerignore \
+            frontend \
+            docs/legal \
+            deploy/frontend/Dockerfile \
+            deploy/frontend/landing \
+            deploy/frontend/nginx.conf \
+            deploy/frontend/security-headers.conf; then
+            echo "Frontend image inputs changed after candidate validation" >&2
+            exit 1
+          fi
+
+          candidate_recorded=false
+          issue_numbers=$(gh api --method GET "repos/$GITHUB_REPOSITORY/issues" \
+            -f state=all -f labels=ready-for-vps -f per_page=100 --jq '.[].number')
+          for issue_number in $issue_numbers; do
+            comments=$(gh api --method GET \
+              "repos/$GITHUB_REPOSITORY/issues/$issue_number/comments" \
+              -f per_page=100)
+            if jq -e --arg source_sha "$image_source_sha" --arg image "$image" '
+              .[] | select(
+                (.body | contains($source_sha))
+                and (.body | contains($image))
+                and (.body | contains("ready-for-vps"))
+              )
+            ' <<< "$comments" >/dev/null; then
+              candidate_recorded=true
+              break
+            fi
+          done
+          if [ "$candidate_recorded" != "true" ]; then
+            echo "Candidate digest is not recorded by a ready-for-vps validation issue" >&2
+            exit 1
+          fi
+
       - name: Configure restricted SSH key
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
@@ -68,6 +142,29 @@ jobs:
           chmod 600 "$RUNNER_TEMP/ssh/id_ed25519"
           printf '%s\n' "$VPS_HOST_KEY" > "$RUNNER_TEMP/ssh/known_hosts"
           chmod 600 "$RUNNER_TEMP/ssh/known_hosts"
+
+      - name: Require a fresh read-only VPS preflight
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          expected_helper_sha=$(sha256sum deploy/frontend/deploy-frontend.sh | awk '{print $1}')
+          output=$(ssh \
+            -i "$RUNNER_TEMP/ssh/id_ed25519" \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=3 \
+            "$VPS_USER@$VPS_HOST" \
+            "sudo -n /usr/local/sbin/deploy-sub2api-frontend preflight '$expected_helper_sha'")
+          printf '%s\n' "$output"
+          if ! printf '%s\n' "$output" | grep -Fxq 'preflight_result=ready'; then
+            echo "Fresh VPS preflight did not authorize deployment" >&2
+            exit 1
+          fi
 
       - name: Authenticate the VPS to GHCR for this job
         env:
@@ -122,6 +219,10 @@ jobs:
           if ! printf '%s' "$backup_id" \
             | grep -Eq '^[0-9]{8}-[0-9]{6}-[A-Za-z0-9]{6}-source-ui-frontend$'; then
             echo "The VPS did not return a valid verified backup ID" >&2
+            exit 1
+          fi
+          if ! printf '%s\n' "$output" | grep -Fxq 'backup_verified=true'; then
+            echo "The VPS did not confirm backup checksum verification" >&2
             exit 1
           fi
           echo "backup_id=$backup_id" >> "$GITHUB_OUTPUT"
@@ -193,7 +294,7 @@ jobs:
           done
 
       - name: Restore the backup after a failed deployment check
-        if: failure() && steps.backup.outputs.backup_id != ''
+        if: (failure() || cancelled()) && steps.backup.outputs.backup_id != ''
         env:
           IMAGE_DIGEST: ${{ inputs.image_digest }}
           BACKUP_ID: ${{ steps.backup.outputs.backup_id }}

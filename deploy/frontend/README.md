@@ -41,17 +41,17 @@ GitHub Actions 运行官方关键 Vitest、AIFoo 集成测试、全量 Vitest、
 
 ## 部署与回滚
 
-`deploy.yml` 只接受完整的 `sha256:` 镜像 digest。VPS 上的受限用户只能调用 root 持有的 `deploy-frontend.sh` 规定命令；脚本会：
+`deploy.yml` 只接受完整的 `sha256:` 镜像 digest，并要求该 digest、镜像源码提交和 `ready-for-vps` Issue 记录一致；镜像源码到当前 `production` 之间不得出现镜像构建输入变化。VPS 上的受限用户只能调用 root 持有的 `deploy-frontend.sh` 规定命令；脚本会：
 
 部署只能从 `production` 分支手动触发，触发者必须是仓库所有者，并输入 `DEPLOY-AIFOO-FRONTEND` 确认短语。该代码级门禁用于私人仓库套餐不支持 Environment Required Reviewer 时，确保镜像发布不会自动进入 VPS 部署。
 
 1. 拉取并核对指定 digest。
 2. 在 `127.0.0.1:18080` 启动带固定标签的隔离候选容器。
 3. 验证 Landing、SPA、后端代理和旧 override 资源的 `404`，通过后才进入生产部署。
-4. 显式执行 `backup <digest>`，把运行容器快照、实际 Nginx 配置和 HTML 封装成唯一的回滚镜像，同时备份 Compose、旧 Landing 与容器元数据，并校验 `SHA256SUMS`。前端挂载只能位于 `/etc/nginx` 或 `/usr/share/nginx/html`，出现其他挂载时拒绝继续。
+4. 显式执行 `backup <digest>`，以运行容器的原始 image ID 为只读基底，把实际 Nginx 配置和 HTML 封装成唯一的回滚镜像，同时备份 Compose、旧 Landing 与容器元数据，并校验 `SHA256SUMS`。原始镜像不得声明 `VOLUME`，前端运行挂载只能位于 `/etc/nginx` 或 `/usr/share/nginx/html`；不满足任一条件都拒绝继续。
 5. 备份记录旧版、候选和回滚三份 Compose 的 SHA-256。候选和回滚 Compose 会移除旧前端 service 的 `volumes` 与 `healthcheck` 覆盖，由不可变镜像提供内容和自身健康契约。`deploy <digest> <backup-id>` 仅接受与候选 digest、当前镜像和当前 Compose 精确匹配的备份，并写入本次部署状态后只重建 `frontend` service。
 6. 候选镜像必须通过 Docker HEALTHCHECK、`/frontend-health`、后端代理和关键路由验证。旧版或回滚镜像允许没有 Docker HEALTHCHECK 和 `/frontend-health`，但仍必须处于 `running` 并通过 `/health`、Landing 与登录路由验证。
-7. 部署失败或 SSH 命令被中断时，载入已验证的回滚镜像并恢复旧前端。`restore` 只接受备份记录的精确镜像、Compose 和部署状态；已经处于旧版或回滚状态时只验证，不重复重建。
+7. 部署失败、部署进程异常退出或 SSH 命令被中断时，载入已验证的回滚镜像并恢复旧前端。`restore` 只接受备份记录的精确镜像、Compose 和部署状态；已经处于旧版或回滚状态时只验证，不重复重建。
 8. 公网 smoke test 失败时，Actions 调用 `restore <digest> <backup-id>`，随后再次从公网验证 `/health`、Landing 与 `/login`。
 9. 无论部署成功或失败都清理候选容器。
 
