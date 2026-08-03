@@ -15,7 +15,7 @@
 - 若 `production` 已更新但最终 Runner、Artifact 或 GHCR 发布失败，后续定时检查会在候选分支仍精确指向当前 `production` 时自动重跑最终构建和发布；也可手动设置 `retry_final=true`。
 - 每个新 Release 创建一个分配给仓库所有者的 Issue，使用 `candidate-testing`、`ui-review-required`、`sync-failed` 和 `ready-for-vps` 标记进度。
 
-所有自动化只构建 `deploy/frontend/Dockerfile`。后端差异参与兼容性测试，但不会生成或部署后端镜像。镜像生成不会自动部署到 VPS。
+私有仓库只构建 `deploy/frontend/Dockerfile`；后端不从私有源码构建。同步流程会记录官方后端 tag、commit 和 `weishaw/sub2api@sha256:...`，后端部署由独立的 `deploy-backend.yml` 手动工作流完成，详见 `deploy/backend/README.md`。任何镜像验证或发布都不会自动部署到 VPS。
 
 ## 验证
 
