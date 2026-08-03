@@ -1,0 +1,53 @@
+name: macOS Shell CI
+
+on:
+  push:
+    branches:
+      - production
+    paths:
+      - 'deploy/apple-container.sh'
+      - 'deploy/install.sh'
+      - 'deploy/tests/apple-container-test.sh'
+      - 'deploy/tests/install-github-token-test.sh'
+      - 'deploy/tests/fixtures/bin/**'
+      - '.github/workflows/macos-shell-ci.yml'
+  pull_request:
+    branches:
+      - production
+    paths:
+      - 'deploy/apple-container.sh'
+      - 'deploy/install.sh'
+      - 'deploy/tests/apple-container-test.sh'
+      - 'deploy/tests/install-github-token-test.sh'
+      - 'deploy/tests/fixtures/bin/**'
+      - '.github/workflows/macos-shell-ci.yml'
+  workflow_call:
+    inputs:
+      checkout_ref:
+        description: Exact branch or commit to validate
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-shell-${{ inputs.checkout_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    if: >-
+      (github.event_name == 'workflow_call' || vars.AIFOO_ENABLE_MACOS_CI == 'true') &&
+      (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/'))
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
+      - name: Test macOS-specific shell contracts
+        run: |
+          /bin/bash -n deploy/apple-container.sh
+          /bin/bash deploy/tests/apple-container-test.sh
+          /bin/bash deploy/tests/install-github-token-test.sh

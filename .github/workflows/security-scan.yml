@@ -2,7 +2,25 @@ name: Security Scan
 
 on:
   push:
+    branches:
+      - production
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '.github/audit-exceptions.yml'
+      - '.github/workflows/security-scan.yml'
+      - 'tools/check_pnpm_audit_exceptions.py'
+      - 'tools/test_*.py'
   pull_request:
+    branches:
+      - production
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '.github/audit-exceptions.yml'
+      - '.github/workflows/security-scan.yml'
+      - 'tools/check_pnpm_audit_exceptions.py'
+      - 'tools/test_*.py'
   schedule:
     - cron: '0 3 * * 1'
   workflow_call:
@@ -16,9 +34,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: security-scan-${{ inputs.checkout_ref || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend-security:
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/')
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
@@ -37,7 +60,8 @@ jobs:
           govulncheck ./...
 
   frontend-security:
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/')
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
     steps:
       - uses: actions/checkout@v6
         with:
