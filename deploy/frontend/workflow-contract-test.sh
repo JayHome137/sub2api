@@ -9,6 +9,7 @@ SYNC_WORKFLOW=$ROOT/.github/workflows/upstream-sync.yml
 VALIDATE_WORKFLOW=$ROOT/.github/workflows/validate.yml
 RELEASE_WORKFLOW=$ROOT/.github/workflows/release.yml
 BACKEND_CI_WORKFLOW=$ROOT/.github/workflows/backend-ci.yml
+MACOS_SHELL_WORKFLOW=$ROOT/.github/workflows/macos-shell-ci.yml
 DEPLOY_WORKFLOW=$ROOT/.github/workflows/deploy.yml
 PREFLIGHT_WORKFLOW=$ROOT/.github/workflows/preflight.yml
 DEPLOY_HELPER=$ROOT/deploy/frontend/deploy-frontend.sh
@@ -109,7 +110,10 @@ require_text "$SECURITY_HEADERS" 'X-Frame-Options "DENY"'
 require_text "$SECURITY_HEADERS" 'Content-Security-Policy-Report-Only'
 require_text "$VALIDATE_WORKFLOW" 'assert_security_headers'
 require_text "$BACKEND_CI_WORKFLOW" 'deploy/tests/install-checksum-test.sh'
-require_text "$BACKEND_CI_WORKFLOW" 'deploy/tests/install-github-token-test.sh'
+require_text "$BACKEND_CI_WORKFLOW" 'uses: ./.github/workflows/macos-shell-ci.yml'
+require_text "$MACOS_SHELL_WORKFLOW" 'runs-on: macos-15'
+require_text "$MACOS_SHELL_WORKFLOW" 'deploy/tests/apple-container-test.sh'
+require_text "$MACOS_SHELL_WORKFLOW" 'deploy/tests/install-github-token-test.sh'
 
 sh -n "$DOCKER_INTEGRATION"
 if command -v dash >/dev/null 2>&1; then

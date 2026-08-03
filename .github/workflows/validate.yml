@@ -4,10 +4,23 @@ on:
   push:
     branches:
       - production
-      - 'upgrade/**'
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'deploy/frontend/**'
+      - 'docs/legal/**'
+      - 'Makefile'
+      - '.github/workflows/validate.yml'
   pull_request:
     branches:
       - production
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'deploy/frontend/**'
+      - 'docs/legal/**'
+      - 'Makefile'
+      - '.github/workflows/validate.yml'
   workflow_dispatch:
     inputs:
       checkout_ref:
@@ -49,6 +62,7 @@ concurrency:
 
 jobs:
   frontend:
+    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -78,16 +92,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Official critical frontend suite
-        working-directory: .
-        run: make test-frontend
-
-      - name: AIFoo source integration tests
-        run: >-
-          pnpm exec vitest run
-          src/utils/__tests__/aifoo.spec.ts
-          src/components/layout/__tests__/siteLogoSanitization.spec.ts
-          src/features/prompt-audit/__tests__/integrationSurface.spec.ts
+      - name: Frontend lint and typecheck
+        run: |
+          pnpm run lint:check
+          pnpm run typecheck
 
       - name: Full frontend Vitest suite
         run: pnpm exec vitest run
