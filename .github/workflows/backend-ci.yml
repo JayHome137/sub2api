@@ -31,6 +31,7 @@ jobs:
           /bin/bash deploy/tests/install-checksum-test.sh
           /bin/bash deploy/tests/install-github-token-test.sh
           /bin/sh deploy/frontend/workflow-contract-test.sh
+          /bin/sh deploy/backend/workflow-contract-test.sh
 
   test:
     runs-on: ubuntu-latest

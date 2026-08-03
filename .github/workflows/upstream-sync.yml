@@ -46,6 +46,13 @@ jobs:
     outputs:
       release_detected: ${{ steps.prepare.outputs.release_detected }}
       release_tag: ${{ steps.prepare.outputs.release_tag }}
+      release_tag_object: ${{ steps.prepare.outputs.release_tag_object }}
+      release_commit: ${{ steps.prepare.outputs.release_commit }}
+      backend_image_digest: ${{ steps.prepare.outputs.backend_image_digest }}
+      backend_image_ref: ${{ steps.prepare.outputs.backend_image_ref }}
+      backend_deploy_required: ${{ steps.prepare.outputs.backend_deploy_required }}
+      migrations_changed: ${{ steps.prepare.outputs.migrations_changed }}
+      expected_migrations: ${{ steps.prepare.outputs.expected_migrations }}
       candidate_ready: ${{ steps.prepare.outputs.candidate_ready }}
       candidate_branch: ${{ steps.prepare.outputs.candidate_branch }}
       base_sha: ${{ steps.prepare.outputs.base_sha }}
@@ -58,7 +65,7 @@ jobs:
       final_sha: ${{ steps.prepare.outputs.final_sha }}
     steps:
       - name: Checkout AIFoo production history
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: production
           fetch-depth: 0
@@ -78,6 +85,13 @@ jobs:
 
           echo "release_detected=false" >> "$GITHUB_OUTPUT"
           echo "release_tag=" >> "$GITHUB_OUTPUT"
+          echo "release_tag_object=" >> "$GITHUB_OUTPUT"
+          echo "release_commit=" >> "$GITHUB_OUTPUT"
+          echo "backend_image_digest=" >> "$GITHUB_OUTPUT"
+          echo "backend_image_ref=" >> "$GITHUB_OUTPUT"
+          echo "backend_deploy_required=false" >> "$GITHUB_OUTPUT"
+          echo "migrations_changed=false" >> "$GITHUB_OUTPUT"
+          echo "expected_migrations=none" >> "$GITHUB_OUTPUT"
           echo "candidate_ready=false" >> "$GITHUB_OUTPUT"
           echo "candidate_branch=" >> "$GITHUB_OUTPUT"
           echo "base_sha=" >> "$GITHUB_OUTPUT"
@@ -129,18 +143,167 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git remote add upstream https://github.com/Wei-Shaw/sub2api.git
           git fetch origin production
+          git fetch --force upstream '+refs/tags/*:refs/tags/*'
           git fetch --no-tags --force upstream "refs/tags/$tag:refs/tags/$tag"
+
+          release_tag_object=$(git rev-parse "$tag")
+          release_commit=$(git rev-parse "$tag^{}")
+          if [ "$(git cat-file -t "$release_tag_object")" != "tag" ]; then
+            echo "Official stable release tag must be annotated: $tag" >&2
+            exit 1
+          fi
+          echo "release_tag_object=$release_tag_object" >> "$GITHUB_OUTPUT"
+          echo "release_commit=$release_commit" >> "$GITHUB_OUTPUT"
+
+          registry_token=$(curl --fail --silent --show-error --retry 3 \
+            --get \
+            --data-urlencode service=registry.docker.io \
+            --data-urlencode scope=repository:weishaw/sub2api:pull \
+            https://auth.docker.io/token | jq -er '.token')
+          manifest_headers=$(curl --fail --silent --show-error --head --retry 3 \
+            -H "Authorization: Bearer $registry_token" \
+            -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
+            "https://registry-1.docker.io/v2/weishaw/sub2api/manifests/${tag#v}")
+          backend_image_digest=$(printf '%s\n' "$manifest_headers" \
+            | tr -d '\r' \
+            | awk 'tolower($1) == "docker-content-digest:" {print $2}' \
+            | tail -n 1)
+          if ! printf '%s' "$backend_image_digest" \
+            | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "Official backend image has no valid immutable digest" >&2
+            exit 1
+          fi
+          backend_image_ref="weishaw/sub2api@$backend_image_digest"
+          echo "backend_image_digest=$backend_image_digest" >> "$GITHUB_OUTPUT"
+          echo "backend_image_ref=$backend_image_ref" >> "$GITHUB_OUTPUT"
+
+          backend_deploy_required=true
+          migrations_changed=true
+          expected_migrations=unknown-production-baseline
+          backend_baseline_release=unknown
+          backend_baseline_commit=unknown
+          state_title="[State] AIFoo production backend"
+          state_issues=$(gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/issues?state=open&per_page=100")
+          state_count=$(jq --arg title "$state_title" '
+            [.[][] | select(.pull_request == null and .title == $title)] | length
+          ' <<< "$state_issues")
+          if [ "$state_count" -gt 1 ]; then
+            echo "Multiple production backend state issues exist" >&2
+            exit 1
+          fi
+          if [ "$state_count" -eq 1 ]; then
+            state_record=$(jq -c --arg title "$state_title" '
+              .[][] | select(.pull_request == null and .title == $title)
+            ' <<< "$state_issues")
+            if ! jq -e 'any(.labels[]?; .name == "backend-production-state")' \
+              <<< "$state_record" >/dev/null; then
+              echo "Production backend state issue is missing its ownership label" >&2
+              exit 1
+            fi
+            state_body=$(jq -r '.body' <<< "$state_record")
+            if ! jq -e '
+              type == "object"
+              and (keys | sort) == ([
+                "schema", "kind", "generation", "status", "release_tag",
+                "tag_object_sha", "peeled_commit_sha", "image_digest", "image_ref",
+                "migrations_tree_sha", "production_repo_sha", "deployment_run_id",
+                "deployed_at", "evidence"
+              ] | sort)
+              and .schema == 1
+              and .kind == "aifoo.backend.production"
+              and .status == "success"
+              and (.generation | type == "number" and . >= 1 and floor == .)
+              and (.release_tag | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))
+              and (.tag_object_sha | test("^[0-9a-f]{40}$"))
+              and (.peeled_commit_sha | test("^[0-9a-f]{40}$"))
+              and (.image_digest | test("^sha256:[0-9a-f]{64}$"))
+              and .image_ref == ("weishaw/sub2api@" + .image_digest)
+              and (.migrations_tree_sha | test("^[0-9a-f]{40}$"))
+              and (.production_repo_sha | test("^[0-9a-f]{40}$"))
+              and (.deployment_run_id | type == "number" and . >= 1 and floor == .)
+              and (.deployed_at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))
+              and .evidence == "owner-approved-workflow"
+            ' <<< "$state_body" >/dev/null; then
+              echo "Production backend state issue body is invalid" >&2
+              exit 1
+            fi
+
+            backend_baseline_release=$(jq -r '.release_tag' <<< "$state_body")
+            backend_baseline_tag_object=$(jq -r '.tag_object_sha' <<< "$state_body")
+            backend_baseline_commit=$(jq -r '.peeled_commit_sha' <<< "$state_body")
+            backend_baseline_digest=$(jq -r '.image_digest' <<< "$state_body")
+            backend_baseline_tree=$(jq -r '.migrations_tree_sha' <<< "$state_body")
+            if [ "$(git cat-file -t "$backend_baseline_release")" != "tag" ] \
+              || [ "$(git rev-parse "$backend_baseline_release")" != "$backend_baseline_tag_object" ] \
+              || [ "$(git rev-parse "$backend_baseline_release^{}")" != "$backend_baseline_commit" ] \
+              || [ "$(git rev-parse "$backend_baseline_commit:backend/migrations")" != "$backend_baseline_tree" ]; then
+              echo "Production backend state no longer matches the official tag" >&2
+              exit 1
+            fi
+            baseline_headers=$(curl --fail --silent --show-error --head --retry 3 \
+              -H "Authorization: Bearer $registry_token" \
+              -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
+              "https://registry-1.docker.io/v2/weishaw/sub2api/manifests/${backend_baseline_release#v}")
+            resolved_baseline_digest=$(printf '%s\n' "$baseline_headers" \
+              | tr -d '\r' \
+              | awk 'tolower($1) == "docker-content-digest:" {print $2}' \
+              | tail -n 1)
+            if [ "$resolved_baseline_digest" != "$backend_baseline_digest" ]; then
+              echo "Official image digest drifted from the verified production baseline" >&2
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor "$backend_baseline_commit" "$release_commit"; then
+              echo "Target release is not a forward upgrade from the production backend" >&2
+              exit 1
+            fi
+
+            official_changed_paths="$RUNNER_TEMP/production-backend-changed-paths.txt"
+            git diff --name-only "$backend_baseline_commit" "$release_commit" \
+              | sort -u > "$official_changed_paths"
+            backend_deploy_required=false
+            if grep -Eq \
+              '^(backend/|Dockerfile(\.goreleaser)?$|\.goreleaser(\.simple)?\.ya?ml$|deploy/docker-entrypoint\.sh$)' \
+              "$official_changed_paths"; then
+              backend_deploy_required=true
+            fi
+
+            migration_changes=$(git diff --name-status \
+              "$backend_baseline_commit" "$release_commit" \
+              -- 'backend/migrations/*.sql')
+            if printf '%s\n' "$migration_changes" \
+              | awk 'NF > 0 && $1 != "A" { found=1 } END { exit !found }'; then
+              expected_migrations=manual-review-required
+              migrations_changed=true
+              backend_deploy_required=true
+            else
+              expected_migrations=$(printf '%s\n' "$migration_changes" \
+                | awk '$1 == "A" {print $2}' \
+                | sed 's#^backend/migrations/##' \
+                | sort -u \
+                | paste -sd, -)
+              expected_migrations=${expected_migrations:-none}
+              migrations_changed=false
+              [ "$expected_migrations" != "none" ] && migrations_changed=true
+            fi
+          fi
+          echo "backend_deploy_required=$backend_deploy_required" >> "$GITHUB_OUTPUT"
+          echo "migrations_changed=$migrations_changed" >> "$GITHUB_OUTPUT"
+          echo "expected_migrations=$expected_migrations" >> "$GITHUB_OUTPUT"
 
           issue_title="[Upstream $tag] AIFoo frontend compatibility"
 
           ensure_labels() {
-            for label in upstream-release candidate-testing ui-review-required sync-failed ready-for-vps; do
+            for label in upstream-release candidate-testing ui-review-required sync-failed ready-for-vps backend-deploy-required backend-deployed backend-production-state; do
               case "$label" in
                 upstream-release) color=0969DA ;;
                 candidate-testing) color=FBCA04 ;;
                 ui-review-required) color=D93F0B ;;
                 sync-failed) color=B60205 ;;
                 ready-for-vps) color=0E8A16 ;;
+                backend-deploy-required) color=5319E7 ;;
+                backend-deployed) color=0E8A16 ;;
+                backend-production-state) color=1D76DB ;;
               esac
               gh label create "$label" --color "$color" --force >/dev/null
             done
@@ -153,10 +316,17 @@ jobs:
               | sed -n '1p'
           }
 
-          release_commit=$(git rev-parse "$tag^{}")
+          ensure_labels
           production_sha=$(git rev-parse origin/production)
           if git merge-base --is-ancestor "$release_commit" "$production_sha"; then
             issue_number=$(find_issue_number)
+            if [ -n "$issue_number" ]; then
+              if [ "$backend_deploy_required" = "true" ]; then
+                gh issue edit "$issue_number" --add-label backend-deploy-required >/dev/null
+              else
+                gh issue edit "$issue_number" --remove-label backend-deploy-required >/dev/null 2>&1 || true
+              fi
+            fi
             branch="upgrade/$tag"
             candidate_sha=$(git ls-remote --heads origin "refs/heads/$branch" \
               | awk '{print $1}' | sed -n '1p')
@@ -175,7 +345,11 @@ jobs:
               {
                 echo "### Stable release check"
                 echo
-                echo "No update required. Production already contains [$tag]($release_url)."
+                echo "No source update required. Production already contains [$tag]($release_url)."
+                echo "Official backend image: \`$backend_image_ref\`."
+                echo "Production backend baseline: \`$backend_baseline_release\` (\`$backend_baseline_commit\`)."
+                echo "Backend deployment required: \`$backend_deploy_required\`."
+                echo "Expected migrations from the production backend: \`$expected_migrations\`."
               } >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
@@ -190,7 +364,6 @@ jobs:
               exit 1
             fi
 
-            ensure_labels
             gh issue reopen "$issue_number" >/dev/null 2>&1 || true
             gh issue edit "$issue_number" \
               --add-label upstream-release \
@@ -220,8 +393,6 @@ jobs:
 
           echo "release_detected=true" >> "$GITHUB_OUTPUT"
           echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
-          ensure_labels
-
           issue_number=$(find_issue_number)
           if [ -z "$issue_number" ]; then
             issue_body=$(mktemp)
@@ -230,7 +401,19 @@ jobs:
               echo
               echo "Published: $published_at"
               echo
-              echo "This issue tracks candidate merge, UI impact analysis, remote validation, the private frontend image, and the final VPS approval gate. No VPS deployment is automatic."
+              echo "Annotated tag object: \`$release_tag_object\`"
+              echo
+              echo "Peeled release commit: \`$release_commit\`"
+              echo
+              echo "Official backend image: \`$backend_image_ref\`"
+              echo
+              echo "Backend deployment required: \`$backend_deploy_required\`"
+              echo
+              echo "Production backend baseline: \`$backend_baseline_release\` (\`$backend_baseline_commit\`)"
+              echo
+              echo "Expected database migrations from production: \`$expected_migrations\`"
+              echo
+              echo "This issue tracks the complete official Release merge, AIFoo UI compatibility, remote validation, the private frontend image, and separate frontend/backend VPS approval gates. Scheduled synchronization never deploys to the VPS."
             } > "$issue_body"
             issue_url=$(gh issue create \
               --title "$issue_title" \
@@ -242,6 +425,11 @@ jobs:
           else
             gh issue reopen "$issue_number" >/dev/null 2>&1 || true
             gh issue edit "$issue_number" --add-label upstream-release --add-label candidate-testing >/dev/null
+          fi
+          if [ "$backend_deploy_required" = "true" ]; then
+            gh issue edit "$issue_number" --add-label backend-deploy-required >/dev/null
+          else
+            gh issue edit "$issue_number" --remove-label backend-deploy-required >/dev/null 2>&1 || true
           fi
           echo "issue_number=$issue_number" >> "$GITHUB_OUTPUT"
 
@@ -313,10 +501,7 @@ jobs:
             gh issue edit "$issue_number" --add-label ui-review-required >/dev/null
           fi
 
-          migration_note="No database migration files changed."
-          if grep -q '^backend/migrations/' "$changed_paths"; then
-            migration_note="Database migrations changed. This frontend workflow will not deploy or alter the backend."
-          fi
+          migration_note="Expected official database migrations: $expected_migrations."
 
           pr_number=$(gh pr list --state open --base production --head "$branch" --json number --jq '.[0].number // empty')
           if [ -z "$pr_number" ]; then
@@ -334,10 +519,13 @@ jobs:
               echo "- UI-related paths changed: \`$ui_related\`"
               echo "- Direct frontend surface changed: \`$direct_ui\`"
               echo "- Potential backend-to-frontend contract changed: \`$backend_contract\`"
+              echo "- Official release commit: \`$release_commit\`"
+              echo "- Official backend image: \`$backend_image_ref\`"
+              echo "- Backend production deployment required: \`$backend_deploy_required\`"
               echo "- $migration_note"
               echo "- Candidate commit: \`$candidate_sha\`"
               echo
-              echo "Candidate CI, security, AIFoo browser tests, and image smoke tests run inside the release-sync workflow. UI-related releases are never auto-merged. Merging and building a frontend image do not deploy it to the VPS."
+              echo "Candidate CI, security, AIFoo browser tests, and image smoke tests run inside the release-sync workflow. UI-related releases are never auto-merged. Merging, validating, and publishing artifacts do not deploy them to the VPS."
             } > "$pr_body"
             pr_url=$(gh pr create \
               --base production \
@@ -347,7 +535,7 @@ jobs:
             pr_number=${pr_url##*/}
           fi
 
-          gh issue comment "$issue_number" --body "Candidate PR #$pr_number is ready for remote validation. Direct frontend changes: \`$direct_ui\`; potential backend-to-frontend contract changes: \`$backend_contract\`; UI review required: \`$ui_related\`."
+          gh issue comment "$issue_number" --body "Candidate PR #$pr_number is ready for remote validation. Direct frontend changes: \`$direct_ui\`; potential backend-to-frontend contract changes: \`$backend_contract\`; UI review required: \`$ui_related\`; official backend: \`$backend_image_ref\`; backend deployment required: \`$backend_deploy_required\`."
 
           echo "candidate_ready=true" >> "$GITHUB_OUTPUT"
           echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
@@ -364,6 +552,10 @@ jobs:
             echo "- UI-related paths: \`$ui_related\`"
             echo "- Direct frontend surface: \`$direct_ui\`"
             echo "- Backend-to-frontend contract: \`$backend_contract\`"
+            echo "- Official release commit: \`$release_commit\`"
+            echo "- Official backend image: \`$backend_image_ref\`"
+            echo "- Backend deployment required: \`$backend_deploy_required\`"
+            echo "- Expected migrations: \`$expected_migrations\`"
             echo "- Tracking issue: #$issue_number"
             echo "- Pull request: #$pr_number"
             echo
@@ -528,6 +720,11 @@ jobs:
           FINAL_SHA: ${{ needs.final_frontend.outputs.source_sha }}
           IMAGE_DIGEST: ${{ needs.final_frontend.outputs.image_digest }}
           RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+          RELEASE_TAG_OBJECT: ${{ needs.prepare.outputs.release_tag_object }}
+          RELEASE_COMMIT: ${{ needs.prepare.outputs.release_commit }}
+          BACKEND_IMAGE_REF: ${{ needs.prepare.outputs.backend_image_ref }}
+          BACKEND_DEPLOY_REQUIRED: ${{ needs.prepare.outputs.backend_deploy_required }}
+          EXPECTED_MIGRATIONS: ${{ needs.prepare.outputs.expected_migrations }}
         run: |
           set -euo pipefail
 
@@ -567,8 +764,18 @@ jobs:
             echo
             echo "- Final commit: \`$FINAL_SHA\`"
             echo "- Private frontend image: \`ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sub2api-frontend@$IMAGE_DIGEST\`"
-            echo "- Status: \`ready-for-vps\`"
+            echo "- Official tag object: \`$RELEASE_TAG_OBJECT\`"
+            echo "- Official release commit: \`$RELEASE_COMMIT\`"
+            echo "- Official backend image: \`$BACKEND_IMAGE_REF\`"
+            echo "- Backend deployment required: \`$BACKEND_DEPLOY_REQUIRED\`"
+            echo "- Expected database migrations: \`$EXPECTED_MIGRATIONS\`"
+            echo "- Frontend status: \`ready-for-vps\`"
+            if [ "$BACKEND_DEPLOY_REQUIRED" = "true" ]; then
+              echo "- Backend status: \`pending manual owner-approved deployment\`"
+            else
+              echo "- Backend status: \`no official backend runtime input changed\`"
+            fi
             echo
-            echo "No VPS connection or deployment was attempted. Deployment still requires explicit approval and a verified pre-deployment backup."
+            echo "No VPS connection or deployment was attempted. Frontend and backend deployments each require explicit approval; backend deployment also requires PostgreSQL/Redis/data/image backups."
           } > "$comment_file"
           gh issue comment "$ISSUE_NUMBER" --body-file "$comment_file"
