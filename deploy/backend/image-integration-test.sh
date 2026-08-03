@@ -123,7 +123,7 @@ start_backend() {
     -e ADMIN_EMAIL=ci-backend@sub2api.invalid \
     -e ADMIN_PASSWORD=AIFoo-CI-Backend-Only-2026 \
     -e JWT_SECRET=aifoo-ci-jwt-secret-not-for-production \
-    -e TOTP_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef \
+    -e TOTP_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
     "$image" >/dev/null
 }
 
