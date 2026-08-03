@@ -126,7 +126,13 @@ require_text "$VALIDATE_WORKFLOW" 'timeout-minutes: 30'
 require_text "$DEPLOY_HELPER" 'backup)'
 require_text "$DEPLOY_HELPER" 'require_backup "$digest" "$backup_id"'
 require_text "$DEPLOY_HELPER" 'docker image save --output "$backup_work_dir/frontend-image.tar"'
-require_text "$DEPLOY_HELPER" 'docker commit "$PRODUCTION_CONTAINER" "$snapshot_base_ref"'
+require_text "$DEPLOY_HELPER" 'docker image tag "$current_image_id" "$snapshot_base_ref"'
+reject_text "$DEPLOY_HELPER" 'docker commit "$PRODUCTION_CONTAINER" "$snapshot_base_ref"'
+require_text "$DEPLOY_HELPER" "--format '{{json .Config.Volumes}}'"
+require_text "$DEPLOY_HELPER" 'Production base image declares volumes and cannot be safely reconstructed'
+require_text "$DEPLOY_HELPER" 'Rollback image unexpectedly declares volumes'
+require_text "$DEPLOY_HELPER" 'trap restore_failed_deploy EXIT'
+require_text "$DEPLOY_HELPER" 'trap - EXIT HUP INT TERM'
 require_text "$DEPLOY_HELPER" 'COPY --chown=0:0 nginx/ /etc/nginx/'
 require_text "$DEPLOY_HELPER" 'rollback_image_id='
 require_text "$DEPLOY_HELPER" 'sha256sum -c SHA256SUMS'
@@ -141,9 +147,14 @@ require_text "$DEPLOY_HELPER" 'verify_production "$rollback_image_id" legacy'
 
 backup_line=$(grep -n 'name: Back up the current frontend' "$DEPLOY_WORKFLOW" | cut -d: -f1)
 deploy_line=$(grep -n 'name: Deploy the staged digest after verified backup' "$DEPLOY_WORKFLOW" | cut -d: -f1)
+checkout_line=$(grep -n 'name: Checkout approved production revision' "$DEPLOY_WORKFLOW" | cut -d: -f1)
+preflight_line=$(grep -n 'name: Require a fresh read-only VPS preflight' "$DEPLOY_WORKFLOW" | cut -d: -f1)
 [ -n "$backup_line" ] || fail "deploy workflow has no backup step"
 [ -n "$deploy_line" ] || fail "deploy workflow has no guarded deploy step"
+[ -n "$checkout_line" ] || fail "deploy workflow has no checkout step"
+[ -n "$preflight_line" ] || fail "deploy workflow has no fresh preflight step"
 [ "$backup_line" -lt "$deploy_line" ] || fail "backup must run before deployment"
+[ "$checkout_line" -lt "$preflight_line" ] || fail "checkout must run before fresh preflight"
 require_text "$DEPLOY_WORKFLOW" 'steps.backup.outputs.backup_id'
 require_text "$DEPLOY_WORKFLOW" 'Restore the backup after a failed deployment check'
 require_text "$DEPLOY_WORKFLOW" 'deploy-sub2api-frontend restore'
@@ -152,6 +163,15 @@ require_text "$DEPLOY_WORKFLOW" 'approval:'
 require_text "$DEPLOY_WORKFLOW" 'DEPLOY-AIFOO-FRONTEND'
 require_text "$DEPLOY_WORKFLOW" 'refs/heads/production'
 require_text "$DEPLOY_WORKFLOW" 'Only the repository owner can approve a production deployment'
+require_text "$DEPLOY_WORKFLOW" 'issues: read'
+require_text "$DEPLOY_WORKFLOW" 'uses: actions/checkout@v6'
+require_text "$DEPLOY_WORKFLOW" 'Verify validated candidate provenance'
+require_text "$DEPLOY_WORKFLOW" 'git merge-base --is-ancestor "$image_source_sha" "$GITHUB_SHA"'
+require_text "$DEPLOY_WORKFLOW" 'labels=ready-for-vps'
+require_text "$DEPLOY_WORKFLOW" 'Require a fresh read-only VPS preflight'
+require_text "$DEPLOY_WORKFLOW" "grep -Fxq 'preflight_result=ready'"
+require_text "$DEPLOY_WORKFLOW" "grep -Fxq 'backup_verified=true'"
+require_text "$DEPLOY_WORKFLOW" 'if: (failure() || cancelled()) && steps.backup.outputs.backup_id != '\'''\'''
 
 require_text "$PREFLIGHT_WORKFLOW" 'workflow_dispatch:'
 require_text "$PREFLIGHT_WORKFLOW" 'permissions:'
@@ -245,6 +265,8 @@ TEST_DIGEST=sha256:$(printf 'a%.0s' $(seq 1 64))
 MOCK_CURRENT_IMAGE_ID=$OLD_IMAGE_ID
 MOCK_STATUS=state:running
 MOCK_LOADED_ROLLBACK_ID=$ROLLBACK_IMAGE_ID
+MOCK_BASE_VOLUMES=null
+MOCK_ROLLBACK_VOLUMES=null
 MOCK_FRONTEND_HEALTH_AVAILABLE=false
 MOCK_MOUNTS='/etc/nginx/conf.d/default.conf
 /usr/share/nginx/html'
@@ -274,14 +296,26 @@ docker() {
   if [ "$1" = "image" ] && [ "$2" = "inspect" ]; then
     target=$3
     if [ "${4:-}" = "--format" ]; then
-      case "$target" in
-        aifoo-frontend-rollback:*) printf '%s\n' "$MOCK_LOADED_ROLLBACK_ID" ;;
-        "$IMAGE_REPOSITORY@$TEST_DIGEST") printf '%s\n' "$REQUESTED_IMAGE_ID" ;;
-        *) printf '%s\n' "$target" ;;
-      esac
+      if [ "${5:-}" = "{{json .Config.Volumes}}" ]; then
+        case "$target" in
+          aifoo-frontend-rollback:*) printf '%s\n' "$MOCK_ROLLBACK_VOLUMES" ;;
+          *) printf '%s\n' "$MOCK_BASE_VOLUMES" ;;
+        esac
+      else
+        case "$target" in
+          aifoo-frontend-rollback-base:*) printf '%s\n' "$MOCK_CURRENT_IMAGE_ID" ;;
+          aifoo-frontend-rollback:*) printf '%s\n' "$MOCK_LOADED_ROLLBACK_ID" ;;
+          "$IMAGE_REPOSITORY@$TEST_DIGEST") printf '%s\n' "$REQUESTED_IMAGE_ID" ;;
+          *) printf '%s\n' "$target" ;;
+        esac
+      fi
     else
       echo '[{"Id":"mock"}]'
     fi
+    return 0
+  fi
+
+  if [ "$1" = "image" ] && [ "$2" = "tag" ]; then
     return 0
   fi
 
@@ -373,6 +407,13 @@ expect_failure() {
 expect_failure "strict candidate verification accepted a container without HEALTHCHECK" \
   verify_production "$OLD_IMAGE_ID" strict
 
+MOCK_BASE_VOLUMES='{"/usr/share/nginx/html":{}}'
+expect_failure "base image volume metadata was accepted" create_backup "$TEST_DIGEST"
+MOCK_BASE_VOLUMES=null
+MOCK_ROLLBACK_VOLUMES='{"/etc/nginx":{}}'
+expect_failure "rollback image volume metadata was accepted" create_backup "$TEST_DIGEST"
+MOCK_ROLLBACK_VOLUMES=null
+
 first_output=$(create_backup "$TEST_DIGEST")
 first_backup_id=$(printf '%s\n' "$first_output" | sed -n 's/^backup_id=//p' | tail -n 1)
 validate_backup_id "$first_backup_id"
@@ -457,5 +498,36 @@ expect_failure "failed candidate deployment reported success" \
   deploy_digest "$TEST_DIGEST" "$second_backup_id"
 grep -q '^rollback$' "$TEST_ROOT/compose-up" \
   || fail "failed candidate deployment did not restore the backup"
+
+trigger_unexpected_deploy_exit() {
+  (
+    active_digest=$TEST_DIGEST
+    active_backup_id=$second_backup_id
+    rollback_required=true
+    trap restore_failed_deploy EXIT
+    exit 97
+  )
+}
+
+cp "$second_backup_dir/docker-compose.yml" "$COMPOSE_FILE"
+MOCK_CURRENT_IMAGE_ID=$OLD_IMAGE_ID
+write_deployment_state "$TEST_DIGEST" "$second_backup_id"
+compose_up_before_previous_exit=$(wc -l < "$TEST_ROOT/compose-up" | tr -d ' ')
+expect_failure "pre-mutation deployment exit reported success" \
+  trigger_unexpected_deploy_exit
+compose_up_after_previous_exit=$(wc -l < "$TEST_ROOT/compose-up" | tr -d ' ')
+[ "$compose_up_after_previous_exit" = "$compose_up_before_previous_exit" ] \
+  || fail "pre-mutation deployment exit unnecessarily recreated the frontend"
+
+cp "$second_backup_dir/candidate-compose.yml" "$COMPOSE_FILE"
+MOCK_CURRENT_IMAGE_ID=$REQUESTED_IMAGE_ID
+compose_up_before_exit=$(wc -l < "$TEST_ROOT/compose-up" | tr -d ' ')
+expect_failure "unexpected deployment exit reported success" \
+  trigger_unexpected_deploy_exit
+compose_up_after_exit=$(wc -l < "$TEST_ROOT/compose-up" | tr -d ' ')
+[ "$compose_up_after_exit" -gt "$compose_up_before_exit" ] \
+  || fail "unexpected deployment exit did not restore the backup"
+[ "$(tail -n 1 "$TEST_ROOT/compose-up")" = "rollback" ] \
+  || fail "unexpected deployment exit did not finish with rollback"
 
 echo "workflow_contract=ok"
