@@ -38,7 +38,9 @@ concurrency:
 
 jobs:
   test:
-    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/')
+    if: >-
+      (github.event_name == 'workflow_call' || vars.AIFOO_ENABLE_MACOS_CI == 'true') &&
+      (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/'))
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v6
