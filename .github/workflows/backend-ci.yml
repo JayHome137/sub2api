@@ -28,6 +28,11 @@ on:
         required: false
         type: string
         default: ''
+      run_macos:
+        description: Run macOS-only shell contracts when hosted macOS capacity is available
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -39,7 +44,7 @@ concurrency:
 jobs:
   shell:
     if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -55,14 +60,14 @@ jobs:
           /bin/sh deploy/backend/workflow-contract-test.sh
 
   macos-shell:
-    if: inputs.checkout_ref != ''
+    if: inputs.checkout_ref != '' && inputs.run_macos
     uses: ./.github/workflows/macos-shell-ci.yml
     with:
       checkout_ref: ${{ inputs.checkout_ref }}
 
   test:
     if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -82,7 +87,7 @@ jobs:
 
   golangci-lint:
     if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
     steps:
       - uses: actions/checkout@v6
         with:

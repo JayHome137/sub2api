@@ -41,7 +41,7 @@ concurrency:
 jobs:
   backend-security:
     if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
@@ -61,7 +61,7 @@ jobs:
 
   frontend-security:
     if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
     steps:
       - uses: actions/checkout@v6
         with:

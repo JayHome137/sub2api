@@ -63,7 +63,7 @@ concurrency:
 jobs:
   frontend:
     if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
     defaults:
       run:
         working-directory: frontend
@@ -124,7 +124,7 @@ jobs:
 
   image:
     needs: frontend
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
     timeout-minutes: 30
     outputs:
       source_sha: ${{ steps.source.outputs.sha }}
@@ -283,7 +283,7 @@ jobs:
   publish:
     needs: image
     if: needs.image.outputs.publish_enabled == 'true'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
     permissions:
       contents: read
       packages: write
@@ -359,7 +359,7 @@ jobs:
       always() &&
       needs.image.result == 'success' &&
       (needs.image.outputs.publish_enabled != 'true' || needs.publish.result == 'success')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
     permissions:
       contents: read
       statuses: write

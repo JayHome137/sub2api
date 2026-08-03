@@ -42,7 +42,7 @@ env:
 
 jobs:
   prepare:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
     outputs:
       release_detected: ${{ steps.prepare.outputs.release_detected }}
       release_tag: ${{ steps.prepare.outputs.release_tag }}
@@ -592,7 +592,7 @@ jobs:
       - candidate_security
       - candidate_frontend
     if: always() && needs.prepare.outputs.candidate_ready == 'true'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
     outputs:
       merged: ${{ steps.gate.outputs.merged }}
       final_sha: ${{ steps.gate.outputs.final_sha }}
@@ -705,7 +705,7 @@ jobs:
       - gate
       - final_frontend
     if: always() && needs.prepare.outputs.release_detected == 'true'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
     steps:
       - name: Update release status issue
         env:
