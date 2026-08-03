@@ -158,6 +158,9 @@ require_text "$IMAGE_TEST" 'image_only_rollback_compatibility=verified'
 require_text "$IMAGE_TEST" "start_backend \"\$baseline\" \"\$CURRENT_IMAGE\""
 require_text "$IMAGE_TEST" "start_backend \"\$candidate\" \"\$TARGET_IMAGE\""
 require_text "$IMAGE_TEST" "start_backend \"\$rollback\" \"\$CURRENT_IMAGE\""
+totp_test_key=$(sed -n 's/.*TOTP_ENCRYPTION_KEY=\([0-9a-f]*\).*/\1/p' "$IMAGE_TEST")
+[ "${#totp_test_key}" -eq 64 ] \
+  || fail "isolated backend TOTP encryption key must be 32-byte hex"
 
 require_text "$SYNC_WORKFLOW" 'docker-content-digest:'
 require_text "$SYNC_WORKFLOW" 'release_tag_object'
