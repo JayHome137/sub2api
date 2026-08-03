@@ -2,7 +2,7 @@ name: Sync official Sub2API releases
 
 on:
   schedule:
-    - cron: '17 */6 * * *'
+    - cron: '17 3 1-31/3 * *'
   workflow_dispatch:
     inputs:
       release_tag:
