@@ -104,7 +104,7 @@ jobs:
         run: pnpm run build
 
       - name: Install Chromium
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install chromium
 
       - name: Browser regression tests
         run: pnpm run test:e2e
