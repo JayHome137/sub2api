@@ -102,6 +102,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.9
-          # The VM has 5 GiB RAM; cap analyzer concurrency to prevent OOM.
-          args: --timeout=30m --concurrency=2
+          # The VM has 2 vCPU and 6 GiB RAM; serialize analyzer execution to
+          # avoid goanalysis dependency waits under swap pressure.
+          args: --timeout=30m --concurrency=1
           working-directory: backend
