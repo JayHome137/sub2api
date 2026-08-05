@@ -102,5 +102,6 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.9
-          args: --timeout=30m
+          # The VM has 5 GiB RAM; cap analyzer concurrency to prevent OOM.
+          args: --timeout=30m --concurrency=2
           working-directory: backend
