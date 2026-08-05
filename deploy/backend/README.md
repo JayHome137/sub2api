@@ -4,7 +4,7 @@
 
 ## 自动同步边界
 
-`upstream-sync.yml` 每 6 小时读取官方稳定 Release，合并完整官方 tag，并记录：
+`upstream-sync.yml` 每天北京时间 01:00（GitHub cron 为 17:00 UTC）读取官方稳定 Release，合并完整官方 tag，并记录：
 
 - annotated tag object 与 peeled release commit；
 - 官方 Docker Hub 多架构镜像 digest；
