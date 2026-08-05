@@ -76,8 +76,8 @@ jobs:
         with:
           go-version-file: backend/go.mod
           check-latest: false
-          cache: true
-          cache-dependency-path: backend/go.sum
+          # Keep the single VM runner available; its Go cache is too large to archive per job.
+          cache: false
       - name: Unit tests
         working-directory: backend
         run: make test-unit
@@ -96,8 +96,8 @@ jobs:
         with:
           go-version-file: backend/go.mod
           check-latest: false
-          cache: true
-          cache-dependency-path: backend/go.sum
+          # Keep the single VM runner available; its Go cache is too large to archive per job.
+          cache: false
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
