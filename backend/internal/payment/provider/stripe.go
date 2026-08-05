@@ -255,7 +255,7 @@ func newStripeRefundParams(ctx context.Context, req payment.RefundRequest, curre
 		Amount:        stripe.Int64(amountInMinorUnit),
 		Reason:        stripe.String(string(stripe.RefundReasonRequestedByCustomer)),
 	}
-	params.SetIdempotencyKey("refund-" + orderID)
+	params.SetIdempotencyKey(fmt.Sprintf("re-%s-%d", orderID, amountInMinorUnit))
 	params.Context = ctx
 	return params, nil
 }
