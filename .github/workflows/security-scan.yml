@@ -58,7 +58,18 @@ jobs:
         working-directory: backend
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
+          for attempt in 1 2 3; do
+            log="$RUNNER_TEMP/govulncheck-$attempt.log"
+            if govulncheck ./... 2>&1 | tee "$log"; then
+              exit 0
+            fi
+            status=${PIPESTATUS[0]}
+            if [ "$attempt" -lt 3 ] && grep -Eqi 'vuln\.go\.dev|fetching vulnerabilities|EOF|connection reset|temporary failure|timeout' "$log"; then
+              sleep $((attempt * 10))
+              continue
+            fi
+            exit "$status"
+          done
 
   frontend-security:
     if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/')
