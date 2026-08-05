@@ -9,7 +9,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 )
 
-func TestStripeRefundParamsUseStableOrderIdempotencyKey(t *testing.T) {
+func TestStripeRefundParamsUseStableAmountSpecificIdempotencyKey(t *testing.T) {
 	request := payment.RefundRequest{
 		TradeNo: "pi_123",
 		OrderID: "order-1",
@@ -24,8 +24,8 @@ func TestStripeRefundParamsUseStableOrderIdempotencyKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newStripeRefundParams() retry error = %v", err)
 	}
-	if first.IdempotencyKey == nil || *first.IdempotencyKey != "refund-order-1" {
-		t.Fatalf("IdempotencyKey = %v, want refund-order-1", first.IdempotencyKey)
+	if first.IdempotencyKey == nil || *first.IdempotencyKey != "re-order-1-1025" {
+		t.Fatalf("IdempotencyKey = %v, want re-order-1-1025", first.IdempotencyKey)
 	}
 	if second.IdempotencyKey == nil || *second.IdempotencyKey != *first.IdempotencyKey {
 		t.Fatalf("retry IdempotencyKey = %v, want stable %q", second.IdempotencyKey, *first.IdempotencyKey)

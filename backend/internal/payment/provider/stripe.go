@@ -255,7 +255,10 @@ func newStripeRefundParams(ctx context.Context, req payment.RefundRequest, curre
 		Amount:        stripe.Int64(amountInMinorUnit),
 		Reason:        stripe.String(string(stripe.RefundReasonRequestedByCustomer)),
 	}
-	params.SetIdempotencyKey("refund-" + orderID)
+	// Scope the key to both the order and the requested amount. This keeps
+	// retries for the same refund idempotent without conflating distinct
+	// partial-refund amounts for one order.
+	params.SetIdempotencyKey(fmt.Sprintf("re-%s-%d", orderID, amountInMinorUnit))
 	params.Context = ctx
 	return params, nil
 }
