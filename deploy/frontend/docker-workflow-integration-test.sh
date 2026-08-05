@@ -336,7 +336,9 @@ EOF
 curl --fail --silent --show-error --connect-timeout 2 --max-time 5 \
   "http://127.0.0.1:$PRODUCTION_PORT/" | grep -q HOST-MUTATED-MARKER
 
-deploy_digest "$DIGEST" "$backup_id"
+# Keep the integration script's cleanup trap installed after the deployment
+# helper changes its own EXIT trap for automatic rollback.
+(deploy_digest "$DIGEST" "$backup_id")
 trap 'exit 130' HUP INT TERM
 curl --fail --silent --show-error --connect-timeout 2 --max-time 5 \
   "http://127.0.0.1:$PRODUCTION_PORT/frontend-health" | grep -q '"status":"ok"'
