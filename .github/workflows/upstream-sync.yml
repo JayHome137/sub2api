@@ -467,8 +467,14 @@ jobs:
               echo "blocked=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            git push origin "$branch"
           fi
+
+          frontend_version=$(node backend/scripts/sync-frontend-version.mjs)
+          if ! git diff --quiet -- frontend/package.json; then
+            git add frontend/package.json
+            git commit -m "chore(frontend): sync UI version to ${frontend_version}"
+          fi
+          git push origin "$branch"
 
           for stale_label in ready-for-vps sync-failed ui-review-required; do
             gh issue edit "$issue_number" --remove-label "$stale_label" >/dev/null 2>&1 || true

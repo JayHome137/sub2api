@@ -60,6 +60,7 @@ require_text "$SYNC_WORKFLOW" "uses: ./.github/workflows/backend-ci.yml"
 require_text "$SYNC_WORKFLOW" "uses: ./.github/workflows/security-scan.yml"
 require_text "$SYNC_WORKFLOW" "uses: ./.github/workflows/validate.yml"
 require_text "$SYNC_WORKFLOW" "publish_image: true"
+require_text "$SYNC_WORKFLOW" "node backend/scripts/sync-frontend-version.mjs"
 require_text "$SYNC_WORKFLOW" "group: aifoo-production-mutation"
 require_text "$SYNC_WORKFLOW" "statuses: write"
 
@@ -78,6 +79,8 @@ require_text "$VALIDATE_WORKFLOW" "Download the smoke-tested image"
 require_text "$VALIDATE_WORKFLOW" "sub2api-frontend:candidate-"
 require_text "$VALIDATE_WORKFLOW" "Run deployment backup and restore integration"
 require_text "$VALIDATE_WORKFLOW" "Record exact production validation"
+require_text "$VALIDATE_WORKFLOW" "node backend/scripts/sync-frontend-version.mjs --check"
+require_text "$VALIDATE_WORKFLOW" 'BUILD_VERSION=${{ steps.version.outputs.value }}'
 require_text "$VALIDATE_WORKFLOW" "aifoo/frontend-validation"
 require_text "$VALIDATE_WORKFLOW" "statuses: write"
 if grep -Fq "file: Dockerfile" "$VALIDATE_WORKFLOW"; then
