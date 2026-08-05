@@ -52,7 +52,8 @@ jobs:
         with:
           go-version-file: backend/go.mod
           check-latest: false
-          cache-dependency-path: backend/go.sum
+          # The VM's Go build cache is large; avoid a long post-job archive/upload.
+          cache: false
       - name: Run govulncheck
         working-directory: backend
         run: |
@@ -85,7 +86,7 @@ jobs:
           pnpm audit --prod --json > audit.json || true
       - name: Check audit exceptions
         run: |
-          python -m unittest discover -s tools -p 'test_*.py'
-          python tools/check_pnpm_audit_exceptions.py \
+          python3 -m unittest discover -s tools -p 'test_*.py'
+          python3 tools/check_pnpm_audit_exceptions.py \
             --audit frontend/audit.json \
             --exceptions .github/audit-exceptions.yml

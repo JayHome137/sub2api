@@ -15,11 +15,11 @@ REGISTRY_CONTAINER=aifoo-integration-registry-$SUFFIX
 BACKEND_CONTAINER=aifoo-integration-backend-$SUFFIX
 PRODUCTION_CONTAINER=aifoo-integration-frontend-$SUFFIX
 STAGE_CONTAINER=aifoo-integration-stage-$SUFFIX
-REGISTRY_PORT=15000
+REGISTRY_PORT=${AIFOO_REGISTRY_PORT:-}
 PRODUCTION_PORT=18082
 STAGE_PORT=18081
-LOCAL_REPOSITORY=localhost:$REGISTRY_PORT/aifoo/sub2api-frontend
-LOCAL_TAG=$LOCAL_REPOSITORY:integration
+LOCAL_REPOSITORY=
+LOCAL_TAG=
 INTEGRATION_LABEL=cc.aifoo.integration-run
 INTEGRATION_OWNER=$SUFFIX
 DIGEST=
@@ -122,11 +122,27 @@ EOF
 docker network create \
   --label "$INTEGRATION_LABEL=$INTEGRATION_OWNER" \
   "$NETWORK" >/dev/null
+if [ -n "$REGISTRY_PORT" ]; then
+  registry_publish="127.0.0.1:$REGISTRY_PORT:5000"
+else
+  registry_publish="127.0.0.1::5000"
+fi
 docker run -d \
   --name "$REGISTRY_CONTAINER" \
   --label "$INTEGRATION_LABEL=$INTEGRATION_OWNER" \
-  --publish "127.0.0.1:$REGISTRY_PORT:5000" \
+  --publish "$registry_publish" \
   registry:2 >/dev/null
+if [ -z "$REGISTRY_PORT" ]; then
+  REGISTRY_PORT=$(docker port "$REGISTRY_CONTAINER" 5000/tcp \
+    | sed -n 's/.*:\([0-9][0-9]*\)$/\1/p' \
+    | head -n 1)
+fi
+if ! printf '%s' "$REGISTRY_PORT" | grep -Eq '^[0-9]+$'; then
+  echo "Unable to resolve the temporary registry host port" >&2
+  exit 1
+fi
+LOCAL_REPOSITORY=localhost:$REGISTRY_PORT/aifoo/sub2api-frontend
+LOCAL_TAG=$LOCAL_REPOSITORY:integration
 docker run -d \
   --name "$BACKEND_CONTAINER" \
   --label "$INTEGRATION_LABEL=$INTEGRATION_OWNER" \

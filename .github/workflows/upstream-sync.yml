@@ -2,7 +2,8 @@ name: Sync official Sub2API releases
 
 on:
   schedule:
-    - cron: '17 3 1-31/3 * *'
+    # 01:00 Asia/Shanghai (17:00 UTC) every day.
+    - cron: '0 17 * * *'
   workflow_dispatch:
     inputs:
       release_tag:
@@ -183,8 +184,10 @@ jobs:
           backend_baseline_release=unknown
           backend_baseline_commit=unknown
           state_title="[State] AIFoo production backend"
-          state_issues=$(gh api --paginate --slurp \
-            "repos/$GITHUB_REPOSITORY/issues?state=open&per_page=100")
+          # Keep pagination compatible with older GitHub CLI versions on the VM.
+          state_issues=$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/issues?state=open&per_page=100" \
+            | jq -s '.')
           state_count=$(jq --arg title "$state_title" '
             [.[][] | select(.pull_request == null and .title == $title)] | length
           ' <<< "$state_issues")

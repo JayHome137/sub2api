@@ -7,7 +7,7 @@
 - `production`：AIFoo 生产代码。
 - `upgrade/vX.Y.Z`：由 `upstream-sync.yml` 从官方正式 Release tag 创建的升级候选。
 
-`upstream-sync.yml` 每 6 小时查询一次 `Wei-Shaw/sub2api` 最新正式 Release，不同步官方 `main`、draft 或 prerelease。候选分支依次运行 CI、安全扫描、AIFoo 测试、生产构建与容器 smoke test：
+`upstream-sync.yml` 每天北京时间 01:00（GitHub cron 为 17:00 UTC）查询一次 `Wei-Shaw/sub2api` 最新正式 Release，不同步官方 `main`、draft 或 prerelease。候选分支依次运行 CI、安全扫描、AIFoo 测试、生产构建与容器 smoke test：
 
 - 没有 UI 相关路径变更时，验证通过后自动合入 `production`，对最终提交重新验证并生成私有前端镜像。
 - `frontend/`、`deploy/frontend/`、`docs/legal/`、`backend/internal/web/` 或可能改变前端 API 契约的后端路径发生变化时，PR 保留等待 AIFoo UI 检查，不自动合并或发布镜像。
