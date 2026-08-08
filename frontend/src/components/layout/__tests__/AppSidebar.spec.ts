@@ -8,6 +8,11 @@ const componentPath = resolve(dirname(fileURLToPath(import.meta.url)), '../AppSi
 const componentSource = readFileSync(componentPath, 'utf8')
 const stylePath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../style.css')
 const styleSource = readFileSync(stylePath, 'utf8')
+const aifooStylePath = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../../styles/aifoo-console.css'
+)
+const aifooStyleSource = readFileSync(aifooStylePath, 'utf8')
 
 describe('AppSidebar custom SVG styles', () => {
   it('does not override uploaded SVG fill or stroke colors', () => {
@@ -46,10 +51,15 @@ describe('AppSidebar header styles', () => {
   it('does not clip the version badge dropdown', () => {
     const sidebarHeaderBlockMatch = styleSource.match(/\.sidebar-header\s*\{[\s\S]*?\n {2}\}/)
     const sidebarBrandBlockMatch = componentSource.match(/\.sidebar-brand\s*\{[\s\S]*?\n\}/)
+    const aifooSidebarBlockMatch = aifooStyleSource.match(
+      /html\.console-shell \.sidebar\s*\{[\s\S]*?\n\}/
+    )
 
     expect(sidebarHeaderBlockMatch).not.toBeNull()
     expect(sidebarBrandBlockMatch).not.toBeNull()
+    expect(aifooSidebarBlockMatch).not.toBeNull()
     expect(sidebarHeaderBlockMatch?.[0]).not.toContain('@apply overflow-hidden;')
     expect(sidebarBrandBlockMatch?.[0]).not.toContain('overflow: hidden;')
+    expect(aifooSidebarBlockMatch?.[0]).not.toContain('overflow: hidden;')
   })
 })
