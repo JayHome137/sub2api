@@ -1,16 +1,6 @@
 name: Validate AIFoo frontend
 
 on:
-  push:
-    branches:
-      - production
-    paths:
-      - 'backend/**'
-      - 'frontend/**'
-      - 'deploy/frontend/**'
-      - 'docs/legal/**'
-      - 'Makefile'
-      - '.github/workflows/validate.yml'
   pull_request:
     branches:
       - production
