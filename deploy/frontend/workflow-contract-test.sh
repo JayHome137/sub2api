@@ -9,9 +9,12 @@ SYNC_WORKFLOW=$ROOT/.github/workflows/upstream-sync.yml
 VALIDATE_WORKFLOW=$ROOT/.github/workflows/validate.yml
 RELEASE_WORKFLOW=$ROOT/.github/workflows/release.yml
 BACKEND_CI_WORKFLOW=$ROOT/.github/workflows/backend-ci.yml
+SECURITY_WORKFLOW=$ROOT/.github/workflows/security-scan.yml
 MACOS_SHELL_WORKFLOW=$ROOT/.github/workflows/macos-shell-ci.yml
 DEPLOY_WORKFLOW=$ROOT/.github/workflows/deploy.yml
+BACKEND_DEPLOY_WORKFLOW=$ROOT/.github/workflows/deploy-backend.yml
 PREFLIGHT_WORKFLOW=$ROOT/.github/workflows/preflight.yml
+CLA_WORKFLOW=$ROOT/.github/workflows/cla.yml
 DEPLOY_HELPER=$ROOT/deploy/frontend/deploy-frontend.sh
 DOCKER_INTEGRATION=$ROOT/deploy/frontend/docker-workflow-integration-test.sh
 NGINX_CONFIG=$ROOT/deploy/frontend/nginx.conf
@@ -39,6 +42,16 @@ reject_text() {
   fi
 }
 
+require_runner_only() {
+  file=$1
+  runner=$2
+  total=$(grep -Ec '^[[:space:]]+runs-on:' "$file")
+  matching=$(grep -Fc -- "runs-on: $runner" "$file")
+  [ "$total" -gt 0 ] || fail "$file has no direct runner jobs"
+  [ "$total" -eq "$matching" ] \
+    || fail "$file contains a runner outside the required policy: $runner"
+}
+
 require_text "$SYNC_WORKFLOW" 'repos/$official_repo/releases/latest'
 require_text "$SYNC_WORKFLOW" 'refs/tags/$tag:refs/tags/$tag'
 require_text "$SYNC_WORKFLOW" "prerelease"
@@ -62,6 +75,26 @@ require_text "$SYNC_WORKFLOW" "uses: ./.github/workflows/validate.yml"
 require_text "$SYNC_WORKFLOW" "publish_image: true"
 require_text "$SYNC_WORKFLOW" "group: aifoo-production-mutation"
 require_text "$SYNC_WORKFLOW" "statuses: write"
+require_text "$SYNC_WORKFLOW" "# 01:00 Asia/Shanghai (17:00 UTC) every day."
+require_text "$SYNC_WORKFLOW" "- cron: '0 17 * * *'"
+
+VM_RUNNER='[self-hosted, linux, x64, aifoo-vm]'
+GITHUB_RUNNER='ubuntu-latest'
+for workflow in \
+  "$SYNC_WORKFLOW" \
+  "$BACKEND_CI_WORKFLOW" \
+  "$SECURITY_WORKFLOW" \
+  "$VALIDATE_WORKFLOW"; do
+  require_runner_only "$workflow" "$VM_RUNNER"
+done
+for workflow in \
+  "$PREFLIGHT_WORKFLOW" \
+  "$DEPLOY_WORKFLOW" \
+  "$BACKEND_DEPLOY_WORKFLOW" \
+  "$CLA_WORKFLOW"; do
+  require_runner_only "$workflow" "$GITHUB_RUNNER"
+done
+require_text "$BACKEND_CI_WORKFLOW" "if: inputs.checkout_ref != '' && inputs.run_macos"
 
 if grep -Eq 'git fetch .*upstream main|refs/remotes/upstream/main' "$SYNC_WORKFLOW"; then
   fail "stable release sync must not fetch or mirror upstream main"
