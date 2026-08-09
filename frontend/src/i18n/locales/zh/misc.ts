@@ -62,9 +62,32 @@ export default {
     noStableReleaseDetected: '暂未检测到新的官方稳定版',
     statusUnavailable: '升级状态暂时不可用',
     statusUnavailableHint: '无法确认远端状态，请前往私有 GitHub 查看，勿将此状态视为已是最新版。',
+    bridgeUnavailable: 'AIFoo 部署状态暂时不可用',
+    bridgeUnavailableHint: '已发现官方新版，但无法连接私有部署桥接服务，请前往 GitHub 查看原因。',
     githubStatusHint: '候选验证、UI 审批和镜像状态以私有 GitHub Issue 标签为准。',
     viewGithubStatus: '查看 GitHub 升级状态',
+    viewDeploymentRun: '查看部署任务',
     viewOfficialRelease: '查看官方 Release',
+    retryUpdate: '重试更新',
+    deploymentStarted: '已开始执行带完整保护的生产更新。',
+    deploymentStartFailed: '无法启动更新，请查看 GitHub 状态后重试。',
+    webApprovalHint: '点击更新即为明确的生产批准，原有预检、备份、健康检查和回滚门禁保持不变。',
+    state: {
+      preparing: 'VM 正在准备新版',
+      ui_review_required: '需要检查 AIFoo UI',
+      failed: '新版准备或部署失败',
+      ready: '新版已验证，可以更新',
+      deploying: '正在更新生产环境',
+      deployed: '生产更新已完成'
+    },
+    stateHint: {
+      preparing: '{version} 正在 VM 上合并、测试或构建。',
+      ui_review_required: '{version} 涉及 UI 路径，需要先完成适配和人工确认。',
+      failed: '请打开私有 Issue 或任务记录查看原因；只有验证状态仍有效时才允许安全重试。',
+      ready: '{version} 已通过远端验证，点击更新即可批准受保护的生产部署。',
+      deploying: 'Hosted 工作流正在执行预检、校验备份、部署和健康检查。',
+      deployed: '{version} 已完成受保护的生产部署流程。'
+    },
     manualDeploymentRequired: '升级验证不会自动部署到 VPS，生产替换仍需人工批准。'
   },
 

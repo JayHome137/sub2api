@@ -11,6 +11,16 @@ on:
         description: 'Type DEPLOY-AIFOO-FRONTEND to approve the production deployment'
         required: true
         type: string
+  workflow_call:
+    inputs:
+      image_digest:
+        description: 'Validated candidate digest (sha256:...)'
+        required: true
+        type: string
+      approval:
+        description: 'Production deployment approval phrase'
+        required: true
+        type: string
 
 permissions:
   contents: read
