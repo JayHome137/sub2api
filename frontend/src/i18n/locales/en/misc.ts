@@ -64,10 +64,35 @@ export default {
     statusUnavailable: 'Upgrade status is unavailable',
     statusUnavailableHint:
       'The remote status could not be confirmed. Check the private GitHub repository; do not treat this as up to date.',
+    bridgeUnavailable: 'AIFoo deployment status is unavailable',
+    bridgeUnavailableHint:
+      'The official release was found, but the private deployment bridge could not be reached. Use GitHub status for diagnosis.',
     githubStatusHint:
       'Candidate validation, UI approval, and image status are tracked by labels in the private GitHub issue.',
     viewGithubStatus: 'View GitHub Upgrade Status',
+    viewDeploymentRun: 'View deployment run',
     viewOfficialRelease: 'View Official Release',
+    retryUpdate: 'Retry Update',
+    deploymentStarted: 'The verified production update has started.',
+    deploymentStartFailed: 'The update could not be started. Check GitHub status and retry.',
+    webApprovalHint:
+      'Clicking Update is the explicit production approval. Existing preflight, backup, health-check, and rollback gates still apply.',
+    state: {
+      preparing: 'VM is preparing the release',
+      ui_review_required: 'AIFoo UI review is required',
+      failed: 'Release preparation or deployment failed',
+      ready: 'Verified release is ready',
+      deploying: 'Production update is running',
+      deployed: 'Production update completed'
+    },
+    stateHint: {
+      preparing: '{version} is still being merged, tested, or built on the VM.',
+      ui_review_required: '{version} changes UI-related paths and must be adapted and approved first.',
+      failed: 'Open the private Issue or workflow run for the failure evidence. A safe retry is available only when validation remains ready.',
+      ready: '{version} passed remote validation. Click Update to approve the guarded production deployment.',
+      deploying: 'The hosted deployment is running preflight, verified backup, deployment, and health checks.',
+      deployed: '{version} completed the guarded production workflow.'
+    },
     manualDeploymentRequired:
       'Upgrade validation never deploys to the VPS automatically. Production replacement still requires manual approval.'
   },

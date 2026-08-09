@@ -15,7 +15,9 @@
 - 若 `production` 已更新但最终 Runner、Artifact 或 GHCR 发布失败，后续定时检查会在候选分支仍精确指向当前 `production` 时自动重跑最终构建和发布；也可手动设置 `retry_final=true`。
 - 每个新 Release 创建一个分配给仓库所有者的 Issue，使用 `candidate-testing`、`ui-review-required`、`sync-failed` 和 `ready-for-vps` 标记进度。
 
-私有仓库只构建 `deploy/frontend/Dockerfile`；后端不从私有源码构建。同步流程会记录官方后端 tag、commit 和 `weishaw/sub2api@sha256:...`，后端部署由独立的 `deploy-backend.yml` 手动工作流完成，详见 `deploy/backend/README.md`。任何镜像验证或发布都不会自动部署到 VPS。
+私有仓库只构建 `deploy/frontend/Dockerfile`；后端不从私有源码构建。同步流程会记录官方后端 tag、commit 和 `weishaw/sub2api@sha256:...`，后端部署仍由独立的 `deploy-backend.yml` 完成，详见 `deploy/backend/README.md`。每天的检测、合并、验证和构建不会自动部署到 VPS。
+
+验证完成并出现 `ready-for-vps` 后，管理员可在网页版本面板点击“立即更新”。独立的 `update-bridge` 先用现有 Sub2API 管理员认证回查身份，再固定触发 `web-update.yml`；网页点击就是本次明确的生产批准。该编排只解析 Issue 已记录的前后端不可变 digest，然后顺序复用 `deploy-backend.yml`（仅需要时）和 `deploy.yml`。原有 Hosted Runner 预检、完整备份、健康检查和自动回滚逻辑不变，浏览器不会接触 GitHub Token。桥接服务的生产安装见 `deploy/update-bridge/README.md`。
 
 ## 验证
 
@@ -43,7 +45,7 @@ GitHub Actions 运行官方关键 Vitest、AIFoo 集成测试、全量 Vitest、
 
 `deploy.yml` 只接受完整的 `sha256:` 镜像 digest，并要求该 digest、镜像源码提交和 `ready-for-vps` Issue 记录一致；镜像源码到当前 `production` 之间不得出现镜像构建输入变化。VPS 上的受限用户只能调用 root 持有的 `deploy-frontend.sh` 规定命令；脚本会：
 
-部署只能从 `production` 分支手动触发，触发者必须是仓库所有者，并输入 `DEPLOY-AIFOO-FRONTEND` 确认短语。该代码级门禁用于私人仓库套餐不支持 Environment Required Reviewer 时，确保镜像发布不会自动进入 VPS 部署。
+部署只能从 `production` 分支触发，触发者必须是仓库所有者。直接运行工作流时仍需输入 `DEPLOY-AIFOO-FRONTEND` 确认短语；网页入口则由已验证的管理员点击触发固定 `web-update.yml`，再通过 `workflow_call` 传入同一确认短语。该代码级门禁用于私人仓库套餐不支持 Environment Required Reviewer 时，确保镜像发布不会自行进入 VPS 部署。
 
 1. 拉取并核对指定 digest。
 2. 在 `127.0.0.1:18080` 启动带固定标签的隔离候选容器。

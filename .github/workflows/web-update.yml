@@ -1,0 +1,270 @@
+name: AIFoo web update
+
+run-name: AIFoo web update ${{ inputs.release_tag }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Official stable release tag (vX.Y.Z)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+  packages: read
+  statuses: read
+
+concurrency:
+  group: aifoo-web-update-orchestration
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      issue_number: ${{ steps.candidate.outputs.issue_number }}
+      frontend_digest: ${{ steps.candidate.outputs.frontend_digest }}
+      backend_digest: ${{ steps.candidate.outputs.backend_digest }}
+      backend_required: ${{ steps.candidate.outputs.backend_required }}
+    steps:
+      - name: Require repository owner approval
+        env:
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/production" ]; then
+            echo "Web update must run from the production branch" >&2
+            exit 1
+          fi
+          actor=$(printf '%s' "$GITHUB_ACTOR" | tr '[:upper:]' '[:lower:]')
+          owner=$(printf '%s' "$REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          if [ "$actor" != "$owner" ]; then
+            echo "Only the repository owner can approve a web update" >&2
+            exit 1
+          fi
+
+      - name: Resolve the exact validated release
+        id: candidate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$RELEASE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "release_tag must be a stable vX.Y.Z tag" >&2
+            exit 1
+          fi
+
+          release_json=$(gh api "repos/Wei-Shaw/sub2api/releases/tags/$RELEASE_TAG")
+          if [ "$(jq -r '.draft' <<< "$release_json")" != "false" ] \
+            || [ "$(jq -r '.prerelease' <<< "$release_json")" != "false" ]; then
+            echo "Draft and prerelease versions cannot be deployed" >&2
+            exit 1
+          fi
+
+          issue_title="[Upstream $RELEASE_TAG] AIFoo frontend compatibility"
+          issue_json=$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/issues?state=all&labels=upstream-release&per_page=100" \
+            | jq -s --arg title "$issue_title" \
+              '[add[] | select(.pull_request == null and .title == $title)] | first')
+          if [ -z "$issue_json" ] || [ "$issue_json" = "null" ]; then
+            echo "The release has no AIFoo tracking issue" >&2
+            exit 1
+          fi
+          issue_number=$(jq -r '.number' <<< "$issue_json")
+          echo "issue_number=$issue_number" >> "$GITHUB_OUTPUT"
+
+          labels=$(jq -r '.labels[].name' <<< "$issue_json")
+          if ! printf '%s\n' "$labels" | grep -Fxq ready-for-vps; then
+            echo "The release has not passed the ready-for-vps gate" >&2
+            exit 1
+          fi
+          for blocked_label in ui-review-required sync-failed; do
+            if printf '%s\n' "$labels" | grep -Fxq "$blocked_label"; then
+              echo "The release is blocked by $blocked_label" >&2
+              exit 1
+            fi
+          done
+
+          comments=$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/issues/$issue_number/comments?per_page=100" \
+            | jq -s 'add')
+          attestation=$(jq -r --arg release "$RELEASE_TAG" '
+            reverse
+            | [.[] | select(
+                (.user.login == "github-actions[bot]")
+                and (.body | contains($release))
+                and (.body | contains("ready-for-vps"))
+                and (.body | contains("Private frontend image:"))
+                and (.body | contains("Official backend image:"))
+              )]
+            | first.body // empty
+          ' <<< "$comments")
+          if [ -z "$attestation" ]; then
+            echo "The ready-for-vps issue has no complete immutable image attestation" >&2
+            exit 1
+          fi
+
+          frontend_ref=$(printf '%s\n' "$attestation" \
+            | grep -Eo 'ghcr\.io/[a-z0-9_.-]+/sub2api-frontend@sha256:[0-9a-f]{64}' \
+            | sed -n '1p')
+          expected_prefix="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sub2api-frontend@"
+          if [ "${frontend_ref#"$expected_prefix"}" = "$frontend_ref" ]; then
+            echo "Private frontend image does not belong to this repository owner" >&2
+            exit 1
+          fi
+          frontend_digest=${frontend_ref##*@}
+          backend_ref=$(printf '%s\n' "$attestation" \
+            | grep -Eo 'weishaw/sub2api@sha256:[0-9a-f]{64}' \
+            | sed -n '1p')
+          backend_digest=${backend_ref##*@}
+          if ! printf '%s' "$frontend_digest" | grep -Eq '^sha256:[0-9a-f]{64}$' \
+            || ! printf '%s' "$backend_digest" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "The immutable image attestation is invalid" >&2
+            exit 1
+          fi
+
+          attested_backend_required=$(printf '%s\n' "$attestation" \
+            | sed -n 's/.*Backend deployment required: `\(true\|false\)`.*/\1/p' \
+            | sed -n '1p')
+          if [ -z "$attested_backend_required" ]; then
+            echo "The backend deployment attestation is missing" >&2
+            exit 1
+          fi
+
+          backend_required=false
+          label_requires_backend=false
+          label_backend_deployed=false
+          if printf '%s\n' "$labels" | grep -Fxq backend-deploy-required; then
+            label_requires_backend=true
+          fi
+          if printf '%s\n' "$labels" | grep -Fxq backend-deployed; then
+            label_backend_deployed=true
+          fi
+          if [ "$label_requires_backend" = "true" ] \
+            && [ "$label_backend_deployed" = "true" ]; then
+            echo "Backend deployment labels are contradictory" >&2
+            exit 1
+          fi
+          if [ "$attested_backend_required" = "false" ] \
+            && [ "$label_requires_backend" = "true" ]; then
+            echo "Backend deployment label contradicts the validation attestation" >&2
+            exit 1
+          fi
+          if [ "$attested_backend_required" = "true" ] \
+            && [ "$label_requires_backend" = "true" ]; then
+            backend_required=true
+          fi
+          if [ "$attested_backend_required" = "true" ] \
+            && [ "$label_requires_backend" = "false" ]; then
+            if [ "$label_backend_deployed" != "true" ]; then
+              echo "Required backend deployment has neither pending nor deployed evidence" >&2
+              exit 1
+            fi
+            backend_state=$(gh issue list --state open --label backend-production-state \
+              --limit 2 --json body --jq 'if length == 1 then .[0].body else empty end')
+            if [ -z "$backend_state" ] \
+              || ! jq -e --arg release "$RELEASE_TAG" --arg digest "$backend_digest" '
+                .schema == 1
+                and .kind == "aifoo.backend.production"
+                and .status == "success"
+                and .release_tag == $release
+                and .image_digest == $digest
+              ' <<< "$backend_state" >/dev/null; then
+              echo "backend-deployed is not backed by the exact production State Issue" >&2
+              exit 1
+            fi
+          fi
+          echo "frontend_digest=$frontend_digest" >> "$GITHUB_OUTPUT"
+          echo "backend_digest=$backend_digest" >> "$GITHUB_OUTPUT"
+          echo "backend_required=$backend_required" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Approved AIFoo web update"
+            echo
+            echo "- Release: \`$RELEASE_TAG\`"
+            echo "- Tracking issue: #$issue_number"
+            echo "- Frontend: \`$frontend_ref\`"
+            echo "- Backend: \`$backend_ref\`"
+            echo "- Backend deployment required: \`$backend_required\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  backend:
+    needs: resolve
+    if: needs.resolve.outputs.backend_required == 'true'
+    uses: ./.github/workflows/deploy-backend.yml
+    with:
+      release_tag: ${{ inputs.release_tag }}
+      image_digest: ${{ needs.resolve.outputs.backend_digest }}
+      approval: DEPLOY-AIFOO-BACKEND
+    secrets: inherit
+
+  frontend:
+    needs:
+      - resolve
+      - backend
+    if: >-
+      always() &&
+      needs.resolve.result == 'success' &&
+      (needs.backend.result == 'success' || needs.backend.result == 'skipped')
+    uses: ./.github/workflows/deploy.yml
+    with:
+      image_digest: ${{ needs.resolve.outputs.frontend_digest }}
+      approval: DEPLOY-AIFOO-FRONTEND
+    secrets: inherit
+
+  finalize:
+    needs:
+      - resolve
+      - backend
+      - frontend
+    if: always() && needs.frontend.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Record the completed web update
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ needs.resolve.outputs.issue_number }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          FRONTEND_DIGEST: ${{ needs.resolve.outputs.frontend_digest }}
+          BACKEND_REQUIRED: ${{ needs.resolve.outputs.backend_required }}
+        run: |
+          set -euo pipefail
+          gh label create vps-deployed --color 0E8A16 --force >/dev/null
+          gh label create web-update-failed --color B60205 --force >/dev/null
+          gh issue edit "$ISSUE_NUMBER" \
+            --add-label vps-deployed \
+            --remove-label web-update-failed >/dev/null 2>&1 || \
+            gh issue edit "$ISSUE_NUMBER" --add-label vps-deployed >/dev/null
+          gh issue comment "$ISSUE_NUMBER" --body "AIFoo web update completed for $RELEASE_TAG. Frontend digest \`$FRONTEND_DIGEST\`; backend deployment required: \`$BACKEND_REQUIRED\`. The existing preflight, verified backup, health-check, and automatic rollback gates were used."
+          gh issue close "$ISSUE_NUMBER" >/dev/null
+
+  record_failure:
+    needs:
+      - resolve
+      - backend
+      - frontend
+      - finalize
+    if: >-
+      always() &&
+      needs.resolve.result == 'success' &&
+      (needs.backend.result == 'failure' || needs.backend.result == 'cancelled' ||
+      needs.frontend.result == 'failure' || needs.frontend.result == 'cancelled' ||
+      needs.finalize.result == 'failure' || needs.finalize.result == 'cancelled')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Keep the failed update visible and retryable
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ needs.resolve.outputs.issue_number }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          gh label create web-update-failed --color B60205 --force >/dev/null
+          gh issue edit "$ISSUE_NUMBER" --add-label web-update-failed >/dev/null
+          gh issue comment "$ISSUE_NUMBER" --body "AIFoo web update failed or was cancelled for $RELEASE_TAG. The failed component used its verified rollback gate. A backend that already completed all health and unchanged-frontend checks remains as a resumable checkpoint; retry continues with the pending frontend. The Issue remains open for diagnosis and an explicit retry."

@@ -16,7 +16,7 @@
 
 ## GitHub Runner 验证
 
-`deploy-backend.yml` 只能从 `production` 手动触发。触发者必须是仓库所有者，并输入 `DEPLOY-AIFOO-BACKEND`。工作流会再次验证官方 Release、tag object、commit、不可变 digest、镜像 labels、版本输出和 `ready-for-vps` Issue 记录。
+`deploy-backend.yml` 只能从 `production` 触发。触发者必须是仓库所有者；直接运行时需输入 `DEPLOY-AIFOO-BACKEND`，网页批准则由固定的 `web-update.yml` 通过 `workflow_call` 传入同一短语。工作流会再次验证官方 Release、tag object、commit、不可变 digest、镜像 labels、版本输出和 `ready-for-vps` Issue 记录。
 
 只读生产 preflight 返回当前官方镜像、Release 和 commit 后，GitHub Runner 使用固定 digest 的一次性 PostgreSQL 16 与 Redis 7，依次启动当前生产官方镜像、目标官方镜像、当前旧镜像。它验证真实升级 migrations、升级后 schema 上的 image-only rollback、版本/commit、健康和存储探针。测试资源在 Runner 内销毁，不连接生产数据库，也不上传数据库、Redis、配置或日志 Artifact。
 

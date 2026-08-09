@@ -34,6 +34,7 @@ for file in "$DEPLOY_WORKFLOW" "$PREFLIGHT_WORKFLOW" "$SYNC_WORKFLOW" "$HELPER" 
 done
 
 require_text "$DEPLOY_WORKFLOW" 'workflow_dispatch:'
+require_text "$DEPLOY_WORKFLOW" 'workflow_call:'
 reject_text "$DEPLOY_WORKFLOW" 'schedule:'
 reject_text "$DEPLOY_WORKFLOW" 'workflow_run:'
 reject_text "$DEPLOY_WORKFLOW" 'pull_request:'

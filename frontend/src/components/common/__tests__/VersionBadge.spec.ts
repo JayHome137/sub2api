@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import VersionBadge from '../VersionBadge.vue'
 
-const { appStore, authStore, systemMutations } = vi.hoisted(() => ({
+const { appStore, authStore, systemMutations, upgradeMutations } = vi.hoisted(() => ({
   appStore: {
     versionLoading: false,
     currentVersion: '0.1.169',
@@ -11,6 +11,8 @@ const { appStore, authStore, systemMutations } = vi.hoisted(() => ({
     hasUpdate: false,
     releaseInfo: null as { html_url?: string } | null,
     fetchVersion: vi.fn(),
+    showInfo: vi.fn(),
+    showError: vi.fn(),
   },
   authStore: {
     isAdmin: false,
@@ -21,6 +23,10 @@ const { appStore, authStore, systemMutations } = vi.hoisted(() => ({
     getRollbackVersions: vi.fn(),
     rollback: vi.fn(),
   },
+  upgradeMutations: {
+    getAIFooUpgradeStatus: vi.fn(),
+    dispatchAIFooUpgrade: vi.fn(),
+  },
 }))
 
 vi.mock('@/stores', () => ({
@@ -29,6 +35,7 @@ vi.mock('@/stores', () => ({
 }))
 
 vi.mock('@/api/admin/system', () => systemMutations)
+vi.mock('@/api/admin/upgrade', () => upgradeMutations)
 
 vi.mock('vue-i18n', async (importOriginal) => ({
   ...(await importOriginal<typeof import('vue-i18n')>()),
@@ -60,6 +67,16 @@ describe('VersionBadge AIFoo upgrade status', () => {
       latest_version: '0.1.169',
       has_update: false,
     })
+    appStore.showInfo.mockReset()
+    appStore.showError.mockReset()
+    upgradeMutations.getAIFooUpgradeStatus.mockReset()
+    upgradeMutations.getAIFooUpgradeStatus.mockResolvedValue({
+      release_tag: 'v0.1.170',
+      state: 'preparing',
+      can_dispatch: false,
+      backend_required: false,
+    })
+    upgradeMutations.dispatchAIFooUpgrade.mockReset()
     Object.values(systemMutations).forEach((mock) => mock.mockReset())
   })
 
@@ -87,22 +104,116 @@ describe('VersionBadge AIFoo upgrade status', () => {
     expect(appStore.fetchVersion).toHaveBeenCalledWith(false)
   })
 
-  it('shows a detected stable release without offering local update actions', async () => {
+  it('shows the VM preparation state without offering official binary update actions', async () => {
     authStore.isAdmin = true
     appStore.hasUpdate = true
     appStore.latestVersion = '0.1.170'
     appStore.releaseInfo = {
       html_url: 'https://github.com/Wei-Shaw/sub2api/releases/tag/v0.1.170',
     }
+    appStore.fetchVersion.mockResolvedValue({
+      current_version: '0.1.169',
+      latest_version: '0.1.170',
+      has_update: true,
+    })
 
     const wrapper = mountBadge()
     await flushPromises()
     await wrapper.get('[data-testid="version-badge"]').trigger('click')
 
-    expect(wrapper.get('[data-testid="upgrade-status-detected"]').text()).toContain('v0.1.170')
+    expect(wrapper.find('[data-testid="upgrade-status-preparing"]').exists()).toBe(true)
+    expect(upgradeMutations.getAIFooUpgradeStatus).toHaveBeenCalledWith('v0.1.170')
     expect(wrapper.text()).not.toContain('version.updateNow')
     expect(wrapper.text()).not.toContain('version.rollback')
     expect(wrapper.text()).not.toContain('version.restartNow')
+  })
+
+  it('dispatches a ready release through the bridge and never calls official update APIs', async () => {
+    authStore.isAdmin = true
+    appStore.hasUpdate = true
+    appStore.latestVersion = '0.1.170'
+    appStore.fetchVersion.mockResolvedValue({
+      current_version: '0.1.169',
+      latest_version: '0.1.170',
+      has_update: true,
+    })
+    upgradeMutations.getAIFooUpgradeStatus.mockResolvedValue({
+      release_tag: 'v0.1.170',
+      state: 'ready',
+      can_dispatch: true,
+      backend_required: true,
+      issue_url: 'https://github.com/JayHome137/sub2api/issues/17',
+    })
+    upgradeMutations.dispatchAIFooUpgrade.mockResolvedValue({
+      release_tag: 'v0.1.170',
+      state: 'deploying',
+      can_dispatch: false,
+      backend_required: true,
+    })
+
+    const wrapper = mountBadge()
+    await flushPromises()
+    await wrapper.get('[data-testid="version-badge"]').trigger('click')
+    await wrapper.get('[data-testid="dispatch-aifoo-upgrade"]').trigger('click')
+    await flushPromises()
+
+    expect(upgradeMutations.dispatchAIFooUpgrade).toHaveBeenCalledWith('v0.1.170')
+    expect(wrapper.find('[data-testid="upgrade-status-deploying"]').exists()).toBe(true)
+    expect(appStore.showInfo).toHaveBeenCalledWith('version.deploymentStarted')
+    expect(systemMutations.performUpdate).not.toHaveBeenCalled()
+    expect(systemMutations.restartService).not.toHaveBeenCalled()
+    expect(systemMutations.rollback).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps UI-related releases blocked from web dispatch', async () => {
+    authStore.isAdmin = true
+    appStore.hasUpdate = true
+    appStore.latestVersion = '0.1.170'
+    appStore.fetchVersion.mockResolvedValue({
+      current_version: '0.1.169',
+      latest_version: '0.1.170',
+      has_update: true,
+    })
+    upgradeMutations.getAIFooUpgradeStatus.mockResolvedValue({
+      release_tag: 'v0.1.170',
+      state: 'ui_review_required',
+      can_dispatch: false,
+      backend_required: false,
+    })
+
+    const wrapper = mountBadge()
+    await flushPromises()
+    await wrapper.get('[data-testid="version-badge"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="upgrade-status-ui_review_required"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="dispatch-aifoo-upgrade"]').exists()).toBe(false)
+  })
+
+  it('keeps showing an in-progress web update after the backend reaches the latest version', async () => {
+    authStore.isAdmin = true
+    appStore.currentVersion = '0.1.170'
+    appStore.latestVersion = '0.1.170'
+    appStore.hasUpdate = false
+    appStore.fetchVersion.mockResolvedValue({
+      current_version: '0.1.170',
+      latest_version: '0.1.170',
+      has_update: false,
+    })
+    upgradeMutations.getAIFooUpgradeStatus.mockResolvedValue({
+      release_tag: 'v0.1.170',
+      state: 'deploying',
+      can_dispatch: false,
+      backend_required: false,
+    })
+
+    const wrapper = mountBadge()
+    await flushPromises()
+    await wrapper.get('[data-testid="version-badge"]').trigger('click')
+
+    expect(upgradeMutations.getAIFooUpgradeStatus).toHaveBeenCalledWith('v0.1.170')
+    expect(wrapper.find('[data-testid="upgrade-status-deploying"]').exists()).toBe(true)
+    wrapper.unmount()
   })
 
   it('does not report up-to-date when the release check is unavailable', async () => {

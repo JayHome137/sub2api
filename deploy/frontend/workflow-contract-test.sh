@@ -13,6 +13,7 @@ SECURITY_WORKFLOW=$ROOT/.github/workflows/security-scan.yml
 MACOS_SHELL_WORKFLOW=$ROOT/.github/workflows/macos-shell-ci.yml
 DEPLOY_WORKFLOW=$ROOT/.github/workflows/deploy.yml
 BACKEND_DEPLOY_WORKFLOW=$ROOT/.github/workflows/deploy-backend.yml
+WEB_UPDATE_WORKFLOW=$ROOT/.github/workflows/web-update.yml
 PREFLIGHT_WORKFLOW=$ROOT/.github/workflows/preflight.yml
 CLA_WORKFLOW=$ROOT/.github/workflows/cla.yml
 DEPLOY_HELPER=$ROOT/deploy/frontend/deploy-frontend.sh
@@ -22,6 +23,10 @@ SECURITY_HEADERS=$ROOT/deploy/frontend/security-headers.conf
 ROOT_DOCKERFILE=$ROOT/Dockerfile
 DEPLOY_DOCKERFILE=$ROOT/deploy/Dockerfile
 FRONTEND_DOCKERFILE=$ROOT/deploy/frontend/Dockerfile
+UPDATE_BRIDGE=$ROOT/deploy/update-bridge/main.go
+UPDATE_BRIDGE_SERVICE=$ROOT/deploy/update-bridge/aifoo-update-bridge.service
+UPDATE_BRIDGE_INSTALL=$ROOT/deploy/update-bridge/install.sh
+UPDATE_BRIDGE_NGINX=$ROOT/deploy/update-bridge/nginx-location.conf
 
 fail() {
   echo "workflow contract test failed: $1" >&2
@@ -94,7 +99,52 @@ for workflow in \
   "$CLA_WORKFLOW"; do
   require_runner_only "$workflow" "$GITHUB_RUNNER"
 done
+require_runner_only "$WEB_UPDATE_WORKFLOW" "$GITHUB_RUNNER"
 require_text "$BACKEND_CI_WORKFLOW" "if: inputs.checkout_ref != '' && inputs.run_macos"
+
+for file in \
+  "$WEB_UPDATE_WORKFLOW" \
+  "$UPDATE_BRIDGE" \
+  "$UPDATE_BRIDGE_SERVICE" \
+  "$UPDATE_BRIDGE_INSTALL" \
+  "$UPDATE_BRIDGE_NGINX"; do
+  [ -s "$file" ] || fail "required web update file is missing: $file"
+done
+
+require_text "$DEPLOY_WORKFLOW" 'workflow_call:'
+require_text "$BACKEND_DEPLOY_WORKFLOW" 'workflow_call:'
+require_text "$WEB_UPDATE_WORKFLOW" 'workflow_dispatch:'
+require_text "$WEB_UPDATE_WORKFLOW" 'Only the repository owner can approve a web update'
+require_text "$WEB_UPDATE_WORKFLOW" 'ready-for-vps'
+require_text "$WEB_UPDATE_WORKFLOW" 'ui-review-required sync-failed'
+require_text "$WEB_UPDATE_WORKFLOW" 'uses: ./.github/workflows/deploy-backend.yml'
+require_text "$WEB_UPDATE_WORKFLOW" 'uses: ./.github/workflows/deploy.yml'
+require_text "$WEB_UPDATE_WORKFLOW" 'secrets: inherit'
+require_text "$WEB_UPDATE_WORKFLOW" 'approval: DEPLOY-AIFOO-BACKEND'
+require_text "$WEB_UPDATE_WORKFLOW" 'approval: DEPLOY-AIFOO-FRONTEND'
+require_text "$WEB_UPDATE_WORKFLOW" 'vps-deployed'
+require_text "$WEB_UPDATE_WORKFLOW" 'web-update-failed'
+require_text "$WEB_UPDATE_WORKFLOW" 'group: aifoo-web-update-orchestration'
+require_text "$WEB_UPDATE_WORKFLOW" '.user.login == "github-actions[bot]"'
+require_text "$WEB_UPDATE_WORKFLOW" 'backend-deployed is not backed by the exact production State Issue'
+reject_text "$WEB_UPDATE_WORKFLOW" 'self-hosted'
+reject_text "$WEB_UPDATE_WORKFLOW" 'schedule:'
+
+require_text "$UPDATE_BRIDGE" 'defaultListenAddr = "127.0.0.1:8091"'
+require_text "$UPDATE_BRIDGE" 'defaultAdminURL   = "http://127.0.0.1:8080/api/v1/admin/system/version"'
+require_text "$UPDATE_BRIDGE" 'AIFOO_UPGRADE_GITHUB_TOKEN_FILE'
+require_text "$UPDATE_BRIDGE" 'os.ReadFile(tokenFile)'
+require_text "$UPDATE_BRIDGE" '"ref": "production"'
+require_text "$UPDATE_BRIDGE" 'defaultWorkflow   = "web-update.yml"'
+require_text "$UPDATE_BRIDGE_SERVICE" 'User=aifoo-update-bridge'
+require_text "$UPDATE_BRIDGE_NGINX" 'location = /api/v1/aifoo-upgrade/status'
+require_text "$UPDATE_BRIDGE_NGINX" 'location = /api/v1/aifoo-upgrade/dispatch'
+sh -n "$UPDATE_BRIDGE_INSTALL"
+
+if grep -R -E 'AIFOO_UPGRADE_GITHUB_TOKEN(_FILE)?|/etc/aifoo-update-bridge/github-token' \
+  "$ROOT/frontend" "$ROOT/.github/workflows" >/dev/null 2>&1; then
+  fail 'GitHub PAT configuration must not enter frontend or Actions workflows'
+fi
 
 if grep -Eq 'git fetch .*upstream main|refs/remotes/upstream/main' "$SYNC_WORKFLOW"; then
   fail "stable release sync must not fetch or mirror upstream main"
