@@ -26,13 +26,13 @@
         <div
           v-if="dropdownOpen"
           data-testid="version-status-panel"
-          class="absolute left-0 z-50 mt-2 w-72 overflow-hidden whitespace-normal rounded-lg border border-gray-200 bg-white shadow-lg dark:border-dark-700 dark:bg-dark-800"
+          class="absolute left-0 z-50 mt-2 w-64 overflow-hidden whitespace-normal rounded-xl border border-gray-200 bg-white shadow-lg dark:border-dark-700 dark:bg-dark-800"
         >
           <div
             class="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-dark-700"
           >
             <span class="text-sm font-medium text-gray-700 dark:text-dark-300">
-              {{ t('version.upgradeStatus') }}
+              {{ t('version.currentVersion') }}
             </span>
             <button
               type="button"
@@ -50,134 +50,133 @@
             </button>
           </div>
 
-          <div class="space-y-3 p-4">
-            <div class="text-center">
-              <p class="text-xs text-gray-500 dark:text-dark-400">
-                {{ t('version.currentVersion') }}
-              </p>
-              <p class="mt-1 text-2xl font-bold text-gray-900 dark:text-white">
-                {{ displayVersion ? `v${displayVersion}` : '--' }}
-              </p>
-            </div>
-
+          <div class="p-4">
             <div
-              v-if="statusUnavailable"
-              data-testid="upgrade-status-unavailable"
-              class="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800/50 dark:bg-red-900/20"
-            >
-              <p class="text-sm font-medium text-red-700 dark:text-red-300">
-                {{ t('version.statusUnavailable') }}
-              </p>
-              <p class="mt-1 text-xs leading-5 text-red-600/80 dark:text-red-400/80">
-                {{ t('version.statusUnavailableHint') }}
-              </p>
-            </div>
-
-            <div
-              v-else-if="loading"
+              v-if="loading"
               data-testid="upgrade-status-loading"
-              class="flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-5 text-sm text-gray-500 dark:border-dark-700 dark:bg-dark-900/50 dark:text-dark-400"
+              class="flex items-center justify-center py-6 text-primary-500"
             >
               <Icon name="refresh" size="sm" :stroke-width="2" class="animate-spin" />
-              {{ t('version.checkingRelease') }}
             </div>
 
-            <div
-              v-else-if="showUpgradeCandidate && bridgeUnavailable"
-              data-testid="upgrade-status-bridge-unavailable"
-              class="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800/50 dark:bg-red-900/20"
-            >
-              <p class="text-sm font-medium text-red-700 dark:text-red-300">
-                {{ t('version.bridgeUnavailable') }}
-              </p>
-              <p class="mt-1 text-xs leading-5 text-red-600/80 dark:text-red-400/80">
-                {{ t('version.bridgeUnavailableHint') }}
-              </p>
-            </div>
-
-            <div
-              v-else-if="showUpgradeCandidate && upgradeStatus"
-              :data-testid="upgradeStateTestId"
-              class="rounded-lg border p-3"
-              :class="upgradeStateClass"
-            >
-              <div class="flex items-start gap-2">
-                <Icon
-                  v-if="upgradeState === 'deploying' || upgradeState === 'preparing'"
-                  name="refresh"
-                  size="sm"
-                  :stroke-width="2"
-                  class="mt-0.5 shrink-0 animate-spin"
-                />
-                <div class="min-w-0 flex-1">
-                  <p class="text-sm font-medium">
-                    {{ t(upgradeStateTitleKey) }}
-                  </p>
-                  <p class="mt-1 text-xs leading-5 opacity-80">
-                    {{ t(upgradeStateHintKey, { version: `v${latestVersion}` }) }}
-                  </p>
+            <template v-else>
+              <div class="mb-4 text-center">
+                <div class="inline-flex items-center gap-2">
+                  <span class="text-2xl font-bold text-gray-900 dark:text-white">
+                    {{ displayVersion ? `v${displayVersion}` : '--' }}
+                  </span>
+                  <span
+                    v-if="!needsUpgradeAttention && !statusUnavailable"
+                    class="flex h-5 w-5 items-center justify-center rounded-full bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400"
+                    aria-hidden="true"
+                  >
+                    ✓
+                  </span>
                 </div>
+                <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">
+                  {{
+                    needsUpgradeAttention && latestVersion
+                      ? `${t('version.latestVersion')}: v${latestVersion}`
+                      : t('version.upToDate')
+                  }}
+                </p>
               </div>
 
-              <button
-                v-if="canDispatch"
-                data-testid="dispatch-aifoo-upgrade"
-                type="button"
-                class="mt-3 flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-60"
-                :disabled="dispatching"
-                @click="dispatchUpgrade"
+              <div
+                v-if="statusUnavailable"
+                data-testid="upgrade-status-unavailable"
+                class="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800/50 dark:bg-red-900/20"
               >
-                <Icon
-                  v-if="dispatching"
-                  name="refresh"
-                  size="sm"
-                  :stroke-width="2"
-                  class="animate-spin"
-                />
-                {{ t(upgradeState === 'failed' ? 'version.retryUpdate' : 'version.updateNow') }}
-              </button>
-            </div>
+                <p class="text-sm font-medium text-red-700 dark:text-red-300">
+                  {{ t('version.statusUnavailable') }}
+                </p>
+                <p class="mt-1 text-xs leading-5 text-red-600/80 dark:text-red-400/80">
+                  {{ t('version.statusUnavailableHint') }}
+                </p>
+              </div>
 
-            <div
-              v-else-if="hasUpdate"
-              data-testid="upgrade-status-detected"
-              class="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/50 dark:bg-amber-900/20"
-            >
-              <p class="text-sm font-medium text-amber-700 dark:text-amber-300">
-                {{ t('version.stableReleaseDetected') }}
-              </p>
-              <p class="mt-1 text-xs text-amber-600/80 dark:text-amber-400/80">
-                {{ t('version.latestVersion') }}: v{{ latestVersion }}
-              </p>
-            </div>
+              <div
+                v-else-if="showUpgradeCandidate && bridgeUnavailable"
+                data-testid="upgrade-status-bridge-unavailable"
+                class="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800/50 dark:bg-red-900/20"
+              >
+                <p class="text-sm font-medium text-red-700 dark:text-red-300">
+                  {{ t('version.bridgeUnavailable') }}
+                </p>
+                <p class="mt-1 text-xs leading-5 text-red-600/80 dark:text-red-400/80">
+                  {{ t('version.bridgeUnavailableHint') }}
+                </p>
+              </div>
 
-            <div
-              v-else
-              data-testid="upgrade-status-watching"
-              class="rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-800/50 dark:bg-green-900/20"
-            >
-              <p class="text-sm font-medium text-green-700 dark:text-green-300">
-                {{ t('version.noStableReleaseDetected') }}
-              </p>
-              <p class="mt-1 text-xs leading-5 text-green-600/80 dark:text-green-400/80">
-                {{ t('version.githubStatusHint') }}
-              </p>
-            </div>
+              <div
+                v-else-if="showUpgradeCandidate && upgradeStatus"
+                :data-testid="upgradeStateTestId"
+                class="space-y-2"
+              >
+                <div class="rounded-lg border p-3" :class="upgradeStateClass">
+                  <div class="flex items-start gap-2">
+                    <Icon
+                      v-if="upgradeState === 'deploying' || upgradeState === 'preparing'"
+                      name="refresh"
+                      size="sm"
+                      :stroke-width="2"
+                      class="mt-0.5 shrink-0 animate-spin"
+                    />
+                    <div class="min-w-0 flex-1">
+                      <p class="text-sm font-medium">
+                        {{ t(upgradeStateTitleKey) }}
+                      </p>
+                      <p class="mt-1 text-xs leading-5 opacity-80">
+                        {{ t(upgradeStateHintKey, { version: `v${latestVersion}` }) }}
+                      </p>
+                    </div>
+                  </div>
+                </div>
 
-            <a
-              v-if="hasUpdate && officialReleaseUrl"
-              :href="officialReleaseUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="flex items-center justify-center gap-1 text-xs text-gray-500 transition-colors hover:text-gray-700 dark:text-dark-400 dark:hover:text-dark-200"
-            >
-              {{ t('version.viewOfficialRelease') }}
-              <Icon name="externalLink" size="xs" :stroke-width="2" />
-            </a>
+                <button
+                  v-if="canDispatch"
+                  data-testid="dispatch-aifoo-upgrade"
+                  type="button"
+                  class="flex w-full items-center justify-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  :disabled="dispatching"
+                  @click="dispatchUpgrade"
+                >
+                  <Icon
+                    v-if="dispatching"
+                    name="refresh"
+                    size="sm"
+                    :stroke-width="2"
+                    class="animate-spin"
+                  />
+                  <Icon v-else name="download" size="sm" :stroke-width="2" />
+                  {{ t(upgradeState === 'failed' ? 'version.retryUpdate' : 'version.updateNow') }}
+                </button>
+              </div>
 
-            <p class="text-center text-[11px] leading-4 text-gray-400 dark:text-dark-500">
-              {{ t('version.webApprovalHint') }}
-            </p>
+              <div
+                v-else-if="hasUpdate"
+                data-testid="upgrade-status-detected"
+                class="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/50 dark:bg-amber-900/20"
+              >
+                <p class="text-sm font-medium text-amber-700 dark:text-amber-300">
+                  {{ t('version.updateAvailable') }}
+                </p>
+                <p class="mt-1 text-xs text-amber-600/80 dark:text-amber-400/80">
+                  v{{ latestVersion }}
+                </p>
+              </div>
+
+              <a
+                v-if="hasUpdate && officialReleaseUrl"
+                :href="officialReleaseUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="mt-2 flex items-center justify-center gap-1 text-xs text-gray-500 transition-colors hover:text-gray-700 dark:text-dark-400 dark:hover:text-dark-200"
+              >
+                {{ t('version.viewChangelog') }}
+                <Icon name="externalLink" size="xs" :stroke-width="2" />
+              </a>
+            </template>
           </div>
         </div>
       </transition>
@@ -272,7 +271,7 @@ const badgeClass = computed(() => {
 const badgeTitle = computed(() => {
   if (statusUnavailable.value) return t('version.statusUnavailable')
   if (needsUpgradeAttention.value) return t(upgradeStateTitleKey.value)
-  return t('version.upgradeStatus')
+  return t('version.upToDate')
 })
 
 function toggleDropdown() {

@@ -57,40 +57,29 @@ export default {
     deployDocker: 'Docker',
     dockerEditCompose: 'Edit the image tag in docker-compose.yml',
     dockerRecreate: 'Recreate the container',
-    upgradeStatus: 'AIFoo Upgrade Status',
-    checkingRelease: 'Checking the official stable release...',
-    stableReleaseDetected: 'New official stable release detected',
-    noStableReleaseDetected: 'No new official stable release detected',
     statusUnavailable: 'Upgrade status is unavailable',
     statusUnavailableHint: 'The remote status could not be confirmed. Refresh and try again later.',
-    bridgeUnavailable: 'AIFoo deployment status is unavailable',
-    bridgeUnavailableHint: 'The official release was found, but deployment is temporarily unavailable. Try again later.',
-    githubStatusHint:
-      'The system validates the release, adapts the interface, and prepares deployment in the background.',
-    viewOfficialRelease: 'View Official Release',
+    bridgeUnavailable: 'Update is temporarily unavailable',
+    bridgeUnavailableHint: 'A new official release was found. Refresh and try again later.',
     retryUpdate: 'Retry Update',
-    deploymentStarted: 'The verified production update has started.',
+    deploymentStarted: 'The update has started.',
     deploymentStartFailed: 'The update could not be started. Try again later.',
-    webApprovalHint:
-      'Clicking Update is the explicit production approval. Existing preflight, backup, health-check, and rollback gates still apply.',
     state: {
       preparing: 'Preparing the release',
-      ui_review_required: 'Adapting the interface for this release',
-      failed: 'Release preparation or deployment failed',
-      ready: 'Verified release is ready',
-      deploying: 'Production update is running',
-      deployed: 'Production update completed'
+      ui_review_required: 'Adapting the new release',
+      failed: 'Update is temporarily unavailable',
+      ready: 'A new version is available!',
+      deploying: 'Updating...',
+      deployed: 'Update complete'
     },
     stateHint: {
-      preparing: '{version} is still being merged, tested, or built on the VM.',
-      ui_review_required: '{version} changes UI-related paths and must be adapted and approved first.',
-      failed: 'Open the private Issue or workflow run for the failure evidence. A safe retry is available only when validation remains ready.',
-      ready: '{version} passed remote validation. Click Update to approve the guarded production deployment.',
-      deploying: 'The hosted deployment is running preflight, verified backup, deployment, and health checks.',
-      deployed: '{version} completed the guarded production workflow.'
-    },
-    manualDeploymentRequired:
-      'Upgrade validation never deploys to the VPS automatically. Production replacement still requires manual approval.'
+      preparing: '{version} is being prepared. One-click update will appear when ready.',
+      ui_review_required: '{version} is being adapted to the current interface.',
+      failed: '{version} is temporarily unavailable. Try again later.',
+      ready: '{version} is ready.',
+      deploying: '{version} is installing. The page will refresh when complete.',
+      deployed: '{version} has been updated.'
+    }
   },
 
   // Recharge / Subscription Page

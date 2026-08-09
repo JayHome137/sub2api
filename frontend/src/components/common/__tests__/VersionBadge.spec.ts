@@ -90,7 +90,7 @@ describe('VersionBadge AIFoo upgrade status', () => {
     expect(appStore.fetchVersion).not.toHaveBeenCalled()
   })
 
-  it('keeps private GitHub workflow details out of the admin panel', async () => {
+  it('keeps private workflow details out of the admin panel', async () => {
     authStore.isAdmin = true
     const wrapper = mountBadge()
     await flushPromises()
@@ -99,10 +99,13 @@ describe('VersionBadge AIFoo upgrade status', () => {
     expect(wrapper.find('[data-testid="github-upgrade-status-link"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('version.viewGithubStatus')
     expect(wrapper.text()).not.toContain('version.viewDeploymentRun')
+    expect(wrapper.text()).toContain('version.currentVersion')
+    expect(wrapper.text()).toContain('version.upToDate')
+    expect(wrapper.find('[data-testid="dispatch-aifoo-upgrade"]').exists()).toBe(false)
     expect(appStore.fetchVersion).toHaveBeenCalledWith(false)
   })
 
-  it('shows the VM preparation state without offering official binary update actions', async () => {
+  it('shows a clean preparation state without exposing backend implementation details', async () => {
     authStore.isAdmin = true
     appStore.hasUpdate = true
     appStore.latestVersion = '0.1.170'
