@@ -9,10 +9,10 @@
 
 `upstream-sync.yml` 每天北京时间 01:00（GitHub cron 为 17:00 UTC）查询一次 `Wei-Shaw/sub2api` 最新正式 Release，不同步官方 `main`、draft 或 prerelease。候选分支依次运行 CI、安全扫描、AIFoo 测试、生产构建与容器 smoke test：
 
-- 没有 UI 相关路径变更时，验证通过后自动合入 `production`，对最终提交重新验证并生成私有前端镜像。
-- `frontend/`、`deploy/frontend/`、`docs/legal/`、`backend/internal/web/` 或可能改变前端 API 契约的后端路径发生变化时，PR 保留等待 AIFoo UI 检查，不自动合并或发布镜像。
+- 没有 UI 相关路径变更时，候选 SHA 只完整验证和构建一次，并把同一镜像推送到私有 GHCR；原子合入 `production` 后只核对 SHA、digest 和镜像来源标签，不重新构建或跑全量测试。
+- `frontend/`、`deploy/frontend/`、`docs/legal/`、`backend/internal/web/` 或可能改变前端 API 契约的后端路径发生变化时，PR 保留等待 AIFoo UI 检查，不自动合并；候选镜像仅作为该 SHA 的私有验证证据，不能进入 VPS。
 - UI 适配和人工检查完成后，手动运行同步工作流并设置 `retry_existing=true`、`approve_ui=true`；工作流会重新验证精确候选 SHA 和未变化的 `production` 基线后才允许合并。
-- 若 `production` 已更新但最终 Runner、Artifact 或 GHCR 发布失败，后续定时检查会在候选分支仍精确指向当前 `production` 时自动重跑最终构建和发布；也可手动设置 `retry_final=true`。
+- 若 `production` 已更新但最终记录失败，后续定时检查会优先复用 SHA 和来源标签仍有效的候选镜像；仅在镜像缺失或证据失效时才重跑必要构建，也可手动设置 `retry_final=true`。
 - 每个新 Release 创建一个分配给仓库所有者的 Issue，使用 `candidate-testing`、`ui-review-required`、`sync-failed` 和 `ready-for-vps` 标记进度。
 
 私有仓库只构建 `deploy/frontend/Dockerfile`；后端不从私有源码构建。同步流程会记录官方后端 tag、commit 和 `weishaw/sub2api@sha256:...`，后端部署仍由独立的 `deploy-backend.yml` 完成，详见 `deploy/backend/README.md`。每天的检测、合并、验证和构建不会自动部署到 VPS。
@@ -35,7 +35,7 @@ corepack pnpm@10.28.2 run build
 
 GitHub Actions 运行官方关键 Vitest、AIFoo 集成测试、全量 Vitest、桌面与移动端 Playwright。随后使用临时本地 Registry、旧版无 HEALTHCHECK 的 Nginx 前端和真实 Docker Compose，执行完整的 `stage -> backup -> deploy -> restore` 集成测试；全部通过后才把同一前端镜像推送到私有 `ghcr.io/jayhome137/sub2api-frontend`。
 
-普通改动只在 PR 跑一次重型 CI；合并到 `production` 不自动重复。上游同步和正式发布仍通过 `workflow_call` / `workflow_dispatch` 对指定 SHA 执行必要验证、构建与 attestation。
+普通改动只在 PR 跑一次重型 CI；合并到 `production` 不自动重复。上游同步同样只对精确候选 SHA 完整验证和构建一次，合并后复用相同 digest；只有候选 SHA、`production` 基线或 UI 适配代码发生变化时才重新完整验证。正式发布仍通过 `workflow_call` / `workflow_dispatch` 对指定 SHA 执行必要验证、构建与 attestation。
 
 ## VPS 只读预检
 

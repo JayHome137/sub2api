@@ -22,7 +22,7 @@ on:
         type: boolean
         default: false
       retry_final:
-        description: Rebuild and republish an already merged release whose final delivery failed
+        description: Recover or rebuild an already merged release whose final delivery failed
         required: false
         type: boolean
         default: false
@@ -387,7 +387,7 @@ jobs:
             {
               echo "### Final delivery retry"
               echo
-              echo "Rebuilding and publishing exact production commit \`$production_sha\` for [$tag]($release_url)."
+              echo "Recovering the exact validated image for production commit \`$production_sha\` for [$tag]($release_url); rebuilding only if the candidate image or evidence is unavailable."
               echo "No VPS deployment will be attempted."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
@@ -590,7 +590,8 @@ jobs:
     uses: ./.github/workflows/validate.yml
     with:
       checkout_ref: ${{ needs.prepare.outputs.candidate_sha }}
-      publish_image: false
+      publish_image: true
+      publish_candidate: true
 
   gate:
     needs:
@@ -634,7 +635,7 @@ jobs:
           if [ "$UI_RELATED" = "true" ] && [ "$UI_APPROVED" != "true" ]; then
             gh issue edit "$ISSUE_NUMBER" --add-label ui-review-required >/dev/null
             gh issue comment "$ISSUE_NUMBER" \
-              --body "All automated checks passed, but the official release changes UI-related paths. PR #$PR_NUMBER remains open for AIFoo UI review. After adapting and reviewing the candidate, manually run this workflow with \`retry_existing=true\` and \`approve_ui=true\`; no image was published and no deployment was attempted."
+              --body "All automated checks passed and the exact private candidate image was recorded, but the official release changes UI-related paths. PR #$PR_NUMBER remains open for AIFoo UI review. After adapting and reviewing the candidate, manually run this workflow with \`retry_existing=true\` and \`approve_ui=true\`; no production approval or deployment was attempted."
             exit 0
           fi
 
@@ -690,27 +691,183 @@ jobs:
           echo "merged=true" >> "$GITHUB_OUTPUT"
           echo "final_sha=$final_sha" >> "$GITHUB_OUTPUT"
           gh issue comment "$ISSUE_NUMBER" \
-            --body "Candidate checks passed and PR #$PR_NUMBER was atomically fast-forwarded into production as \`$final_sha\`. Final frontend rebuild and smoke tests are starting." \
+            --body "Candidate checks passed and PR #$PR_NUMBER was atomically fast-forwarded into production as \`$final_sha\`. The exact validated candidate image is now being finalized without rebuilding." \
             || echo "Unable to post the non-critical post-merge comment" >&2
 
-  final_frontend:
+  recover_final:
+    needs: prepare
+    if: needs.prepare.outputs.final_retry == 'true'
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      reusable: ${{ steps.recover.outputs.reusable }}
+      source_sha: ${{ steps.recover.outputs.source_sha }}
+      image_digest: ${{ steps.recover.outputs.image_digest }}
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Reuse a previously validated candidate when available
+        id: recover
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FINAL_SHA: ${{ needs.prepare.outputs.final_sha }}
+        run: |
+          set -euo pipefail
+          echo "reusable=false" >> "$GITHUB_OUTPUT"
+          production_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
+          if [ "$FINAL_SHA" != "$production_sha" ]; then
+            echo "Production moved before final delivery recovery" >&2
+            exit 1
+          fi
+
+          tag="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sub2api-frontend:candidate-$FINAL_SHA"
+          if ! docker pull "$tag" >/dev/null 2>&1; then
+            echo "No reusable candidate image exists; a necessary rebuild will run"
+            exit 0
+          fi
+          revision=$(docker image inspect "$tag" \
+            --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+          source=$(docker image inspect "$tag" \
+            --format '{{index .Config.Labels "org.opencontainers.image.source"}}')
+          digest=$(docker image inspect "$tag" --format '{{range .RepoDigests}}{{println .}}{{end}}' \
+            | sed -n "s|^${tag%:*}@||p" | sed -n '1p')
+          if [ "$revision" != "$FINAL_SHA" ] \
+            || [ "$source" != "https://github.com/$GITHUB_REPOSITORY" ] \
+            || ! printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "Candidate image evidence is invalid; a necessary rebuild will run"
+            exit 0
+          fi
+          echo "reusable=true" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$FINAL_SHA" >> "$GITHUB_OUTPUT"
+          echo "image_digest=$digest" >> "$GITHUB_OUTPUT"
+
+  retry_rebuild:
     needs:
       - prepare
+      - recover_final
+    if: >-
+      always() &&
+      needs.prepare.outputs.final_retry == 'true' &&
+      needs.recover_final.result == 'success' &&
+      needs.recover_final.outputs.reusable != 'true'
+    uses: ./.github/workflows/validate.yml
+    with:
+      checkout_ref: ${{ needs.prepare.outputs.final_sha }}
+      publish_image: true
+
+  finalize_frontend:
+    needs:
+      - prepare
+      - candidate_frontend
       - gate
+      - recover_final
+      - retry_rebuild
     if: >-
       always() &&
       (needs.gate.outputs.merged == 'true' ||
       needs.prepare.outputs.final_retry == 'true')
-    uses: ./.github/workflows/validate.yml
-    with:
-      checkout_ref: ${{ needs.prepare.outputs.final_retry == 'true' && needs.prepare.outputs.final_sha || needs.gate.outputs.final_sha }}
-      publish_image: true
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
+    permissions:
+      contents: read
+      packages: read
+      statuses: write
+    outputs:
+      source_sha: ${{ steps.finalize.outputs.source_sha }}
+      image_digest: ${{ steps.finalize.outputs.image_digest }}
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify and attest the exact validated image
+        id: finalize
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MERGED: ${{ needs.gate.outputs.merged }}
+          FINAL_RETRY: ${{ needs.prepare.outputs.final_retry }}
+          EXPECTED_MERGED_SHA: ${{ needs.gate.outputs.final_sha }}
+          EXPECTED_RETRY_SHA: ${{ needs.prepare.outputs.final_sha }}
+          CANDIDATE_RESULT: ${{ needs.candidate_frontend.result }}
+          CANDIDATE_SHA: ${{ needs.candidate_frontend.outputs.source_sha }}
+          CANDIDATE_DIGEST: ${{ needs.candidate_frontend.outputs.image_digest }}
+          RECOVER_RESULT: ${{ needs.recover_final.result }}
+          RECOVERED: ${{ needs.recover_final.outputs.reusable }}
+          RECOVERED_SHA: ${{ needs.recover_final.outputs.source_sha }}
+          RECOVERED_DIGEST: ${{ needs.recover_final.outputs.image_digest }}
+          REBUILD_RESULT: ${{ needs.retry_rebuild.result }}
+          REBUILT_SHA: ${{ needs.retry_rebuild.outputs.source_sha }}
+          REBUILT_DIGEST: ${{ needs.retry_rebuild.outputs.image_digest }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ "$MERGED" = "true" ]; then
+            if [ "$CANDIDATE_RESULT" != "success" ]; then
+              echo "The merged candidate has no successful validation result" >&2
+              exit 1
+            fi
+            expected_sha=$EXPECTED_MERGED_SHA
+            source_sha=$CANDIDATE_SHA
+            image_digest=$CANDIDATE_DIGEST
+          elif [ "$FINAL_RETRY" = "true" ] && [ "$RECOVER_RESULT" = "success" ] \
+            && [ "$RECOVERED" = "true" ]; then
+            expected_sha=$EXPECTED_RETRY_SHA
+            source_sha=$RECOVERED_SHA
+            image_digest=$RECOVERED_DIGEST
+          elif [ "$FINAL_RETRY" = "true" ] && [ "$REBUILD_RESULT" = "success" ]; then
+            expected_sha=$EXPECTED_RETRY_SHA
+            source_sha=$REBUILT_SHA
+            image_digest=$REBUILT_DIGEST
+          else
+            echo "No valid candidate image or necessary rebuild is available" >&2
+            exit 1
+          fi
+
+          if [ "$source_sha" != "$expected_sha" ] \
+            || ! printf '%s' "$image_digest" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "Final image evidence does not match the approved source" >&2
+            exit 1
+          fi
+          production_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
+          if [ "$source_sha" != "$production_sha" ]; then
+            echo "Production moved after candidate validation" >&2
+            exit 1
+          fi
+
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sub2api-frontend@$image_digest"
+          docker pull "$image" >/dev/null
+          revision=$(docker image inspect "$image" \
+            --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+          source=$(docker image inspect "$image" \
+            --format '{{index .Config.Labels "org.opencontainers.image.source"}}')
+          if [ "$revision" != "$source_sha" ] \
+            || [ "$source" != "https://github.com/$GITHUB_REPOSITORY" ]; then
+            echo "Published image provenance does not match production" >&2
+            exit 1
+          fi
+
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$source_sha" \
+            -f state=success \
+            -f context=aifoo/frontend-validation \
+            -f description='Exact candidate tests, image, backup, and rollback validation passed' \
+            -f target_url="$RUN_URL" >/dev/null
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "image_digest=$image_digest" >> "$GITHUB_OUTPUT"
 
   notify:
     needs:
       - prepare
       - gate
-      - final_frontend
+      - finalize_frontend
     if: always() && needs.prepare.outputs.release_detected == 'true'
     runs-on: [self-hosted, linux, x64, aifoo-vm]
     steps:
@@ -723,9 +880,9 @@ jobs:
           GATE_RESULT: ${{ needs.gate.result }}
           MERGED: ${{ needs.gate.outputs.merged }}
           FINAL_RETRY: ${{ needs.prepare.outputs.final_retry }}
-          FINAL_RESULT: ${{ needs.final_frontend.result }}
-          FINAL_SHA: ${{ needs.final_frontend.outputs.source_sha }}
-          IMAGE_DIGEST: ${{ needs.final_frontend.outputs.image_digest }}
+          FINAL_RESULT: ${{ needs.finalize_frontend.result }}
+          FINAL_SHA: ${{ needs.finalize_frontend.outputs.source_sha }}
+          IMAGE_DIGEST: ${{ needs.finalize_frontend.outputs.image_digest }}
           RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
           RELEASE_TAG_OBJECT: ${{ needs.prepare.outputs.release_tag_object }}
           RELEASE_COMMIT: ${{ needs.prepare.outputs.release_commit }}
@@ -757,7 +914,7 @@ jobs:
             gh issue edit "$ISSUE_NUMBER" --remove-label ready-for-vps >/dev/null 2>&1 || true
             gh issue edit "$ISSUE_NUMBER" --add-label sync-failed >/dev/null
             gh issue comment "$ISSUE_NUMBER" \
-              --body "Production merged, but the final frontend rebuild or container smoke test failed. VPS deployment remains blocked."
+              --body "Production merged, but exact candidate image finalization failed. VPS deployment remains blocked; retry reuses the candidate image when its evidence remains valid and rebuilds only when required."
             exit 1
           fi
 

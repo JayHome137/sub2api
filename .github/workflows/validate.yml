@@ -35,6 +35,11 @@ on:
         required: false
         type: boolean
         default: false
+      publish_candidate:
+        description: Publish an exact open upgrade PR candidate before atomic merge
+        required: false
+        type: boolean
+        default: false
     outputs:
       image_digest:
         description: Immutable digest produced by the frontend image build
@@ -119,6 +124,7 @@ jobs:
     outputs:
       source_sha: ${{ steps.source.outputs.sha }}
       publish_enabled: ${{ steps.publish_policy.outputs.enabled }}
+      publish_mode: ${{ steps.publish_policy.outputs.mode }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -136,11 +142,19 @@ jobs:
       - name: Decide whether to publish
         id: publish_policy
         env:
-          DIRECT_PRODUCTION_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/production' }}
           REQUESTED_PUBLISH: ${{ inputs.publish_image }}
+          PUBLISH_CANDIDATE: ${{ inputs.publish_candidate }}
         run: |
           set -euo pipefail
-          if [ "$DIRECT_PRODUCTION_PUSH" = "true" ] || [ "$REQUESTED_PUBLISH" = "true" ]; then
+          echo "mode=none" >> "$GITHUB_OUTPUT"
+          if [ "$PUBLISH_CANDIDATE" = "true" ]; then
+            if [ "$REQUESTED_PUBLISH" != "true" ]; then
+              echo "publish_candidate=true requires publish_image=true" >&2
+              exit 1
+            fi
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "mode=candidate" >> "$GITHUB_OUTPUT"
+          elif [ "$REQUESTED_PUBLISH" = "true" ]; then
             source_sha=$(git rev-parse HEAD)
             production_sha=$(git ls-remote origin refs/heads/production | awk '{print $1}')
             if [ "$source_sha" != "$production_sha" ]; then
@@ -148,6 +162,7 @@ jobs:
               exit 1
             fi
             echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "mode=production" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           fi
@@ -277,6 +292,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      pull-requests: read
     outputs:
       image_digest: ${{ steps.publish.outputs.digest }}
     steps:
@@ -317,14 +333,37 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE: ghcr.io/${{ steps.owner.outputs.value }}/sub2api-frontend:candidate-${{ needs.image.outputs.source_sha }}
+          PUBLISH_MODE: ${{ needs.image.outputs.publish_mode }}
           SOURCE_SHA: ${{ needs.image.outputs.source_sha }}
         run: |
           set -euo pipefail
-          production_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
-          if [ "$SOURCE_SHA" != "$production_sha" ]; then
-            echo "Production moved after image validation; the stale image will not be published" >&2
-            exit 1
-          fi
+          case "$PUBLISH_MODE" in
+            candidate)
+              prs=$(gh pr list --state open --base production --limit 100 \
+                --json headRefName,headRefOid)
+              matching_pr_count=$(jq --arg sha "$SOURCE_SHA" '
+                [.[] | select(
+                  .headRefOid == $sha
+                  and (.headRefName | startswith("upgrade/"))
+                )] | length
+              ' <<< "$prs")
+              if [ "$matching_pr_count" != "1" ]; then
+                echo "Candidate publication requires one exact open upgrade PR targeting production" >&2
+                exit 1
+              fi
+              ;;
+            production)
+              production_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
+              if [ "$SOURCE_SHA" != "$production_sha" ]; then
+                echo "Production moved after image validation; the stale image will not be published" >&2
+                exit 1
+              fi
+              ;;
+            *)
+              echo "Unsupported image publication mode: $PUBLISH_MODE" >&2
+              exit 1
+              ;;
+          esac
           docker push "$IMAGE"
           digest=$(docker image inspect "$IMAGE" --format '{{range .RepoDigests}}{{println .}}{{end}}' \
             | sed -n "s|^${IMAGE%:*}@||p" | sed -n '1p')
