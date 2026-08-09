@@ -56,37 +56,29 @@ export default {
     deployDocker: 'Docker',
     dockerEditCompose: '修改 docker-compose.yml 中的镜像版本',
     dockerRecreate: '重新创建容器',
-    upgradeStatus: 'AIFoo 升级状态',
-    checkingRelease: '正在检查官方稳定版...',
-    stableReleaseDetected: '检测到新的官方稳定版',
-    noStableReleaseDetected: '暂未检测到新的官方稳定版',
     statusUnavailable: '升级状态暂时不可用',
     statusUnavailableHint: '无法确认远端状态，请稍后刷新重试。',
-    bridgeUnavailable: 'AIFoo 部署状态暂时不可用',
-    bridgeUnavailableHint: '已发现官方新版，但部署服务暂时不可用，请稍后重试。',
-    githubStatusHint: '系统会在后台完成新版验证、界面适配和部署准备。',
-    viewOfficialRelease: '查看官方 Release',
+    bridgeUnavailable: '更新暂时不可用',
+    bridgeUnavailableHint: '已发现官方新版，请稍后刷新重试。',
     retryUpdate: '重试更新',
-    deploymentStarted: '已开始执行带完整保护的生产更新。',
+    deploymentStarted: '已开始更新。',
     deploymentStartFailed: '无法启动更新，请稍后重试。',
-    webApprovalHint: '点击更新即为明确的生产批准，原有预检、备份、健康检查和回滚门禁保持不变。',
     state: {
       preparing: '正在准备新版',
-      ui_review_required: '新版正在进行界面适配',
-      failed: '新版准备或部署失败',
-      ready: '新版已验证，可以更新',
-      deploying: '正在更新生产环境',
-      deployed: '生产更新已完成'
+      ui_review_required: '新版适配中',
+      failed: '更新暂时不可用',
+      ready: '有新版本可用！',
+      deploying: '正在更新...',
+      deployed: '更新完成'
     },
     stateHint: {
-      preparing: '{version} 正在 VM 上合并、测试或构建。',
-      ui_review_required: '{version} 涉及 UI 路径，需要先完成适配和人工确认。',
-      failed: '请打开私有 Issue 或任务记录查看原因；只有验证状态仍有效时才允许安全重试。',
-      ready: '{version} 已通过远端验证，点击更新即可批准受保护的生产部署。',
-      deploying: 'Hosted 工作流正在执行预检、校验备份、部署和健康检查。',
-      deployed: '{version} 已完成受保护的生产部署流程。'
-    },
-    manualDeploymentRequired: '升级验证不会自动部署到 VPS，生产替换仍需人工批准。'
+      preparing: '{version} 正在准备，完成后即可一键更新。',
+      ui_review_required: '{version} 正在适配当前界面。',
+      failed: '{version} 暂时无法更新，请稍后重试。',
+      ready: '{version} 已准备完成。',
+      deploying: '{version} 正在安装，完成后页面会自动刷新。',
+      deployed: '{version} 已更新完成。'
+    }
   },
 
   // Recharge / Subscription Page
