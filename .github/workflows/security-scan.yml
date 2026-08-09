@@ -1,16 +1,6 @@
 name: Security Scan
 
 on:
-  push:
-    branches:
-      - production
-    paths:
-      - 'backend/**'
-      - 'frontend/**'
-      - '.github/audit-exceptions.yml'
-      - '.github/workflows/security-scan.yml'
-      - 'tools/check_pnpm_audit_exceptions.py'
-      - 'tools/test_*.py'
   pull_request:
     branches:
       - production

@@ -57,6 +57,15 @@ require_runner_only() {
     || fail "$file contains a runner outside the required policy: $runner"
 }
 
+reject_trigger() {
+  file=$1
+  trigger=$2
+  if sed -n '1,/^permissions:/p' "$file" \
+    | grep -Eq "^[[:space:]]{2}${trigger}:"; then
+    fail "$file contains forbidden trigger: $trigger"
+  fi
+}
+
 require_text "$SYNC_WORKFLOW" 'repos/$official_repo/releases/latest'
 require_text "$SYNC_WORKFLOW" 'refs/tags/$tag:refs/tags/$tag'
 require_text "$SYNC_WORKFLOW" "prerelease"
@@ -154,6 +163,7 @@ if grep -Fq 'gh pr merge' "$SYNC_WORKFLOW"; then
 fi
 
 require_text "$VALIDATE_WORKFLOW" "file: deploy/frontend/Dockerfile"
+reject_trigger "$VALIDATE_WORKFLOW" push
 require_text "$VALIDATE_WORKFLOW" "Run container smoke tests"
 require_text "$VALIDATE_WORKFLOW" "Full frontend Vitest suite"
 require_text "$VALIDATE_WORKFLOW" "Publish the smoke-tested image"
@@ -193,6 +203,8 @@ require_text "$SECURITY_HEADERS" 'X-Frame-Options "DENY"'
 require_text "$SECURITY_HEADERS" 'Content-Security-Policy-Report-Only'
 require_text "$VALIDATE_WORKFLOW" 'assert_security_headers'
 require_text "$BACKEND_CI_WORKFLOW" 'deploy/tests/install-checksum-test.sh'
+reject_trigger "$BACKEND_CI_WORKFLOW" push
+reject_trigger "$SECURITY_WORKFLOW" push
 require_text "$BACKEND_CI_WORKFLOW" 'uses: ./.github/workflows/macos-shell-ci.yml'
 require_text "$MACOS_SHELL_WORKFLOW" 'runs-on: macos-15'
 require_text "$MACOS_SHELL_WORKFLOW" 'deploy/tests/apple-container-test.sh'

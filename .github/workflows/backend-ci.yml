@@ -1,16 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - production
-    paths:
-      - 'backend/**'
-      - 'deploy/**'
-      - 'Dockerfile*'
-      - '.goreleaser*.yml'
-      - 'Makefile'
-      - '.github/workflows/backend-ci.yml'
   pull_request:
     branches:
       - production
