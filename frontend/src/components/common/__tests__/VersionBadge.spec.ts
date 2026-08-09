@@ -90,17 +90,15 @@ describe('VersionBadge AIFoo upgrade status', () => {
     expect(appStore.fetchVersion).not.toHaveBeenCalled()
   })
 
-  it('opens the private GitHub status page with a safe external link', async () => {
+  it('keeps private GitHub workflow details out of the admin panel', async () => {
     authStore.isAdmin = true
     const wrapper = mountBadge()
     await flushPromises()
     await wrapper.get('[data-testid="version-badge"]').trigger('click')
 
-    const link = wrapper.get('[data-testid="github-upgrade-status-link"]')
-    expect(link.attributes('href')).toContain('github.com/JayHome137/sub2api/issues')
-    expect(link.attributes('href')).toContain('label%3Aupstream-release')
-    expect(link.attributes('target')).toBe('_blank')
-    expect(link.attributes('rel')).toBe('noopener noreferrer')
+    expect(wrapper.find('[data-testid="github-upgrade-status-link"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('version.viewGithubStatus')
+    expect(wrapper.text()).not.toContain('version.viewDeploymentRun')
     expect(appStore.fetchVersion).toHaveBeenCalledWith(false)
   })
 
@@ -143,6 +141,7 @@ describe('VersionBadge AIFoo upgrade status', () => {
       can_dispatch: true,
       backend_required: true,
       issue_url: 'https://github.com/JayHome137/sub2api/issues/17',
+      run_url: 'https://github.com/JayHome137/sub2api/actions/runs/123',
     })
     upgradeMutations.dispatchAIFooUpgrade.mockResolvedValue({
       release_tag: 'v0.1.170',
@@ -159,6 +158,7 @@ describe('VersionBadge AIFoo upgrade status', () => {
 
     expect(upgradeMutations.dispatchAIFooUpgrade).toHaveBeenCalledWith('v0.1.170')
     expect(wrapper.find('[data-testid="upgrade-status-deploying"]').exists()).toBe(true)
+    expect(wrapper.html()).not.toContain('github.com/JayHome137/sub2api')
     expect(appStore.showInfo).toHaveBeenCalledWith('version.deploymentStarted')
     expect(systemMutations.performUpdate).not.toHaveBeenCalled()
     expect(systemMutations.restartService).not.toHaveBeenCalled()

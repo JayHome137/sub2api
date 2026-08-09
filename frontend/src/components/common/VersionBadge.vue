@@ -165,28 +165,6 @@
             </div>
 
             <a
-              data-testid="github-upgrade-status-link"
-              :href="upgradeStatusUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
-            >
-              {{ t('version.viewGithubStatus') }}
-              <Icon name="externalLink" size="xs" :stroke-width="2" />
-            </a>
-
-            <a
-              v-if="deploymentRunUrl"
-              :href="deploymentRunUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="flex items-center justify-center gap-1 text-xs text-gray-500 transition-colors hover:text-gray-700 dark:text-dark-400 dark:hover:text-dark-200"
-            >
-              {{ t('version.viewDeploymentRun') }}
-              <Icon name="externalLink" size="xs" :stroke-width="2" />
-            </a>
-
-            <a
               v-if="hasUpdate && officialReleaseUrl"
               :href="officialReleaseUrl"
               target="_blank"
@@ -224,9 +202,6 @@ import {
   type AIFooUpgradeStatus
 } from '@/api/admin/upgrade'
 
-const UPGRADE_STATUS_URL =
-  'https://github.com/JayHome137/sub2api/issues?q=is%3Aissue+is%3Aopen+label%3Aupstream-release'
-
 const props = defineProps<{
   version?: string
 }>()
@@ -252,10 +227,6 @@ const displayVersion = computed(() => appStore.currentVersion || props.version |
 const latestVersion = computed(() => appStore.latestVersion || '')
 const hasUpdate = computed(() => Boolean(appStore.hasUpdate && latestVersion.value))
 const officialReleaseUrl = computed(() => sanitizeUrl(appStore.releaseInfo?.html_url || ''))
-const upgradeStatusUrl = computed(
-  () => sanitizeUrl(upgradeStatus.value?.issue_url || '') || UPGRADE_STATUS_URL
-)
-const deploymentRunUrl = computed(() => sanitizeUrl(upgradeStatus.value?.run_url || ''))
 const canDispatch = computed(() => Boolean(upgradeStatus.value?.can_dispatch && !dispatching.value))
 const upgradeState = computed<AIFooUpgradeState>(
   () => upgradeStatus.value?.state || 'preparing'

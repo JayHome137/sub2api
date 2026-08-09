@@ -62,24 +62,20 @@ export default {
     stableReleaseDetected: 'New official stable release detected',
     noStableReleaseDetected: 'No new official stable release detected',
     statusUnavailable: 'Upgrade status is unavailable',
-    statusUnavailableHint:
-      'The remote status could not be confirmed. Check the private GitHub repository; do not treat this as up to date.',
+    statusUnavailableHint: 'The remote status could not be confirmed. Refresh and try again later.',
     bridgeUnavailable: 'AIFoo deployment status is unavailable',
-    bridgeUnavailableHint:
-      'The official release was found, but the private deployment bridge could not be reached. Use GitHub status for diagnosis.',
+    bridgeUnavailableHint: 'The official release was found, but deployment is temporarily unavailable. Try again later.',
     githubStatusHint:
-      'Candidate validation, UI approval, and image status are tracked by labels in the private GitHub issue.',
-    viewGithubStatus: 'View GitHub Upgrade Status',
-    viewDeploymentRun: 'View deployment run',
+      'The system validates the release, adapts the interface, and prepares deployment in the background.',
     viewOfficialRelease: 'View Official Release',
     retryUpdate: 'Retry Update',
     deploymentStarted: 'The verified production update has started.',
-    deploymentStartFailed: 'The update could not be started. Check GitHub status and retry.',
+    deploymentStartFailed: 'The update could not be started. Try again later.',
     webApprovalHint:
       'Clicking Update is the explicit production approval. Existing preflight, backup, health-check, and rollback gates still apply.',
     state: {
-      preparing: 'VM is preparing the release',
-      ui_review_required: 'AIFoo UI review is required',
+      preparing: 'Preparing the release',
+      ui_review_required: 'Adapting the interface for this release',
       failed: 'Release preparation or deployment failed',
       ready: 'Verified release is ready',
       deploying: 'Production update is running',
