@@ -23,6 +23,11 @@ on:
         required: false
         type: boolean
         default: false
+      fast:
+        description: Skip the full frontend suite when only an image refresh is required
+        required: false
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       checkout_ref:
@@ -32,6 +37,11 @@ on:
         default: ''
       publish_image:
         description: Publish the validated frontend image to private GHCR
+        required: false
+        type: boolean
+        default: false
+      fast:
+        description: Skip the full frontend suite when only an image refresh is required
         required: false
         type: boolean
         default: false
@@ -57,7 +67,9 @@ concurrency:
 
 jobs:
   frontend:
-    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/')
+    if: >-
+      inputs.fast != true &&
+      (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/'))
     runs-on: [self-hosted, linux, x64, aifoo-vm]
     defaults:
       run:
@@ -119,6 +131,9 @@ jobs:
 
   image:
     needs: frontend
+    if: >-
+      always() &&
+      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped')
     runs-on: [self-hosted, linux, x64, aifoo-vm]
     timeout-minutes: 30
     outputs:
