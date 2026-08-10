@@ -264,7 +264,7 @@ jobs:
             -o ServerAliveInterval=15 \
             -o ServerAliveCountMax=3 \
             "$VPS_USER@$VPS_HOST" \
-            "sudo /usr/local/sbin/deploy-sub2api-frontend activate '$IMAGE_DIGEST'"
+            "cd /opt/sub2api && sudo /usr/local/sbin/deploy-sub2api-frontend activate '$IMAGE_DIGEST'"
 
       - name: Remove temporary GHCR credentials
         if: always() && inputs.mode == 'preload'
