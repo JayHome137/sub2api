@@ -105,10 +105,13 @@ jobs:
           comments=$(gh api --paginate \
             "repos/$GITHUB_REPOSITORY/issues/$issue_number/comments?per_page=100" \
             | jq -s 'add')
-          attestation=$(jq -r --arg release "$RELEASE_TAG" '
+          attestation=$(jq -r \
+            --arg release "$RELEASE_TAG" \
+            --arg owner "$GITHUB_REPOSITORY_OWNER" '
             reverse
             | [.[] | select(
-                (.user.login == "github-actions[bot]")
+                ((.user.login == "github-actions[bot]")
+                  or ((.user.login | ascii_downcase) == ($owner | ascii_downcase)))
                 and (.body | contains($release))
                 and (.body | contains("ready-for-vps"))
                 and (.body | contains("Private frontend image:"))
