@@ -1,0 +1,287 @@
+name: AIFoo frontend candidate activation
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'preload or activate'
+        required: true
+        type: string
+      release_tag:
+        description: 'Official stable release tag (vX.Y.Z)'
+        required: true
+        type: string
+      image_digest:
+        description: 'Validated private frontend digest (sha256:...)'
+        required: true
+        type: string
+      source_sha:
+        description: 'Validated production source commit'
+        required: true
+        type: string
+      issue_number:
+        description: 'AIFoo upstream tracking issue number'
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      mode:
+        description: 'preload or activate'
+        required: true
+        type: string
+      release_tag:
+        description: 'Official stable release tag (vX.Y.Z)'
+        required: true
+        type: string
+      image_digest:
+        description: 'Validated private frontend digest (sha256:...)'
+        required: true
+        type: string
+      source_sha:
+        description: 'Validated production source commit'
+        required: true
+        type: string
+      issue_number:
+        description: 'AIFoo upstream tracking issue number'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+  packages: read
+  statuses: read
+
+concurrency:
+  group: aifoo-frontend-activation
+  cancel-in-progress: false
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://aifoo.cc.cd/login
+    steps:
+      - name: Require repository owner approval for manual activation
+        env:
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            actor=$(printf '%s' "$GITHUB_ACTOR" | tr '[:upper:]' '[:lower:]')
+            owner=$(printf '%s' "$REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+            if [ "$actor" != "$owner" ]; then
+              echo "Only the repository owner can manually run frontend activation" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Validate the exact approved candidate
+        if: inputs.mode == 'preload'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MODE: ${{ inputs.mode }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+        run: |
+          set -euo pipefail
+          case "$MODE" in
+            preload|activate) ;;
+            *) echo "mode must be preload or activate" >&2; exit 1 ;;
+          esac
+          printf '%s' "$RELEASE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'
+          printf '%s' "$IMAGE_DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$'
+          printf '%s' "$SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          printf '%s' "$ISSUE_NUMBER" | grep -Eq '^[0-9]+$'
+
+          production_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
+          if [ "$production_sha" != "$SOURCE_SHA" ]; then
+            echo "Production moved after the candidate was validated" >&2
+            exit 1
+          fi
+
+          statuses=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SOURCE_SHA/status")
+          jq -e '
+            [.statuses[] | select(.context == "aifoo/frontend-validation" and .state == "success")]
+            | length == 1
+          ' <<< "$statuses" >/dev/null
+
+          issue_json=$(gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER")
+          title=$(jq -r '.title' <<< "$issue_json")
+          [ "$title" = "[Upstream $RELEASE_TAG] AIFoo frontend compatibility" ]
+          labels=$(jq -r '.labels[].name' <<< "$issue_json")
+          printf '%s\n' "$labels" | grep -Fxq ready-for-vps
+          for blocked_label in ui-review-required sync-failed vps-preload-failed; do
+            if printf '%s\n' "$labels" | grep -Fxq "$blocked_label"; then
+              echo "The candidate is blocked by $blocked_label" >&2
+              exit 1
+            fi
+          done
+          if [ "$MODE" = "activate" ] \
+            && ! printf '%s\n' "$labels" | grep -Fxq vps-preloaded; then
+            echo "The candidate has not been preloaded on the VPS" >&2
+            exit 1
+          fi
+
+          comments=$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/comments?per_page=100" | jq -s 'add')
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sub2api-frontend@$IMAGE_DIGEST"
+          jq -e --arg image "$image" --arg source "$SOURCE_SHA" '
+            any(.[]; (.body | contains($image)) and (.body | contains($source)))
+          ' <<< "$comments" >/dev/null
+
+      - name: Reconfirm the preloaded activation target
+        if: inputs.mode == 'activate'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+        run: |
+          set -euo pipefail
+          production_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
+          if [ "$production_sha" != "$SOURCE_SHA" ]; then
+            echo "Production moved after the one-click update was requested" >&2
+            exit 1
+          fi
+          labels=$(gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER" --jq '.labels[].name')
+          printf '%s\n' "$labels" | grep -Fxq vps-preloaded
+          for blocked_label in ui-review-required sync-failed vps-preload-failed; do
+            if printf '%s\n' "$labels" | grep -Fxq "$blocked_label"; then
+              echo "The activation target is blocked by $blocked_label" >&2
+              exit 1
+            fi
+          done
+
+      - name: Checkout the approved production revision
+        if: inputs.mode == 'preload'
+        uses: actions/checkout@v6
+        with:
+          ref: production
+          fetch-depth: 0
+
+      - name: Configure restricted SSH key
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$RUNNER_TEMP/ssh"
+          printf '%s\n' "$VPS_SSH_KEY" > "$RUNNER_TEMP/ssh/id_ed25519"
+          chmod 600 "$RUNNER_TEMP/ssh/id_ed25519"
+          printf '%s\n' "$VPS_HOST_KEY" > "$RUNNER_TEMP/ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/ssh/known_hosts"
+
+      - name: Require a fresh read-only VPS preflight
+        if: inputs.mode == 'preload'
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          expected_helper_sha=$(sha256sum deploy/frontend/deploy-frontend.sh | awk '{print $1}')
+          output=$(ssh \
+            -i "$RUNNER_TEMP/ssh/id_ed25519" \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=3 \
+            "$VPS_USER@$VPS_HOST" \
+            "sudo -n /usr/local/sbin/deploy-sub2api-frontend preflight '$expected_helper_sha'")
+          printf '%s\n' "$output"
+          printf '%s\n' "$output" | grep -Fxq 'preflight_result=ready'
+
+      - name: Preload the validated frontend without touching the service
+        if: inputs.mode == 'preload'
+        id: preload
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | ssh \
+            -i "$RUNNER_TEMP/ssh/id_ed25519" \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -o IdentitiesOnly=yes \
+            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=3 \
+            "$VPS_USER@$VPS_HOST" \
+            "sudo /usr/local/sbin/deploy-sub2api-frontend login '$GITHUB_ACTOR'"
+          ssh \
+            -i "$RUNNER_TEMP/ssh/id_ed25519" \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -o IdentitiesOnly=yes \
+            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=3 \
+            "$VPS_USER@$VPS_HOST" \
+            "sudo /usr/local/sbin/deploy-sub2api-frontend preload '$IMAGE_DIGEST'"
+
+      - name: Activate the preloaded frontend
+        if: inputs.mode == 'activate'
+        id: activate
+        env:
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          ssh \
+            -i "$RUNNER_TEMP/ssh/id_ed25519" \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -o IdentitiesOnly=yes \
+            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=3 \
+            "$VPS_USER@$VPS_HOST" \
+            "sudo /usr/local/sbin/deploy-sub2api-frontend activate '$IMAGE_DIGEST'"
+
+      - name: Remove temporary GHCR credentials
+        if: always() && inputs.mode == 'preload'
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh \
+            -i "$RUNNER_TEMP/ssh/id_ed25519" \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -o IdentitiesOnly=yes \
+            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=3 \
+            "$VPS_USER@$VPS_HOST" \
+            "sudo /usr/local/sbin/deploy-sub2api-frontend logout" || true
+
+      - name: Record successful preload
+        if: always() && inputs.mode == 'preload'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          PRELOAD_RESULT: ${{ steps.preload.outcome }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+        run: |
+          set -euo pipefail
+          gh label create vps-preloaded --color 0E8A16 --force >/dev/null
+          gh label create vps-preload-failed --color B60205 --force >/dev/null
+          if [ "$PRELOAD_RESULT" = "success" ]; then
+            gh issue edit "$ISSUE_NUMBER" \
+              --add-label vps-preloaded \
+              --remove-label vps-preload-failed >/dev/null 2>&1 || \
+              gh issue edit "$ISSUE_NUMBER" --add-label vps-preloaded >/dev/null
+            gh issue comment "$ISSUE_NUMBER" \
+              --body "The validated frontend image for $RELEASE_TAG is preloaded on the VPS (`$IMAGE_DIGEST`). No production container, Compose file, database, or backend was changed. The web button is now ready for a fast frontend-only activation."
+          else
+            gh issue edit "$ISSUE_NUMBER" --add-label vps-preload-failed >/dev/null
+            gh issue comment "$ISSUE_NUMBER" \
+              --body "Preloading the validated frontend image for $RELEASE_TAG failed. Production was not switched; rerun the preload step after diagnosis."
+            exit 1
+          fi

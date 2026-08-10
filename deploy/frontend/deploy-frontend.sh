@@ -9,6 +9,7 @@ IMAGE_REPOSITORY=${AIFOO_IMAGE_REPOSITORY:-ghcr.io/jayhome137/sub2api-frontend}
 PRODUCTION_CONTAINER=${AIFOO_PRODUCTION_CONTAINER:-sub2api-frontend}
 PRODUCTION_URL=${AIFOO_PRODUCTION_URL:-http://127.0.0.1:8080}
 DEPLOYMENT_STATE_FILE=$APP_DIR/.aifoo-frontend-deployment-state
+PRELOAD_STATE_FILE=$APP_DIR/.aifoo-frontend-preload-state
 STAGE_CONTAINER=${AIFOO_STAGE_CONTAINER:-sub2api-frontend-candidate}
 STAGE_NETWORK=${AIFOO_STAGE_NETWORK:-sub2api_default}
 STAGE_PORT=${AIFOO_STAGE_PORT:-18080}
@@ -433,6 +434,170 @@ stage_digest() {
 
   echo "staged_image=$image"
   echo "staging_health=healthy"
+}
+
+write_preload_state() {
+  digest=$1
+  image_id=$2
+  state_file=$(mktemp "$APP_DIR/.aifoo-frontend-preload-state.XXXXXX") || return 1
+  if ! {
+    echo "requested_digest=$digest"
+    echo "image_id=$image_id"
+    echo "preloaded_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  } > "$state_file"; then
+    rm -f -- "$state_file"
+    return 1
+  fi
+  chmod 600 "$state_file" || {
+    rm -f -- "$state_file"
+    return 1
+  }
+  mv "$state_file" "$PRELOAD_STATE_FILE" || {
+    rm -f -- "$state_file"
+    return 1
+  }
+}
+
+preload_digest() {
+  digest=$1
+  validate_digest "$digest"
+
+  image="$IMAGE_REPOSITORY@$digest"
+  if ! docker image inspect "$image" >/dev/null 2>&1; then
+    docker pull "$image" >/dev/null
+  fi
+  image_id=$(docker image inspect "$image" --format '{{.Id}}')
+  repo_digests=$(docker image inspect "$image" \
+    --format '{{range .RepoDigests}}{{println .}}{{end}}')
+  if ! printf '%s\n' "$repo_digests" | grep -Fxq "$image"; then
+    echo "Preloaded image does not retain the requested immutable digest" >&2
+    exit 1
+  fi
+  write_preload_state "$digest" "$image_id"
+  echo "preloaded_image=$image"
+  echo "preloaded_image_id=$image_id"
+  echo "preload_service_unchanged=true"
+}
+
+require_preloaded_digest() {
+  digest=$1
+  image="$IMAGE_REPOSITORY@$digest"
+  if [ ! -s "$PRELOAD_STATE_FILE" ] \
+    || ! grep -Fxq "requested_digest=$digest" "$PRELOAD_STATE_FILE"; then
+    echo "The requested frontend digest is not preloaded on the VPS" >&2
+    exit 1
+  fi
+  image_id=$(docker image inspect "$image" --format '{{.Id}}')
+  recorded_image_id=$(sed -n 's/^image_id=//p' "$PRELOAD_STATE_FILE")
+  if [ -z "$recorded_image_id" ] || [ "$recorded_image_id" != "$image_id" ]; then
+    echo "The preloaded frontend image no longer matches its recorded image ID" >&2
+    exit 1
+  fi
+  repo_digests=$(docker image inspect "$image" \
+    --format '{{range .RepoDigests}}{{println .}}{{end}}')
+  if ! printf '%s\n' "$repo_digests" | grep -Fxq "$image"; then
+    echo "The preloaded frontend image no longer matches its requested digest" >&2
+    exit 1
+  fi
+}
+
+verify_frontend_activation() {
+  expected_image_id=$1
+  running_image_id=$(docker inspect "$PRODUCTION_CONTAINER" --format '{{.Image}}')
+  if [ "$running_image_id" != "$expected_image_id" ]; then
+    echo "Activated frontend image ID does not match the preloaded image" >&2
+    return 1
+  fi
+  if ! wait_for_ready "$PRODUCTION_CONTAINER" strict; then
+    echo "Activated frontend container is not healthy" >&2
+    return 1
+  fi
+  if ! curl --fail --silent --show-error --connect-timeout 2 --max-time 5 \
+    "$PRODUCTION_URL/frontend-health" | grep -q '"status":"ok"'; then
+    echo "Activated frontend health check failed" >&2
+    return 1
+  fi
+}
+
+restore_activation_compose() {
+  old_compose_file=$1
+  if ! cp "$old_compose_file" "$COMPOSE_FILE"; then
+    echo "Unable to restore the previous frontend Compose file" >&2
+    return 1
+  fi
+  if ! docker_compose up -d --no-deps --force-recreate frontend; then
+    echo "Unable to restart the previous frontend after activation failure" >&2
+    return 1
+  fi
+  if ! wait_for_ready "$PRODUCTION_CONTAINER" legacy; then
+    echo "Previous frontend did not return to a running state" >&2
+    return 1
+  fi
+}
+
+activate_frontend_digest() {
+  digest=$1
+  validate_digest "$digest"
+  require_preloaded_digest "$digest"
+
+  image="$IMAGE_REPOSITORY@$digest"
+  expected_image_id=$(docker image inspect "$image" --format '{{.Id}}')
+  old_compose_file=$(mktemp "$APP_DIR/.docker-compose.activate-old.XXXXXX")
+  candidate_file=$(mktemp "$APP_DIR/.docker-compose.activate-candidate.XXXXXX")
+  if ! cp "$COMPOSE_FILE" "$old_compose_file"; then
+    rm -f -- "$old_compose_file" "$candidate_file"
+    echo "Unable to snapshot the active frontend Compose file" >&2
+    exit 1
+  fi
+
+  cleanup_activation() {
+    rm -f -- "$old_compose_file" "$candidate_file"
+  }
+
+  if grep -Fq "image: $image" "$COMPOSE_FILE" \
+    && docker inspect "$PRODUCTION_CONTAINER" --format '{{.Image}}' 2>/dev/null \
+      | grep -Fxq "$expected_image_id"; then
+    cleanup_activation
+    rm -f -- "$PRELOAD_STATE_FILE"
+    echo "already_active=true"
+    echo "activated_image=$image"
+    return 0
+  fi
+
+  if ! rewrite_frontend_service "$COMPOSE_FILE" "$candidate_file" "$image" \
+    || ! docker_compose -f "$candidate_file" config -q; then
+    cleanup_activation
+    echo "The preloaded frontend Compose configuration is invalid" >&2
+    exit 1
+  fi
+  if ! mv "$candidate_file" "$COMPOSE_FILE"; then
+    cleanup_activation
+    echo "Unable to activate the preloaded frontend Compose configuration" >&2
+    exit 1
+  fi
+
+  activation_failed=false
+  if ! docker_compose up -d --no-deps --force-recreate frontend; then
+    activation_failed=true
+  elif ! verify_frontend_activation "$expected_image_id"; then
+    activation_failed=true
+  fi
+  if [ "$activation_failed" = "true" ]; then
+    if ! restore_activation_compose "$old_compose_file"; then
+      echo "Frontend activation failed and restoring the previous service also failed" >&2
+      cleanup_activation
+      exit 1
+    fi
+    cleanup_activation
+    echo "Frontend activation failed; the previous service was restored" >&2
+    exit 1
+  fi
+
+  cleanup_activation
+  rm -f -- "$PRELOAD_STATE_FILE"
+  echo "activated_image=$image"
+  echo "frontend_health=healthy"
+  echo "database_untouched=true"
 }
 
 require_staged_digest() {
@@ -1135,11 +1300,17 @@ if [ "${AIFOO_DEPLOY_LIBRARY_ONLY:-0}" != "1" ]; then
   stage)
     stage_digest "${2:-}"
     ;;
+  preload)
+    preload_digest "${2:-}"
+    ;;
+  activate)
+    activate_frontend_digest "${2:-}"
+    ;;
   cleanup-stage)
     cleanup_stage
     ;;
-    *)
-      echo "Usage: $0 {preflight <helper-sha256>|login <actor>|logout|stage <sha256:digest>|backup <sha256:digest>|deploy <sha256:digest> <backup-id>|restore <sha256:digest> <backup-id>|cleanup-stage}" >&2
+  *)
+      echo "Usage: $0 {preflight <helper-sha256>|login <actor>|logout|stage <sha256:digest>|preload <sha256:digest>|activate <sha256:digest>|backup <sha256:digest>|deploy <sha256:digest> <backup-id>|restore <sha256:digest> <backup-id>|cleanup-stage}" >&2
       exit 1
       ;;
   esac

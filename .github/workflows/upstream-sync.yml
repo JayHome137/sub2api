@@ -301,13 +301,15 @@ jobs:
           issue_title="[Upstream $tag] AIFoo frontend compatibility"
 
           ensure_labels() {
-            for label in upstream-release candidate-testing ui-review-required sync-failed ready-for-vps backend-deploy-required backend-deployed backend-production-state; do
+            for label in upstream-release candidate-testing ui-review-required sync-failed ready-for-vps vps-preloaded vps-preload-failed backend-deploy-required backend-deployed backend-production-state; do
               case "$label" in
                 upstream-release) color=0969DA ;;
                 candidate-testing) color=FBCA04 ;;
                 ui-review-required) color=D93F0B ;;
                 sync-failed) color=B60205 ;;
                 ready-for-vps) color=0E8A16 ;;
+                vps-preloaded) color=0E8A16 ;;
+                vps-preload-failed) color=B60205 ;;
                 backend-deploy-required) color=5319E7 ;;
                 backend-deployed) color=0E8A16 ;;
                 backend-production-state) color=1D76DB ;;
@@ -919,7 +921,7 @@ jobs:
           fi
 
           gh issue edit "$ISSUE_NUMBER" --add-label ready-for-vps >/dev/null
-          for label in candidate-testing ui-review-required sync-failed; do
+          for label in candidate-testing ui-review-required sync-failed vps-preloaded vps-preload-failed; do
             gh issue edit "$ISSUE_NUMBER" --remove-label "$label" >/dev/null 2>&1 || true
           done
           comment_file=$(mktemp)
@@ -940,6 +942,28 @@ jobs:
               echo "- Backend status: \`no official backend runtime input changed\`"
             fi
             echo
-            echo "No VPS connection or deployment was attempted. Frontend and backend deployments each require explicit approval; backend deployment also requires PostgreSQL/Redis/data/image backups."
+            echo "The validated frontend image will now be preloaded on the VPS without changing the running service. After preload succeeds, the web button only activates that image and performs one lightweight health check. Backend deployment remains separate and only runs when the official release requires it."
           } > "$comment_file"
           gh issue comment "$ISSUE_NUMBER" --body-file "$comment_file"
+
+  preload_frontend:
+    needs:
+      - prepare
+      - gate
+      - finalize_frontend
+      - notify
+    if: >-
+      always() &&
+      needs.notify.result == 'success' &&
+      needs.prepare.outputs.release_detected == 'true' &&
+      (needs.gate.outputs.merged == 'true' || needs.prepare.outputs.final_retry == 'true') &&
+      needs.finalize_frontend.result == 'success' &&
+      needs.finalize_frontend.outputs.image_digest != ''
+    uses: ./.github/workflows/frontend-activation.yml
+    with:
+      mode: preload
+      release_tag: ${{ needs.prepare.outputs.release_tag }}
+      image_digest: ${{ needs.finalize_frontend.outputs.image_digest }}
+      source_sha: ${{ needs.finalize_frontend.outputs.source_sha }}
+      issue_number: ${{ needs.prepare.outputs.issue_number }}
+    secrets: inherit

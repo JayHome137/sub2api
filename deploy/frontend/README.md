@@ -45,6 +45,15 @@ GitHub Actions 运行官方关键 Vitest、AIFoo 集成测试、全量 Vitest、
 
 ## 部署与回滚
 
+### 预加载与一键激活
+
+稳定版完成上游合并、UI 审查、测试和镜像证明后，`upstream-sync.yml` 会调用
+`frontend-activation.yml` 的 `preload` 模式。VPS 只把精确 digest 拉入本地镜像缓存并写入一个受保护的候选标记；不会启动候选容器、修改 Compose、重启服务或触碰数据库。
+
+网页按钮只调用同一工作流的 `activate` 模式。它要求候选标记和 `ready-for-vps` 证明同时存在，然后只重写前端 service 的镜像、重建前端容器并检查一次 `/frontend-health`。如果 Compose 切换或这个检查失败，脚本会用本次命令中的旧 Compose 文件恢复原前端；不会创建数据库备份或执行迁移。
+
+原有 `deploy.yml` 与 `deploy`/`backup`/`restore` helper 命令保留，用于首次部署、人工维护或需要完整回滚证据的场景。官方后端 release 只有在迁移检测为必需时，才进入独立的后端备份和迁移流程。
+
 `deploy.yml` 只接受完整的 `sha256:` 镜像 digest，并要求该 digest、镜像源码提交和 `ready-for-vps` Issue 记录一致；镜像源码到当前 `production` 之间不得出现镜像构建输入变化。VPS 上的受限用户只能调用 root 持有的 `deploy-frontend.sh` 规定命令；脚本会：
 
 部署只能从 `production` 分支触发，触发者必须是仓库所有者。直接运行工作流时仍需输入 `DEPLOY-AIFOO-FRONTEND` 确认短语；网页入口则由已验证的管理员点击触发固定 `web-update.yml`，再通过 `workflow_call` 传入同一确认短语。该代码级门禁用于私人仓库套餐不支持 Environment Required Reviewer 时，确保镜像发布不会自行进入 VPS 部署。
