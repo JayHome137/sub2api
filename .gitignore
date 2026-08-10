@@ -145,3 +145,6 @@ frontend/playwright-report/
 frontend/test-results/
 aicodex
 output/
+
+# Vitest / Vite cache at repo root
+.vite/

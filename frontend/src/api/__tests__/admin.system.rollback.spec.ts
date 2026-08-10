@@ -40,7 +40,6 @@ describe('admin system rollback API', () => {
     post.mockResolvedValue({ data: { message: 'ok', need_restart: true } })
 
     const result = await rollback('0.1.146')
-
     expect(post).toHaveBeenCalledWith(
       '/admin/system/rollback',
       { version: '0.1.146' },
@@ -53,7 +52,6 @@ describe('admin system rollback API', () => {
     post.mockResolvedValue({ data: { message: 'ok', need_restart: true } })
 
     await rollback()
-
     expect(post).toHaveBeenCalledWith(
       '/admin/system/rollback',
       undefined,
