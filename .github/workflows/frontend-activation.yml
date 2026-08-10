@@ -58,7 +58,7 @@ concurrency:
 
 jobs:
   frontend:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
     timeout-minutes: 15
     environment:
       name: production
