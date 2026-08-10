@@ -40,7 +40,9 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    # Keep the owner-approved production path on the self-hosted VM while
+    # GitHub-hosted Actions minutes are unavailable.
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
     timeout-minutes: 45
     environment:
       name: production
