@@ -22,7 +22,10 @@ concurrency:
 
 jobs:
   resolve:
-    runs-on: ubuntu-latest
+    # The one-click path must remain usable when GitHub-hosted minutes are
+    # exhausted.  The repository VM runner performs the same guarded resolve
+    # and records the result without changing any validation gates.
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
     timeout-minutes: 5
     outputs:
       issue_number: ${{ steps.candidate.outputs.issue_number }}
@@ -239,7 +242,7 @@ jobs:
       - backend
       - frontend
     if: always() && needs.frontend.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
     timeout-minutes: 5
     steps:
       - name: Record the completed web update
@@ -274,7 +277,7 @@ jobs:
       (needs.backend.result == 'failure' || needs.backend.result == 'cancelled' ||
       needs.frontend.result == 'failure' || needs.frontend.result == 'cancelled' ||
       needs.finalize.result == 'failure' || needs.finalize.result == 'cancelled')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
     timeout-minutes: 5
     steps:
       - name: Keep the failed update visible and retryable

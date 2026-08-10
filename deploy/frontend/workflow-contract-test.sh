@@ -108,18 +108,18 @@ for workflow in \
   "$SYNC_WORKFLOW" \
   "$BACKEND_CI_WORKFLOW" \
   "$SECURITY_WORKFLOW" \
-  "$VALIDATE_WORKFLOW"; do
+  "$VALIDATE_WORKFLOW" \
+  "$BACKEND_DEPLOY_WORKFLOW" \
+  "$WEB_UPDATE_WORKFLOW" \
+  "$FRONTEND_ACTIVATION_WORKFLOW"; do
   require_runner_only "$workflow" "$VM_RUNNER"
 done
 for workflow in \
   "$PREFLIGHT_WORKFLOW" \
   "$DEPLOY_WORKFLOW" \
-  "$BACKEND_DEPLOY_WORKFLOW" \
   "$CLA_WORKFLOW"; do
   require_runner_only "$workflow" "$GITHUB_RUNNER"
 done
-require_runner_only "$WEB_UPDATE_WORKFLOW" "$GITHUB_RUNNER"
-require_runner_only "$FRONTEND_ACTIVATION_WORKFLOW" "$GITHUB_RUNNER"
 require_text "$BACKEND_CI_WORKFLOW" "if: inputs.checkout_ref != '' && inputs.run_macos"
 
 for file in \
@@ -149,7 +149,6 @@ require_text "$WEB_UPDATE_WORKFLOW" 'group: aifoo-web-update-orchestration'
 require_text "$WEB_UPDATE_WORKFLOW" '.user.login == "github-actions[bot]"'
 require_text "$WEB_UPDATE_WORKFLOW" 'backend-deployed is not backed by the exact production State Issue'
 require_text "$WEB_UPDATE_WORKFLOW" 'vps-preloaded'
-reject_text "$WEB_UPDATE_WORKFLOW" 'self-hosted'
 reject_text "$WEB_UPDATE_WORKFLOW" 'schedule:'
 
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'workflow_call:'
