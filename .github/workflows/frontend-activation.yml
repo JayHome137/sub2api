@@ -146,8 +146,20 @@ jobs:
           set -euo pipefail
           production_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
           if [ "$production_sha" != "$SOURCE_SHA" ]; then
-            echo "Production moved after the one-click update was requested" >&2
-            exit 1
+            comparison=$(gh api \
+              "repos/$GITHUB_REPOSITORY/compare/$SOURCE_SHA...$production_sha")
+            if [ "$(jq -r '.status' <<< "$comparison")" != "ahead" ]; then
+              echo "Validated frontend source is no longer an ancestor of production" >&2
+              exit 1
+            fi
+            changed_image_inputs=$(jq -r '.files[]?.filename' <<< "$comparison" \
+              | grep -E '^(frontend/|docs/legal/|deploy/frontend/(Dockerfile$|landing/|nginx\.conf$|security-headers\.conf$))' \
+              || true)
+            if [ -n "$changed_image_inputs" ]; then
+              echo "Frontend image inputs changed after the validated image was built" >&2
+              printf '%s\n' "$changed_image_inputs" >&2
+              exit 1
+            fi
           fi
           labels=$(gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER" --jq '.labels[].name')
           printf '%s\n' "$labels" | grep -Fxq vps-preloaded

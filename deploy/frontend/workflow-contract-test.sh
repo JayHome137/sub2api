@@ -148,6 +148,7 @@ require_text "$WEB_UPDATE_WORKFLOW" 'web-update-failed'
 require_text "$WEB_UPDATE_WORKFLOW" 'group: aifoo-web-update-orchestration'
 require_text "$WEB_UPDATE_WORKFLOW" 'GH_REPO: ${{ github.repository }}'
 require_text "$WEB_UPDATE_WORKFLOW" '.user.login == "github-actions[bot]"'
+require_text "$WEB_UPDATE_WORKFLOW" '($owner | ascii_downcase)'
 require_text "$WEB_UPDATE_WORKFLOW" 'backend-deployed is not backed by the exact production State Issue'
 require_text "$WEB_UPDATE_WORKFLOW" 'vps-preloaded'
 reject_text "$WEB_UPDATE_WORKFLOW" 'schedule:'
@@ -157,6 +158,8 @@ require_text "$FRONTEND_ACTIVATION_WORKFLOW" "inputs.mode == 'preload'"
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" "inputs.mode == 'activate'"
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'deploy-sub2api-frontend activate'
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'vps-preload-failed'
+require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'compare/$SOURCE_SHA...$production_sha'
+require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'Frontend image inputs changed after the validated image was built'
 
 require_text "$UPDATE_BRIDGE" 'defaultListenAddr = "127.0.0.1:8091"'
 require_text "$UPDATE_BRIDGE" 'defaultAdminURL   = "http://127.0.0.1:8080/api/v1/admin/system/version"'
