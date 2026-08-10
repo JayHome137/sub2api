@@ -156,7 +156,7 @@ reject_text "$WEB_UPDATE_WORKFLOW" 'schedule:'
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'workflow_call:'
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" "inputs.mode == 'preload'"
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" "inputs.mode == 'activate'"
-require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'deploy-sub2api-frontend activate'
+require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'cd /opt/sub2api && sudo /usr/local/sbin/deploy-sub2api-frontend activate'
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'vps-preload-failed'
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'compare/$SOURCE_SHA...$production_sha'
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'Frontend image inputs changed after the validated image was built'
