@@ -103,7 +103,11 @@ jobs:
             exit 1
           fi
 
-          git remote add official https://github.com/Wei-Shaw/sub2api.git
+          if git remote get-url official >/dev/null 2>&1; then
+            git remote set-url official https://github.com/Wei-Shaw/sub2api.git
+          else
+            git remote add official https://github.com/Wei-Shaw/sub2api.git
+          fi
           git fetch --force official '+refs/tags/*:refs/tags/*'
           tag_object=$(git rev-parse "$RELEASE_TAG")
           release_commit=$(git rev-parse "$RELEASE_TAG^{}")

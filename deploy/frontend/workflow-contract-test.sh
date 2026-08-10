@@ -225,6 +225,7 @@ require_text "$SECURITY_HEADERS" 'Content-Security-Policy-Report-Only'
 require_text "$VALIDATE_WORKFLOW" 'assert_security_headers'
 require_text "$BACKEND_CI_WORKFLOW" 'deploy/tests/install-checksum-test.sh'
 require_text "$BACKEND_DEPLOY_WORKFLOW" 'GH_REPO: ${{ github.repository }}'
+require_text "$BACKEND_DEPLOY_WORKFLOW" 'git remote set-url official https://github.com/Wei-Shaw/sub2api.git'
 reject_trigger "$BACKEND_CI_WORKFLOW" push
 reject_trigger "$SECURITY_WORKFLOW" push
 require_text "$BACKEND_CI_WORKFLOW" 'uses: ./.github/workflows/macos-shell-ci.yml'
