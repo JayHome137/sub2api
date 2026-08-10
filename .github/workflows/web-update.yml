@@ -20,6 +20,11 @@ concurrency:
   group: aifoo-web-update-orchestration
   cancel-in-progress: false
 
+env:
+  # Self-hosted workspaces can retain additional git remotes from an earlier
+  # job, so all gh CLI issue operations must stay scoped to this repository.
+  GH_REPO: ${{ github.repository }}
+
 jobs:
   resolve:
     # The one-click path must remain usable when GitHub-hosted minutes are

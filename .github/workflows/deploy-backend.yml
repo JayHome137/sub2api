@@ -38,6 +38,11 @@ concurrency:
   group: aifoo-production-mutation
   cancel-in-progress: false
 
+env:
+  # The checkout also adds the official repository as a git remote. Pin gh CLI
+  # operations to the private AIFoo repository instead of remote auto-detection.
+  GH_REPO: ${{ github.repository }}
+
 jobs:
   deploy:
     # Keep the owner-approved production path on the self-hosted VM while
