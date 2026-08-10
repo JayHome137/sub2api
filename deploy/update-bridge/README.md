@@ -1,6 +1,6 @@
 # AIFoo 网页更新桥接服务
 
-该服务只把管理员在网页上的明确点击转换为私有仓库 `web-update.yml` 的一次 `workflow_dispatch`。它不替换 Sub2API 二进制、不构建镜像，也不直接操作 VPS 部署；真正的预检、备份、部署、健康检查和回滚仍由现有 GitHub Hosted 工作流执行。
+该服务只把管理员在网页上的明确点击转换为私有仓库 `web-update.yml` 的一次 `workflow_dispatch`。上游同步工作流会先完成合并、UI 审查、测试、构建，并把精确前端镜像预加载到 VPS；网页点击时只激活已预加载的前端 digest。后端仍由独立工作流按官方迁移检测决定是否部署。
 
 ## 安全边界
 
@@ -8,7 +8,7 @@
 - 每个状态或触发请求都必须携带现有管理员 Bearer Token，并回查到官方 `/api/v1/admin/system/version`；不接受 Cookie 代替。
 - GitHub Fine-grained PAT 只从 `/etc/aifoo-update-bridge/github-token` 读取，不进入浏览器、前端镜像、仓库变量或 Actions Secret。
 - 只允许触发 `production` 分支的固定 `web-update.yml`，Release 参数必须是 `vX.Y.Z`。
-- 只有 Issue 带 `ready-for-vps` 且不需要 UI 审核时才允许触发；两分钟内重复点击只产生一次调度。
+- 只有 Issue 同时带 `ready-for-vps`、`vps-preloaded` 且不需要 UI 审核时才允许触发；两分钟内重复点击只产生一次调度。
 
 PAT 仅授权此私有仓库，最小权限为 `Metadata: Read`、`Actions: Read and write`、`Issues: Read`。
 

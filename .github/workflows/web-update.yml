@@ -26,6 +26,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       issue_number: ${{ steps.candidate.outputs.issue_number }}
+      source_sha: ${{ steps.candidate.outputs.source_sha }}
       frontend_digest: ${{ steps.candidate.outputs.frontend_digest }}
       backend_digest: ${{ steps.candidate.outputs.backend_digest }}
       backend_required: ${{ steps.candidate.outputs.backend_required }}
@@ -82,7 +83,11 @@ jobs:
             echo "The release has not passed the ready-for-vps gate" >&2
             exit 1
           fi
-          for blocked_label in ui-review-required sync-failed; do
+          if ! printf '%s\n' "$labels" | grep -Fxq vps-preloaded; then
+            echo "The validated frontend image has not been preloaded on the VPS" >&2
+            exit 1
+          fi
+          for blocked_label in ui-review-required sync-failed vps-preload-failed; do
             if printf '%s\n' "$labels" | grep -Fxq "$blocked_label"; then
               echo "The release is blocked by $blocked_label" >&2
               exit 1
@@ -105,6 +110,14 @@ jobs:
           ' <<< "$comments")
           if [ -z "$attestation" ]; then
             echo "The ready-for-vps issue has no complete immutable image attestation" >&2
+            exit 1
+          fi
+
+          source_sha=$(printf '%s\n' "$attestation" \
+            | sed -n 's/.*Final commit: `\([0-9a-f]\{40\}\)`.*/\1/p' \
+            | sed -n '1p')
+          if ! printf '%s' "$source_sha" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "The immutable image attestation has no valid production source commit" >&2
             exit 1
           fi
 
@@ -179,6 +192,7 @@ jobs:
             fi
           fi
           echo "frontend_digest=$frontend_digest" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
           echo "backend_digest=$backend_digest" >> "$GITHUB_OUTPUT"
           echo "backend_required=$backend_required" >> "$GITHUB_OUTPUT"
 
@@ -210,10 +224,13 @@ jobs:
       always() &&
       needs.resolve.result == 'success' &&
       (needs.backend.result == 'success' || needs.backend.result == 'skipped')
-    uses: ./.github/workflows/deploy.yml
+    uses: ./.github/workflows/frontend-activation.yml
     with:
+      mode: activate
+      release_tag: ${{ inputs.release_tag }}
       image_digest: ${{ needs.resolve.outputs.frontend_digest }}
-      approval: DEPLOY-AIFOO-FRONTEND
+      source_sha: ${{ needs.resolve.outputs.source_sha }}
+      issue_number: ${{ needs.resolve.outputs.issue_number }}
     secrets: inherit
 
   finalize:
@@ -238,9 +255,11 @@ jobs:
           gh label create web-update-failed --color B60205 --force >/dev/null
           gh issue edit "$ISSUE_NUMBER" \
             --add-label vps-deployed \
-            --remove-label web-update-failed >/dev/null 2>&1 || \
+            --remove-label web-update-failed \
+            --remove-label vps-preloaded \
+            --remove-label vps-preload-failed >/dev/null 2>&1 || \
             gh issue edit "$ISSUE_NUMBER" --add-label vps-deployed >/dev/null
-          gh issue comment "$ISSUE_NUMBER" --body "AIFoo web update completed for $RELEASE_TAG. Frontend digest \`$FRONTEND_DIGEST\`; backend deployment required: \`$BACKEND_REQUIRED\`. The existing preflight, verified backup, health-check, and automatic rollback gates were used."
+          gh issue comment "$ISSUE_NUMBER" --body "AIFoo web update completed for $RELEASE_TAG. Frontend digest \`$FRONTEND_DIGEST\`; backend deployment required: \`$BACKEND_REQUIRED\`. The validated frontend was preloaded before the click; activation only switched the frontend container and passed one lightweight health check."
           gh issue close "$ISSUE_NUMBER" >/dev/null
 
   record_failure:
@@ -267,4 +286,4 @@ jobs:
           set -euo pipefail
           gh label create web-update-failed --color B60205 --force >/dev/null
           gh issue edit "$ISSUE_NUMBER" --add-label web-update-failed >/dev/null
-          gh issue comment "$ISSUE_NUMBER" --body "AIFoo web update failed or was cancelled for $RELEASE_TAG. The failed component used its verified rollback gate. A backend that already completed all health and unchanged-frontend checks remains as a resumable checkpoint; retry continues with the pending frontend. The Issue remains open for diagnosis and an explicit retry."
+          gh issue comment "$ISSUE_NUMBER" --body "AIFoo web update failed or was cancelled for $RELEASE_TAG. Frontend activation restores the previous Compose service when its local activation gate fails; the Issue remains open for diagnosis and an explicit retry."

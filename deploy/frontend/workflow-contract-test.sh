@@ -14,6 +14,7 @@ MACOS_SHELL_WORKFLOW=$ROOT/.github/workflows/macos-shell-ci.yml
 DEPLOY_WORKFLOW=$ROOT/.github/workflows/deploy.yml
 BACKEND_DEPLOY_WORKFLOW=$ROOT/.github/workflows/deploy-backend.yml
 WEB_UPDATE_WORKFLOW=$ROOT/.github/workflows/web-update.yml
+FRONTEND_ACTIVATION_WORKFLOW=$ROOT/.github/workflows/frontend-activation.yml
 PREFLIGHT_WORKFLOW=$ROOT/.github/workflows/preflight.yml
 CLA_WORKFLOW=$ROOT/.github/workflows/cla.yml
 DEPLOY_HELPER=$ROOT/deploy/frontend/deploy-frontend.sh
@@ -83,6 +84,9 @@ require_text "$SYNC_WORKFLOW" '-F force=false'
 require_text "$SYNC_WORKFLOW" 'needs.prepare.outputs.final_retry'
 require_text "$SYNC_WORKFLOW" 'backend/internal/(domain|middleware|model|pkg/response|setup)/'
 require_text "$SYNC_WORKFLOW" "ready-for-vps"
+require_text "$SYNC_WORKFLOW" "vps-preloaded"
+require_text "$SYNC_WORKFLOW" "preload_frontend:"
+require_text "$SYNC_WORKFLOW" "uses: ./.github/workflows/frontend-activation.yml"
 require_text "$SYNC_WORKFLOW" "uses: ./.github/workflows/backend-ci.yml"
 require_text "$SYNC_WORKFLOW" "uses: ./.github/workflows/security-scan.yml"
 require_text "$SYNC_WORKFLOW" "uses: ./.github/workflows/validate.yml"
@@ -115,10 +119,12 @@ for workflow in \
   require_runner_only "$workflow" "$GITHUB_RUNNER"
 done
 require_runner_only "$WEB_UPDATE_WORKFLOW" "$GITHUB_RUNNER"
+require_runner_only "$FRONTEND_ACTIVATION_WORKFLOW" "$GITHUB_RUNNER"
 require_text "$BACKEND_CI_WORKFLOW" "if: inputs.checkout_ref != '' && inputs.run_macos"
 
 for file in \
   "$WEB_UPDATE_WORKFLOW" \
+  "$FRONTEND_ACTIVATION_WORKFLOW" \
   "$UPDATE_BRIDGE" \
   "$UPDATE_BRIDGE_SERVICE" \
   "$UPDATE_BRIDGE_INSTALL" \
@@ -131,19 +137,26 @@ require_text "$BACKEND_DEPLOY_WORKFLOW" 'workflow_call:'
 require_text "$WEB_UPDATE_WORKFLOW" 'workflow_dispatch:'
 require_text "$WEB_UPDATE_WORKFLOW" 'Only the repository owner can approve a web update'
 require_text "$WEB_UPDATE_WORKFLOW" 'ready-for-vps'
-require_text "$WEB_UPDATE_WORKFLOW" 'ui-review-required sync-failed'
+require_text "$WEB_UPDATE_WORKFLOW" 'ui-review-required sync-failed vps-preload-failed'
 require_text "$WEB_UPDATE_WORKFLOW" 'uses: ./.github/workflows/deploy-backend.yml'
-require_text "$WEB_UPDATE_WORKFLOW" 'uses: ./.github/workflows/deploy.yml'
+require_text "$WEB_UPDATE_WORKFLOW" 'uses: ./.github/workflows/frontend-activation.yml'
+require_text "$WEB_UPDATE_WORKFLOW" 'mode: activate'
 require_text "$WEB_UPDATE_WORKFLOW" 'secrets: inherit'
 require_text "$WEB_UPDATE_WORKFLOW" 'approval: DEPLOY-AIFOO-BACKEND'
-require_text "$WEB_UPDATE_WORKFLOW" 'approval: DEPLOY-AIFOO-FRONTEND'
 require_text "$WEB_UPDATE_WORKFLOW" 'vps-deployed'
 require_text "$WEB_UPDATE_WORKFLOW" 'web-update-failed'
 require_text "$WEB_UPDATE_WORKFLOW" 'group: aifoo-web-update-orchestration'
 require_text "$WEB_UPDATE_WORKFLOW" '.user.login == "github-actions[bot]"'
 require_text "$WEB_UPDATE_WORKFLOW" 'backend-deployed is not backed by the exact production State Issue'
+require_text "$WEB_UPDATE_WORKFLOW" 'vps-preloaded'
 reject_text "$WEB_UPDATE_WORKFLOW" 'self-hosted'
 reject_text "$WEB_UPDATE_WORKFLOW" 'schedule:'
+
+require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'workflow_call:'
+require_text "$FRONTEND_ACTIVATION_WORKFLOW" "inputs.mode == 'preload'"
+require_text "$FRONTEND_ACTIVATION_WORKFLOW" "inputs.mode == 'activate'"
+require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'deploy-sub2api-frontend activate'
+require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'vps-preload-failed'
 
 require_text "$UPDATE_BRIDGE" 'defaultListenAddr = "127.0.0.1:8091"'
 require_text "$UPDATE_BRIDGE" 'defaultAdminURL   = "http://127.0.0.1:8080/api/v1/admin/system/version"'
@@ -253,6 +266,11 @@ require_text "$DEPLOY_HELPER" 'rollback_image_id='
 require_text "$DEPLOY_HELPER" 'sha256sum -c SHA256SUMS'
 require_text "$DEPLOY_HELPER" 'deploy_digest "${2:-}" "${3:-}"'
 require_text "$DEPLOY_HELPER" 'restore_backup "${2:-}" "${3:-}"'
+require_text "$DEPLOY_HELPER" 'preload_digest "${2:-}"'
+require_text "$DEPLOY_HELPER" 'activate_frontend_digest "${2:-}"'
+require_text "$DEPLOY_HELPER" 'preload_service_unchanged=true'
+require_text "$DEPLOY_HELPER" 'database_untouched=true'
+require_text "$DEPLOY_HELPER" 'restore_activation_compose'
 require_text "$DEPLOY_HELPER" 'previous_compose_sha256='
 require_text "$DEPLOY_HELPER" 'candidate_compose_sha256='
 require_text "$DEPLOY_HELPER" 'rollback_compose_sha256='

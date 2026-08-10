@@ -124,7 +124,7 @@ func TestStatusReportsAdminVerificationOutageWithoutLoggingUserOut(t *testing.T)
 }
 
 func TestReadyStatus(t *testing.T) {
-	state := &fakeGitHubState{labels: []string{"upstream-release", "ready-for-vps", "backend-deploy-required"}}
+	state := &fakeGitHubState{labels: []string{"upstream-release", "ready-for-vps", "vps-preloaded", "backend-deploy-required"}}
 	_, bridge := newTestBridge(t, state)
 	defer bridge.Close()
 
@@ -139,7 +139,7 @@ func TestReadyStatus(t *testing.T) {
 }
 
 func TestUIReviewBlocksDispatch(t *testing.T) {
-	state := &fakeGitHubState{labels: []string{"upstream-release", "ready-for-vps", "ui-review-required"}}
+	state := &fakeGitHubState{labels: []string{"upstream-release", "ready-for-vps", "vps-preloaded", "ui-review-required"}}
 	_, bridge := newTestBridge(t, state)
 	defer bridge.Close()
 
@@ -154,7 +154,7 @@ func TestUIReviewBlocksDispatch(t *testing.T) {
 }
 
 func TestDispatchIsFixedAndIdempotent(t *testing.T) {
-	state := &fakeGitHubState{labels: []string{"upstream-release", "ready-for-vps"}}
+	state := &fakeGitHubState{labels: []string{"upstream-release", "ready-for-vps", "vps-preloaded"}}
 	_, bridge := newTestBridge(t, state)
 	defer bridge.Close()
 
@@ -193,7 +193,7 @@ func TestDispatchIsFixedAndIdempotent(t *testing.T) {
 
 func TestSuccessfulWorkflowIsDeployed(t *testing.T) {
 	state := &fakeGitHubState{
-		labels: []string{"upstream-release", "ready-for-vps"},
+		labels: []string{"upstream-release", "ready-for-vps", "vps-preloaded"},
 		runs: []map[string]string{{
 			"display_title": "AIFoo web update v0.1.172",
 			"status":        "completed",
@@ -211,5 +211,17 @@ func TestSuccessfulWorkflowIsDeployed(t *testing.T) {
 	}
 	if status.RunURL != "https://github.example/actions/runs/42" {
 		t.Fatalf("run URL = %q", status.RunURL)
+	}
+}
+
+func TestReadyStatusWaitsForVPSPreload(t *testing.T) {
+	state := &fakeGitHubState{labels: []string{"upstream-release", "ready-for-vps"}}
+	_, bridge := newTestBridge(t, state)
+	defer bridge.Close()
+
+	resp := request(t, bridge.Client(), http.MethodGet, bridge.URL+"/status?release=v0.1.172", "")
+	status := decodeStatus(t, resp)
+	if status.State != "preparing" || status.CanDispatch {
+		t.Fatalf("unpreloaded candidate became clickable: %+v", status)
 	}
 }

@@ -339,6 +339,10 @@ func (s *bridgeServer) readStatus(ctx context.Context, tag string) (upgradeStatu
 		result.State = "deployed"
 		return result, nil
 	}
+	if labels["vps-preload-failed"] {
+		result.State = "failed"
+		return result, nil
+	}
 	if labels["ui-review-required"] {
 		result.State = "ui_review_required"
 		return result, nil
@@ -348,6 +352,11 @@ func (s *bridgeServer) readStatus(ctx context.Context, tag string) (upgradeStatu
 		return result, nil
 	}
 	if labels["ready-for-vps"] {
+		if !labels["vps-preloaded"] {
+			// All CI and UI work can be complete while the immutable image is
+			// still being cached on the VPS. Do not expose the click action yet.
+			return result, nil
+		}
 		result.State = "ready"
 		result.CanDispatch = true
 		if run != nil && run.Status == "completed" && run.Conclusion != "success" {
