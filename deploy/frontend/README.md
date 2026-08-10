@@ -9,15 +9,15 @@
 
 `upstream-sync.yml` 每天北京时间 01:00（GitHub cron 为 17:00 UTC）查询一次 `Wei-Shaw/sub2api` 最新正式 Release，不同步官方 `main`、draft 或 prerelease。候选分支依次运行 CI、安全扫描、AIFoo 测试、生产构建与容器 smoke test：
 
-- 没有 UI 相关路径变更时，候选 SHA 只完整验证和构建一次，并把同一镜像推送到私有 GHCR；原子合入 `production` 后只核对 SHA、digest 和镜像来源标签，不重新构建或跑全量测试。
-- `frontend/`、`deploy/frontend/`、`docs/legal/`、`backend/internal/web/` 或可能改变前端 API 契约的后端路径发生变化时，PR 保留等待 AIFoo UI 检查，不自动合并；候选镜像仅作为该 SHA 的私有验证证据，不能进入 VPS。
-- UI 适配和人工检查完成后，手动运行同步工作流并设置 `retry_existing=true`、`approve_ui=true`；工作流会重新验证精确候选 SHA 和未变化的 `production` 基线后才允许合并。
+- 候选 SHA 只完整验证和构建一次，并把同一镜像推送到私有 GHCR；原子合入 `production` 后只核对 SHA、digest 和镜像来源标签，不重新构建或跑全量测试。
+- `frontend/`、`deploy/frontend/`、`docs/legal/`、`backend/internal/web/` 或可能改变前端 API 契约的后端路径发生变化时，仍由同一套 CI、安全扫描、AIFoo 浏览器测试和镜像 smoke test 判断兼容性；官方 Release 能干净合并且全部检查通过时自动合入 `production`。
+- 上游新增而 AIFoo 尚未定制的页面、组件和交互默认保留官方 UI。只有源码冲突、测试失败、构建失败或候选基线变化时才暂停，不再因为检测到 UI 路径本身等待人工审批。
 - 若 `production` 已更新但最终记录失败，后续定时检查会优先复用 SHA 和来源标签仍有效的候选镜像；仅在镜像缺失或证据失效时才重跑必要构建，也可手动设置 `retry_final=true`。
-- 每个新 Release 创建一个分配给仓库所有者的 Issue，使用 `candidate-testing`、`ui-review-required`、`sync-failed` 和 `ready-for-vps` 标记进度。
+- 每个新 Release 创建一个分配给仓库所有者的 Issue，使用 `candidate-testing`、`sync-failed` 和 `ready-for-vps` 标记进度；旧 Issue 的 `ui-review-required` 仍作为兼容性阻断标签被识别和清理。
 
 私有仓库只构建 `deploy/frontend/Dockerfile`；后端不从私有源码构建。同步流程会记录官方后端 tag、commit 和 `weishaw/sub2api@sha256:...`，后端部署仍由独立的 `deploy-backend.yml` 完成，详见 `deploy/backend/README.md`。每天的检测、合并、验证和构建不会自动部署到 VPS。
 
-验证完成并出现 `ready-for-vps` 后，管理员可在网页版本面板点击“立即更新”。独立的 `update-bridge` 先用现有 Sub2API 管理员认证回查身份，再固定触发 `web-update.yml`；网页点击就是本次明确的生产批准。该编排只解析 Issue 已记录的前后端不可变 digest，然后顺序复用 `deploy-backend.yml`（仅需要时）和 `deploy.yml`。原有 Hosted Runner 预检、完整备份、健康检查和自动回滚逻辑不变，浏览器不会接触 GitHub Token。桥接服务的生产安装见 `deploy/update-bridge/README.md`。
+验证完成并出现 `ready-for-vps` 后，管理员可在网页版本面板点击“立即更新”。独立的 `update-bridge` 先用现有 Sub2API 管理员认证回查身份，再固定触发 `web-update.yml`；网页点击就是本次明确的生产批准。该编排只解析 Issue 已记录的前后端不可变 digest，然后顺序复用 `deploy-backend.yml`（仅需要时）和 `deploy.yml`。现有 VM runner 预检、健康检查和必要回滚逻辑不变，浏览器不会接触 GitHub Token。桥接服务的生产安装见 `deploy/update-bridge/README.md`。
 
 ## 验证
 
@@ -47,7 +47,7 @@ GitHub Actions 运行官方关键 Vitest、AIFoo 集成测试、全量 Vitest、
 
 ### 预加载与一键激活
 
-稳定版完成上游合并、UI 审查、测试和镜像证明后，`upstream-sync.yml` 会调用
+稳定版完成上游合并、确定性 UI 兼容性验证、测试和镜像证明后，`upstream-sync.yml` 会调用
 `frontend-activation.yml` 的 `preload` 模式。VPS 只把精确 digest 拉入本地镜像缓存并写入一个受保护的候选标记；不会启动候选容器、修改 Compose、重启服务或触碰数据库。
 
 网页按钮只调用同一工作流的 `activate` 模式。它要求候选标记和 `ready-for-vps` 证明同时存在，然后只重写前端 service 的镜像、重建前端容器并检查一次 `/frontend-health`。如果 Compose 切换或这个检查失败，脚本会用本次命令中的旧 Compose 文件恢复原前端；不会创建数据库备份或执行迁移。

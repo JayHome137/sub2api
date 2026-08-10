@@ -16,11 +16,6 @@ on:
         required: false
         type: boolean
         default: false
-      approve_ui:
-        description: Approve an already reviewed UI-related candidate for merge
-        required: false
-        type: boolean
-        default: false
       retry_final:
         description: Recover or rebuild an already merged release whose final delivery failed
         required: false
@@ -77,10 +72,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REQUESTED_TAG: ${{ inputs.release_tag }}
           RETRY_EXISTING: ${{ inputs.retry_existing }}
-          APPROVE_UI: ${{ inputs.approve_ui }}
           RETRY_FINAL: ${{ inputs.retry_final }}
-          REQUEST_ACTOR: ${{ github.actor }}
-          REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
 
@@ -104,17 +96,9 @@ jobs:
           echo "final_retry=false" >> "$GITHUB_OUTPUT"
           echo "final_sha=" >> "$GITHUB_OUTPUT"
 
-          if [ "$APPROVE_UI" = "true" ] && [ "$RETRY_EXISTING" != "true" ]; then
-            echo "approve_ui=true requires retry_existing=true" >&2
-            exit 1
-          fi
-          if [ "$APPROVE_UI" = "true" ] && [ "$REQUEST_ACTOR" != "$REPOSITORY_OWNER" ]; then
-            echo "Only the repository owner can approve an AIFoo UI candidate" >&2
-            exit 1
-          fi
           if [ "$RETRY_FINAL" = "true" ] \
-            && { [ "$RETRY_EXISTING" = "true" ] || [ "$APPROVE_UI" = "true" ]; }; then
-            echo "retry_final cannot be combined with candidate retry or UI approval" >&2
+            && [ "$RETRY_EXISTING" = "true" ]; then
+            echo "retry_final cannot be combined with candidate retry" >&2
             exit 1
           fi
 
@@ -445,7 +429,7 @@ jobs:
           branch="upgrade/$tag"
           echo "candidate_branch=$branch" >> "$GITHUB_OUTPUT"
           if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
-            if [ "$RETRY_EXISTING" != "true" ] && [ "$APPROVE_UI" != "true" ]; then
+            if [ "$RETRY_EXISTING" != "true" ]; then
               echo "Existing candidate $branch is awaiting review; scheduled validation will not repeat."
               echo "release_detected=false" >> "$GITHUB_OUTPUT"
               exit 0
@@ -453,13 +437,6 @@ jobs:
             git fetch origin "refs/heads/$branch:refs/remotes/origin/$branch"
             git checkout -B "$branch" "origin/$branch"
           else
-            if [ "$APPROVE_UI" = "true" ]; then
-              gh issue edit "$issue_number" --add-label sync-failed >/dev/null
-              gh issue comment "$issue_number" \
-                --body "UI approval was requested before candidate branch \`$branch\` existed. Run once without \`approve_ui\` to create and review the PR; nothing was merged or deployed."
-              echo "blocked=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
             git checkout -b "$branch" origin/production
             if ! git merge --no-edit "$tag"; then
               git merge --abort
@@ -507,20 +484,12 @@ jobs:
           fi
           if [ "$direct_ui" = "true" ] || [ "$backend_contract" = "true" ]; then
             ui_related=true
-            gh issue edit "$issue_number" --add-label ui-review-required >/dev/null
           fi
 
           migration_note="Expected official database migrations: $expected_migrations."
 
           pr_number=$(gh pr list --state open --base production --head "$branch" --json number --jq '.[0].number // empty')
           if [ -z "$pr_number" ]; then
-            if [ "$APPROVE_UI" = "true" ]; then
-              gh issue edit "$issue_number" --add-label sync-failed >/dev/null
-              gh issue comment "$issue_number" \
-                --body "UI approval was requested, but candidate branch \`$branch\` has no open PR to review. Reopen or recreate the PR before retrying; nothing was merged or deployed."
-              echo "blocked=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
             pr_body=$(mktemp)
             {
               echo "Automated candidate from official stable release [$tag]($release_url)."
@@ -534,7 +503,7 @@ jobs:
               echo "- $migration_note"
               echo "- Candidate commit: \`$candidate_sha\`"
               echo
-              echo "Candidate CI, security, AIFoo browser tests, and image smoke tests run inside the release-sync workflow. UI-related releases are never auto-merged. Merging, validating, and publishing artifacts do not deploy them to the VPS."
+              echo "Candidate CI, security, AIFoo browser tests, and image smoke tests run inside the release-sync workflow. UI-related releases auto-merge when the official Release merges cleanly and every deterministic check passes; newly added upstream surfaces retain their official UI by default. Merging, validating, and publishing artifacts do not deploy them to the VPS."
             } > "$pr_body"
             pr_url=$(gh pr create \
               --base production \
@@ -544,7 +513,7 @@ jobs:
             pr_number=${pr_url##*/}
           fi
 
-          gh issue comment "$issue_number" --body "Candidate PR #$pr_number is ready for remote validation. Direct frontend changes: \`$direct_ui\`; potential backend-to-frontend contract changes: \`$backend_contract\`; UI review required: \`$ui_related\`; official backend: \`$backend_image_ref\`; backend deployment required: \`$backend_deploy_required\`."
+          gh issue comment "$issue_number" --body "Candidate PR #$pr_number is ready for remote validation. Direct frontend changes: \`$direct_ui\`; potential backend-to-frontend contract changes: \`$backend_contract\`; deterministic UI compatibility checks required: \`$ui_related\`; official backend: \`$backend_image_ref\`; backend deployment required: \`$backend_deploy_required\`."
 
           echo "candidate_ready=true" >> "$GITHUB_OUTPUT"
           echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
@@ -615,7 +584,6 @@ jobs:
           SECURITY_RESULT: ${{ needs.candidate_security.result }}
           FRONTEND_RESULT: ${{ needs.candidate_frontend.result }}
           UI_RELATED: ${{ needs.prepare.outputs.ui_related }}
-          UI_APPROVED: ${{ github.event_name == 'workflow_dispatch' && inputs.approve_ui == true && github.actor == github.repository_owner }}
           ISSUE_NUMBER: ${{ needs.prepare.outputs.issue_number }}
           PR_NUMBER: ${{ needs.prepare.outputs.pr_number }}
           BASE_SHA: ${{ needs.prepare.outputs.base_sha }}
@@ -632,13 +600,6 @@ jobs:
             gh issue comment "$ISSUE_NUMBER" \
               --body "Candidate validation failed. CI: \`$CI_RESULT\`; security: \`$SECURITY_RESULT\`; AIFoo frontend: \`$FRONTEND_RESULT\`. Nothing was merged or deployed."
             exit 1
-          fi
-
-          if [ "$UI_RELATED" = "true" ] && [ "$UI_APPROVED" != "true" ]; then
-            gh issue edit "$ISSUE_NUMBER" --add-label ui-review-required >/dev/null
-            gh issue comment "$ISSUE_NUMBER" \
-              --body "All automated checks passed and the exact private candidate image was recorded, but the official release changes UI-related paths. PR #$PR_NUMBER remains open for AIFoo UI review. After adapting and reviewing the candidate, manually run this workflow with \`retry_existing=true\` and \`approve_ui=true\`; no production approval or deployment was attempted."
-            exit 0
           fi
 
           current_base=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
@@ -659,7 +620,7 @@ jobs:
 
           if [ "$UI_RELATED" = "true" ]; then
             gh issue comment "$ISSUE_NUMBER" \
-              --body "Manual AIFoo UI approval was supplied for exact candidate \`$CANDIDATE_SHA\`; the locked-base merge is continuing."
+              --body "UI-related upstream changes for exact candidate \`$CANDIDATE_SHA\` passed CI, security, AIFoo browser tests, and image smoke tests. The deterministic compatibility policy approved the locked-base merge; newly added upstream surfaces retain their official UI by default."
           fi
 
           if ! gh api \
