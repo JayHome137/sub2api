@@ -303,6 +303,7 @@ jobs:
   publish:
     needs: image
     if: >-
+      always() &&
       needs.image.result == 'success' &&
       (
         needs.image.outputs.publish_enabled == 'true' ||
