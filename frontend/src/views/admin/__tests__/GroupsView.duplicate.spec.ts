@@ -12,7 +12,6 @@ const {
   getLiveCapability,
   getUsageSummary,
   getCapacitySummary,
-  getLiveCapability,
   showSuccess,
   showError
 } = vi.hoisted(() => ({
@@ -22,7 +21,6 @@ const {
   getLiveCapability: vi.fn(),
   getUsageSummary: vi.fn(),
   getCapacitySummary: vi.fn(),
-  getLiveCapability: vi.fn(),
   showSuccess: vi.fn(),
   showError: vi.fn()
 }))
@@ -36,7 +34,6 @@ vi.mock('@/api/admin', () => ({
       getLiveCapability,
       getUsageSummary,
       getCapacitySummary,
-      getLiveCapability,
       getAll: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
