@@ -302,7 +302,12 @@ jobs:
 
   publish:
     needs: image
-    if: needs.image.outputs.publish_enabled == 'true'
+    if: >-
+      needs.image.result == 'success' &&
+      (
+        needs.image.outputs.publish_enabled == 'true' ||
+        (inputs.fast == true && inputs.publish_image == true)
+      )
     runs-on: [self-hosted, linux, x64, aifoo-vm]
     permissions:
       contents: read
@@ -349,9 +354,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE: ghcr.io/${{ steps.owner.outputs.value }}/sub2api-frontend:candidate-${{ needs.image.outputs.source_sha }}
           PUBLISH_MODE: ${{ needs.image.outputs.publish_mode }}
+          FAST_MODE: ${{ inputs.fast }}
           SOURCE_SHA: ${{ needs.image.outputs.source_sha }}
         run: |
           set -euo pipefail
+          if [ -z "$PUBLISH_MODE" ] && [ "$FAST_MODE" = "true" ]; then
+            PUBLISH_MODE=production
+          fi
           case "$PUBLISH_MODE" in
             candidate)
               prs=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --base production --limit 100 \
