@@ -339,7 +339,7 @@ jobs:
           set -euo pipefail
           case "$PUBLISH_MODE" in
             candidate)
-              prs=$(gh pr list --state open --base production --limit 100 \
+              prs=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --base production --limit 100 \
                 --json headRefName,headRefOid)
               matching_pr_count=$(jq --arg sha "$SOURCE_SHA" '
                 [.[] | select(
