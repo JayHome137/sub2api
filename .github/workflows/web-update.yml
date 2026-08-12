@@ -38,6 +38,8 @@ jobs:
       frontend_digest: ${{ steps.candidate.outputs.frontend_digest }}
       backend_digest: ${{ steps.candidate.outputs.backend_digest }}
       backend_required: ${{ steps.candidate.outputs.backend_required }}
+      release_commit: ${{ steps.candidate.outputs.release_commit }}
+      expected_migrations: ${{ steps.candidate.outputs.expected_migrations }}
     steps:
       - name: Require repository owner approval
         env:
@@ -95,7 +97,7 @@ jobs:
             echo "The validated frontend image has not been preloaded on the VPS" >&2
             exit 1
           fi
-          for blocked_label in ui-review-required sync-failed vps-preload-failed; do
+          for blocked_label in ui-review-required sync-failed vps-preload-failed backend-prepare-failed; do
             if printf '%s\n' "$labels" | grep -Fxq "$blocked_label"; then
               echo "The release is blocked by $blocked_label" >&2
               exit 1
@@ -113,7 +115,7 @@ jobs:
                 ((.user.login == "github-actions[bot]")
                   or ((.user.login | ascii_downcase) == ($owner | ascii_downcase)))
                 and (.body | contains($release))
-                and (.body | contains("ready-for-vps"))
+                and (.body | contains("Remote validation completed"))
                 and (.body | contains("Private frontend image:"))
                 and (.body | contains("Official backend image:"))
               )]
@@ -158,6 +160,19 @@ jobs:
             echo "The backend deployment attestation is missing" >&2
             exit 1
           fi
+          release_commit=$(printf '%s\n' "$attestation" \
+            | sed -n 's/.*Official release commit: `\([0-9a-f]\{40\}\)`.*/\1/p' \
+            | sed -n '1p')
+          expected_migrations=$(printf '%s\n' "$attestation" \
+            | sed -n 's/.*Expected database migrations: `\([^`]*\)`.*/\1/p' \
+            | sed -n '1p')
+          if ! printf '%s' "$release_commit" | grep -Eq '^[0-9a-f]{40}$' \
+            || { [ "$expected_migrations" != "none" ] \
+              && ! printf '%s' "$expected_migrations" \
+                | grep -Eq '^[0-9]{3}_[a-z0-9_]+(_notx)?\.sql(,[0-9]{3}_[a-z0-9_]+(_notx)?\.sql)*$'; }; then
+            echo "The backend preparation attestation is incomplete" >&2
+            exit 1
+          fi
 
           backend_required=false
           label_requires_backend=false
@@ -178,8 +193,17 @@ jobs:
             echo "Backend deployment label contradicts the validation attestation" >&2
             exit 1
           fi
+          if [ "$attested_backend_required" = "false" ] \
+            && [ "$expected_migrations" != "none" ]; then
+            echo "A frontend-only release cannot attest database migrations" >&2
+            exit 1
+          fi
           if [ "$attested_backend_required" = "true" ] \
             && [ "$label_requires_backend" = "true" ]; then
+            if ! printf '%s\n' "$labels" | grep -Fxq backend-prepared; then
+              echo "The required backend was not prepared before the web update" >&2
+              exit 1
+            fi
             backend_required=true
           fi
           if [ "$attested_backend_required" = "true" ] \
@@ -206,6 +230,15 @@ jobs:
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
           echo "backend_digest=$backend_digest" >> "$GITHUB_OUTPUT"
           echo "backend_required=$backend_required" >> "$GITHUB_OUTPUT"
+          echo "release_commit=$release_commit" >> "$GITHUB_OUTPUT"
+          echo "expected_migrations=$expected_migrations" >> "$GITHUB_OUTPUT"
+
+          gh label create web-update-running --color 1D76DB --force >/dev/null
+          gh label create web-update-failed --color B60205 --force >/dev/null
+          gh issue edit "$issue_number" \
+            --add-label web-update-running \
+            --remove-label web-update-failed >/dev/null 2>&1 || \
+            gh issue edit "$issue_number" --add-label web-update-running >/dev/null
 
           {
             echo "### Approved AIFoo web update"
@@ -225,6 +258,9 @@ jobs:
       release_tag: ${{ inputs.release_tag }}
       image_digest: ${{ needs.resolve.outputs.backend_digest }}
       approval: DEPLOY-AIFOO-BACKEND
+      release_commit: ${{ needs.resolve.outputs.release_commit }}
+      expected_migrations: ${{ needs.resolve.outputs.expected_migrations }}
+      issue_number: ${{ needs.resolve.outputs.issue_number }}
     secrets: inherit
 
   frontend:
@@ -267,6 +303,7 @@ jobs:
           gh issue edit "$ISSUE_NUMBER" \
             --add-label vps-deployed \
             --remove-label web-update-failed \
+            --remove-label web-update-running \
             --remove-label vps-preloaded \
             --remove-label vps-preload-failed >/dev/null 2>&1 || \
             gh issue edit "$ISSUE_NUMBER" --add-label vps-deployed >/dev/null
@@ -296,5 +333,8 @@ jobs:
         run: |
           set -euo pipefail
           gh label create web-update-failed --color B60205 --force >/dev/null
-          gh issue edit "$ISSUE_NUMBER" --add-label web-update-failed >/dev/null
+          gh issue edit "$ISSUE_NUMBER" \
+            --add-label web-update-failed \
+            --remove-label web-update-running >/dev/null 2>&1 || \
+            gh issue edit "$ISSUE_NUMBER" --add-label web-update-failed >/dev/null
           gh issue comment "$ISSUE_NUMBER" --body "AIFoo web update failed or was cancelled for $RELEASE_TAG. Frontend activation restores the previous Compose service when its local activation gate fails; the Issue remains open for diagnosis and an explicit retry."

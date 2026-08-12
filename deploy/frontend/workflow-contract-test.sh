@@ -13,6 +13,7 @@ SECURITY_WORKFLOW=$ROOT/.github/workflows/security-scan.yml
 MACOS_SHELL_WORKFLOW=$ROOT/.github/workflows/macos-shell-ci.yml
 DEPLOY_WORKFLOW=$ROOT/.github/workflows/deploy.yml
 BACKEND_DEPLOY_WORKFLOW=$ROOT/.github/workflows/deploy-backend.yml
+BACKEND_PREPARATION_WORKFLOW=$ROOT/.github/workflows/backend-preparation.yml
 WEB_UPDATE_WORKFLOW=$ROOT/.github/workflows/web-update.yml
 FRONTEND_ACTIVATION_WORKFLOW=$ROOT/.github/workflows/frontend-activation.yml
 PREFLIGHT_WORKFLOW=$ROOT/.github/workflows/preflight.yml
@@ -86,6 +87,9 @@ require_text "$SYNC_WORKFLOW" "ready-for-vps"
 require_text "$SYNC_WORKFLOW" "vps-preloaded"
 require_text "$SYNC_WORKFLOW" "preload_frontend:"
 require_text "$SYNC_WORKFLOW" "uses: ./.github/workflows/frontend-activation.yml"
+require_text "$SYNC_WORKFLOW" "prepare_backend:"
+require_text "$SYNC_WORKFLOW" "uses: ./.github/workflows/backend-preparation.yml"
+require_text "$SYNC_WORKFLOW" "ready_for_update:"
 require_text "$SYNC_WORKFLOW" "uses: ./.github/workflows/backend-ci.yml"
 require_text "$SYNC_WORKFLOW" "uses: ./.github/workflows/security-scan.yml"
 require_text "$SYNC_WORKFLOW" "uses: ./.github/workflows/validate.yml"
@@ -109,6 +113,7 @@ for workflow in \
   "$SECURITY_WORKFLOW" \
   "$VALIDATE_WORKFLOW" \
   "$BACKEND_DEPLOY_WORKFLOW" \
+  "$BACKEND_PREPARATION_WORKFLOW" \
   "$WEB_UPDATE_WORKFLOW" \
   "$FRONTEND_ACTIVATION_WORKFLOW"; do
   require_runner_only "$workflow" "$VM_RUNNER"
@@ -142,23 +147,43 @@ require_text "$WEB_UPDATE_WORKFLOW" 'uses: ./.github/workflows/frontend-activati
 require_text "$WEB_UPDATE_WORKFLOW" 'mode: activate'
 require_text "$WEB_UPDATE_WORKFLOW" 'secrets: inherit'
 require_text "$WEB_UPDATE_WORKFLOW" 'approval: DEPLOY-AIFOO-BACKEND'
+require_text "$WEB_UPDATE_WORKFLOW" 'backend-prepared'
+require_text "$WEB_UPDATE_WORKFLOW" 'expected_migrations:'
 require_text "$WEB_UPDATE_WORKFLOW" 'vps-deployed'
 require_text "$WEB_UPDATE_WORKFLOW" 'web-update-failed'
+require_text "$WEB_UPDATE_WORKFLOW" 'web-update-running'
 require_text "$WEB_UPDATE_WORKFLOW" 'group: aifoo-web-update-orchestration'
 require_text "$WEB_UPDATE_WORKFLOW" 'GH_REPO: ${{ github.repository }}'
 require_text "$WEB_UPDATE_WORKFLOW" '.user.login == "github-actions[bot]"'
 require_text "$WEB_UPDATE_WORKFLOW" '($owner | ascii_downcase)'
+require_text "$WEB_UPDATE_WORKFLOW" 'Remote validation completed'
 require_text "$WEB_UPDATE_WORKFLOW" 'backend-deployed is not backed by the exact production State Issue'
 require_text "$WEB_UPDATE_WORKFLOW" 'vps-preloaded'
 reject_text "$WEB_UPDATE_WORKFLOW" 'schedule:'
 
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'workflow_call:'
+require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'name: Validate requested operation'
+require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'mode must be preload or activate'
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" "inputs.mode == 'preload'"
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" "inputs.mode == 'activate'"
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'cd /opt/sub2api && sudo /usr/local/sbin/deploy-sub2api-frontend activate'
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'vps-preload-failed'
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'compare/$SOURCE_SHA...$production_sha'
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'Frontend image inputs changed after the validated image was built'
+preload_validation=$(sed -n \
+  '/name: Validate the exact approved candidate/,/name: Reconfirm the preloaded activation target/p' \
+  "$FRONTEND_ACTIVATION_WORKFLOW")
+if printf '%s\n' "$preload_validation" | grep -Fq 'grep -Fxq ready-for-vps'; then
+  fail 'frontend preload must complete before ready-for-vps is added'
+fi
+activation_validation=$(sed -n \
+  '/name: Reconfirm the preloaded activation target/,/name: Checkout the approved production revision/p' \
+  "$FRONTEND_ACTIVATION_WORKFLOW")
+printf '%s\n' "$activation_validation" | grep -Fq 'ready-for-vps vps-preloaded' \
+  || fail 'frontend activation must require ready-for-vps and vps-preloaded'
+printf '%s\n' "$activation_validation" | grep -Fq 'backend-deploy-required' \
+  || fail 'frontend activation must wait for required backend activation'
+require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'The web button remains hidden until all required preparation finishes.'
 
 require_text "$UPDATE_BRIDGE" 'defaultListenAddr = "127.0.0.1:8091"'
 require_text "$UPDATE_BRIDGE" 'defaultAdminURL   = "http://127.0.0.1:8080/api/v1/admin/system/version"'
@@ -166,6 +191,9 @@ require_text "$UPDATE_BRIDGE" 'AIFOO_UPGRADE_GITHUB_TOKEN_FILE'
 require_text "$UPDATE_BRIDGE" 'os.ReadFile(tokenFile)'
 require_text "$UPDATE_BRIDGE" '"ref": "production"'
 require_text "$UPDATE_BRIDGE" 'defaultWorkflow   = "web-update.yml"'
+require_text "$UPDATE_BRIDGE" 'result.BackendRequired && !labels["backend-prepared"]'
+require_text "$UPDATE_BRIDGE" 'labels["web-update-running"] || s.isPending(tag)'
+require_text "$UPDATE_BRIDGE" 'run.Conclusion == "success" && labels["vps-deployed"]'
 require_text "$UPDATE_BRIDGE_SERVICE" 'User=aifoo-update-bridge'
 require_text "$UPDATE_BRIDGE_NGINX" 'location = /api/v1/aifoo-upgrade/status'
 require_text "$UPDATE_BRIDGE_NGINX" 'location = /api/v1/aifoo-upgrade/dispatch'

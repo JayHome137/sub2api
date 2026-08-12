@@ -323,10 +323,12 @@ func (s *bridgeServer) readStatus(ctx context.Context, tag string) (upgradeStatu
 	if run != nil {
 		result.RunURL = run.HTMLURL
 		if run.Status == "queued" || run.Status == "in_progress" || run.Status == "waiting" {
-			result.State = "deploying"
-			return result, nil
+			if labels["web-update-running"] || s.isPending(tag) {
+				result.State = "deploying"
+				return result, nil
+			}
 		}
-		if run.Status == "completed" && run.Conclusion == "success" {
+		if run.Status == "completed" && run.Conclusion == "success" && labels["vps-deployed"] {
 			result.State = "deployed"
 			return result, nil
 		}
@@ -339,7 +341,7 @@ func (s *bridgeServer) readStatus(ctx context.Context, tag string) (upgradeStatu
 		result.State = "deployed"
 		return result, nil
 	}
-	if labels["vps-preload-failed"] {
+	if labels["vps-preload-failed"] || labels["backend-prepare-failed"] {
 		result.State = "failed"
 		return result, nil
 	}
@@ -357,9 +359,14 @@ func (s *bridgeServer) readStatus(ctx context.Context, tag string) (upgradeStatu
 			// still being cached on the VPS. Do not expose the click action yet.
 			return result, nil
 		}
+		if result.BackendRequired && !labels["backend-prepared"] {
+			// A release that changes the backend is clickable only after the
+			// exact official image and local rollback state are prepared.
+			return result, nil
+		}
 		result.State = "ready"
 		result.CanDispatch = true
-		if run != nil && run.Status == "completed" && run.Conclusion != "success" {
+		if run != nil && run.Status == "completed" && run.Conclusion != "success" && labels["web-update-failed"] {
 			result.State = "failed"
 		}
 	}

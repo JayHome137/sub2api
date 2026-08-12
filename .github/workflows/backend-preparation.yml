@@ -1,0 +1,321 @@
+name: Prepare official Sub2API backend
+
+on:
+  workflow_call:
+    inputs:
+      release_tag:
+        description: 'Official stable release tag (vX.Y.Z)'
+        required: true
+        type: string
+      image_digest:
+        description: 'Official immutable image digest (sha256:...)'
+        required: true
+        type: string
+      source_sha:
+        description: 'Validated AIFoo production source commit'
+        required: true
+        type: string
+      release_commit:
+        description: 'Peeled official release commit'
+        required: true
+        type: string
+      expected_migrations:
+        description: 'Exact migration plan from the recorded production baseline'
+        required: true
+        type: string
+      issue_number:
+        description: 'AIFoo upstream tracking issue number'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: aifoo-backend-preparation
+  cancel-in-progress: false
+
+env:
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  prepare:
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
+    timeout-minutes: 45
+    steps:
+      - name: Checkout the validated production revision
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+
+      - name: Verify the exact official release and preparation request
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+          EXPECTED_MIGRATIONS: ${{ inputs.expected_migrations }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$RELEASE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'
+          printf '%s' "$IMAGE_DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$'
+          printf '%s' "$SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          printf '%s' "$RELEASE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
+          printf '%s' "$ISSUE_NUMBER" | grep -Eq '^[0-9]+$'
+          if [ "$EXPECTED_MIGRATIONS" != "none" ] \
+            && ! printf '%s' "$EXPECTED_MIGRATIONS" \
+              | grep -Eq '^[0-9]{3}_[a-z0-9_]+(_notx)?\.sql(,[0-9]{3}_[a-z0-9_]+(_notx)?\.sql)*$'; then
+            echo "The recorded migration plan requires manual review" >&2
+            exit 1
+          fi
+
+          production_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
+          if [ "$production_sha" != "$SOURCE_SHA" ] || [ "$(git rev-parse HEAD)" != "$SOURCE_SHA" ]; then
+            echo "Production moved after candidate validation" >&2
+            exit 1
+          fi
+
+          release_json=$(gh api "repos/Wei-Shaw/sub2api/releases/tags/$RELEASE_TAG")
+          if [ "$(jq -r '.draft' <<< "$release_json")" != "false" ] \
+            || [ "$(jq -r '.prerelease' <<< "$release_json")" != "false" ]; then
+            echo "Refusing a draft or prerelease backend" >&2
+            exit 1
+          fi
+          if git remote get-url official >/dev/null 2>&1; then
+            git remote set-url official https://github.com/Wei-Shaw/sub2api.git
+          else
+            git remote add official https://github.com/Wei-Shaw/sub2api.git
+          fi
+          git fetch --force official "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          tag_object=$(git rev-parse "$RELEASE_TAG")
+          resolved_commit=$(git rev-parse "$RELEASE_TAG^{}")
+          if [ "$(git cat-file -t "$tag_object")" != "tag" ] \
+            || [ "$resolved_commit" != "$RELEASE_COMMIT" ] \
+            || ! git merge-base --is-ancestor "$RELEASE_COMMIT" "$SOURCE_SHA"; then
+            echo "The preparation request is not the exact official release merged into production" >&2
+            exit 1
+          fi
+
+          issue_json=$(gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER")
+          [ "$(jq -r '.title' <<< "$issue_json")" = "[Upstream $RELEASE_TAG] AIFoo frontend compatibility" ]
+          labels=$(jq -r '.labels[].name' <<< "$issue_json")
+          printf '%s\n' "$labels" | grep -Fxq backend-deploy-required
+          for blocked_label in ui-review-required sync-failed; do
+            if printf '%s\n' "$labels" | grep -Fxq "$blocked_label"; then
+              echo "Backend preparation is blocked by $blocked_label" >&2
+              exit 1
+            fi
+          done
+
+      - name: Verify the official immutable image
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+        run: |
+          set -euo pipefail
+          tagged_image="weishaw/sub2api:${RELEASE_TAG#v}"
+          immutable_image="weishaw/sub2api@$IMAGE_DIGEST"
+          docker pull "$tagged_image" >/dev/null
+          docker pull "$immutable_image" >/dev/null
+          docker image inspect "$tagged_image" --format '{{json .RepoDigests}}' \
+            | jq -e --arg image "$immutable_image" 'index($image) != null' >/dev/null
+          [ "$(docker image inspect "$immutable_image" --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = "https://github.com/Wei-Shaw/sub2api" ]
+          [ "$(docker image inspect "$immutable_image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$RELEASE_COMMIT" ]
+          [ "$(docker image inspect "$immutable_image" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = "${RELEASE_TAG#v}" ]
+          version_output=$(docker run --rm --network none --entrypoint /app/sub2api \
+            "$immutable_image" --version 2>&1)
+          printf '%s\n' "$version_output" \
+            | grep -Eq "Sub2API v?${RELEASE_TAG#v} \(commit: $RELEASE_COMMIT,"
+
+      - name: Configure restricted SSH key
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$RUNNER_TEMP/ssh"
+          printf '%s\n' "$VPS_SSH_KEY" > "$RUNNER_TEMP/ssh/id_ed25519"
+          chmod 600 "$RUNNER_TEMP/ssh/id_ed25519"
+          printf '%s\n' "$VPS_HOST_KEY" > "$RUNNER_TEMP/ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/ssh/known_hosts"
+
+      - name: Read the exact production backend baseline
+        id: preflight
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+          EXPECTED_MIGRATIONS: ${{ inputs.expected_migrations }}
+        run: |
+          set -euo pipefail
+          expected_helper_sha=$(sha256sum deploy/backend/deploy-backend.sh | awk '{print $1}')
+          output=$(ssh \
+            -i "$RUNNER_TEMP/ssh/id_ed25519" \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=3 \
+            "$VPS_USER@$VPS_HOST" \
+            "sudo -n /usr/local/sbin/deploy-sub2api-backend preflight '$expected_helper_sha' '$IMAGE_DIGEST' '$RELEASE_TAG' '$RELEASE_COMMIT' '$EXPECTED_MIGRATIONS'")
+          printf '%s\n' "$output"
+          printf '%s\n' "$output" | grep -Fxq 'preflight_result=ready'
+          current_image_ref=$(printf '%s\n' "$output" | sed -n 's/^backend_image_ref=//p' | tail -n 1)
+          current_release=$(printf '%s\n' "$output" | sed -n 's/^current_release=//p' | tail -n 1)
+          current_commit=$(printf '%s\n' "$output" | sed -n 's/^current_commit=//p' | tail -n 1)
+          printf '%s' "$current_image_ref" | grep -Eq '^weishaw/sub2api@sha256:[0-9a-f]{64}$'
+          printf '%s' "$current_release" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'
+          printf '%s' "$current_commit" | grep -Eq '^[0-9a-f]{40}$'
+          echo "current_image_ref=$current_image_ref" >> "$GITHUB_OUTPUT"
+          echo "current_release=$current_release" >> "$GITHUB_OUTPUT"
+          echo "current_commit=$current_commit" >> "$GITHUB_OUTPUT"
+
+      - name: Prove the migration plan from the running backend
+        env:
+          CURRENT_RELEASE: ${{ steps.preflight.outputs.current_release }}
+          CURRENT_COMMIT: ${{ steps.preflight.outputs.current_commit }}
+          TARGET_COMMIT: ${{ inputs.release_commit }}
+          EXPECTED_MIGRATIONS: ${{ inputs.expected_migrations }}
+        run: |
+          set -euo pipefail
+          git fetch --force official '+refs/tags/*:refs/tags/*'
+          if [ "$(git cat-file -t "$CURRENT_RELEASE")" != "tag" ] \
+            || [ "$(git rev-parse "$CURRENT_RELEASE^{commit}")" != "$CURRENT_COMMIT" ] \
+            || ! git merge-base --is-ancestor "$CURRENT_COMMIT" "$TARGET_COMMIT"; then
+            echo "The running backend is not a verified forward-upgrade baseline" >&2
+            exit 1
+          fi
+          migration_changes=$(git diff --name-status "$CURRENT_COMMIT" "$TARGET_COMMIT" \
+            -- 'backend/migrations/*.sql')
+          if printf '%s\n' "$migration_changes" \
+            | awk 'NF > 0 && $1 != "A" { found=1 } END { exit !found }'; then
+            echo "An existing official migration changed" >&2
+            exit 1
+          fi
+          actual_migrations=$(printf '%s\n' "$migration_changes" \
+            | awk '$1 == "A" {print $2}' \
+            | sed 's#^backend/migrations/##' \
+            | sort -u \
+            | paste -sd, -)
+          actual_migrations=${actual_migrations:-none}
+          if [ "$actual_migrations" != "$EXPECTED_MIGRATIONS" ]; then
+            echo "Migration proof changed from '$EXPECTED_MIGRATIONS' to '$actual_migrations'" >&2
+            exit 1
+          fi
+
+      - name: Test the target upgrade and image-only rollback in isolation
+        env:
+          TARGET_RELEASE: ${{ inputs.release_tag }}
+          TARGET_COMMIT: ${{ inputs.release_commit }}
+          TARGET_IMAGE: weishaw/sub2api@${{ inputs.image_digest }}
+          EXPECTED_MIGRATIONS: ${{ inputs.expected_migrations }}
+          CURRENT_IMAGE: ${{ steps.preflight.outputs.current_image_ref }}
+          CURRENT_RELEASE: ${{ steps.preflight.outputs.current_release }}
+          CURRENT_COMMIT: ${{ steps.preflight.outputs.current_commit }}
+        run: |
+          deploy/backend/image-integration-test.sh \
+            "$TARGET_IMAGE" \
+            "$TARGET_RELEASE" \
+            "$TARGET_COMMIT" \
+            "$EXPECTED_MIGRATIONS" \
+            "$CURRENT_IMAGE" \
+            "$CURRENT_RELEASE" \
+            "$CURRENT_COMMIT"
+
+      - name: Prepare the official image and local rollback state without changing production
+        id: prepare
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+          EXPECTED_MIGRATIONS: ${{ inputs.expected_migrations }}
+        run: |
+          output=$(ssh \
+            -i "$RUNNER_TEMP/ssh/id_ed25519" \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "$VPS_USER@$VPS_HOST" \
+            "sudo -n /usr/local/sbin/deploy-sub2api-backend prepare '$IMAGE_DIGEST' '$RELEASE_TAG' '$RELEASE_COMMIT' '$EXPECTED_MIGRATIONS'")
+          printf '%s\n' "$output"
+          printf '%s\n' "$output" | grep -Eq '^prepare_state=(ready|already-current)$'
+
+      - name: Verify the exact prepared backend state
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+          EXPECTED_MIGRATIONS: ${{ inputs.expected_migrations }}
+        run: |
+          set -euo pipefail
+          output=$(ssh \
+            -i "$RUNNER_TEMP/ssh/id_ed25519" \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "$VPS_USER@$VPS_HOST" \
+            "sudo -n /usr/local/sbin/deploy-sub2api-backend prepared-status '$IMAGE_DIGEST' '$RELEASE_TAG' '$RELEASE_COMMIT' '$EXPECTED_MIGRATIONS'")
+          printf '%s\n' "$output"
+          printf '%s\n' "$output" | grep -Eq '^prepared_state=(ready|already-current)$'
+
+      - name: Record the exact prepared backend
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+          EXPECTED_MIGRATIONS: ${{ inputs.expected_migrations }}
+        run: |
+          set -euo pipefail
+          gh label create backend-prepared --color 0E8A16 --force >/dev/null
+          gh label create backend-prepare-failed --color B60205 --force >/dev/null
+          gh issue edit "$ISSUE_NUMBER" \
+            --add-label backend-prepared \
+            --remove-label backend-prepare-failed \
+            --remove-label backend-deployed >/dev/null 2>&1 || \
+            gh issue edit "$ISSUE_NUMBER" --add-label backend-prepared >/dev/null
+          comment_file=$(mktemp)
+          {
+            echo "Backend preparation completed for $RELEASE_TAG."
+            echo
+            echo "- Production source: \`$SOURCE_SHA\`"
+            echo "- Official release commit: \`$RELEASE_COMMIT\`"
+            echo "- Official backend image: \`weishaw/sub2api@$IMAGE_DIGEST\`"
+            echo "- Expected database migrations: \`$EXPECTED_MIGRATIONS\`"
+            echo "- Backend status: \`backend-prepared\`"
+            echo
+            echo "The exact image was verified, tested against the running production baseline, preloaded on the VPS, and paired with local Compose rollback metadata. No production container, Compose file, or database was changed."
+          } > "$comment_file"
+          gh issue comment "$ISSUE_NUMBER" --body-file "$comment_file"
+
+      - name: Block activation after preparation failure
+        if: failure() || cancelled()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          gh label create backend-prepare-failed --color B60205 --force >/dev/null
+          gh issue edit "$ISSUE_NUMBER" \
+            --add-label backend-prepare-failed \
+            --remove-label backend-prepared \
+            --remove-label ready-for-vps >/dev/null 2>&1 || \
+            gh issue edit "$ISSUE_NUMBER" --add-label backend-prepare-failed >/dev/null
+          gh issue comment "$ISSUE_NUMBER" \
+            --body "Backend preparation failed for $RELEASE_TAG. Production was not switched; the web update remains blocked until the exact preparation is rerun successfully."

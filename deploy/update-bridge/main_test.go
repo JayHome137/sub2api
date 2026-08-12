@@ -124,7 +124,10 @@ func TestStatusReportsAdminVerificationOutageWithoutLoggingUserOut(t *testing.T)
 }
 
 func TestReadyStatus(t *testing.T) {
-	state := &fakeGitHubState{labels: []string{"upstream-release", "ready-for-vps", "vps-preloaded", "backend-deploy-required"}}
+	state := &fakeGitHubState{labels: []string{
+		"upstream-release", "ready-for-vps", "vps-preloaded",
+		"backend-deploy-required", "backend-prepared",
+	}}
 	_, bridge := newTestBridge(t, state)
 	defer bridge.Close()
 
@@ -193,7 +196,7 @@ func TestDispatchIsFixedAndIdempotent(t *testing.T) {
 
 func TestSuccessfulWorkflowIsDeployed(t *testing.T) {
 	state := &fakeGitHubState{
-		labels: []string{"upstream-release", "ready-for-vps", "vps-preloaded"},
+		labels: []string{"upstream-release", "vps-deployed"},
 		runs: []map[string]string{{
 			"display_title": "AIFoo web update v0.1.172",
 			"status":        "completed",
@@ -214,6 +217,46 @@ func TestSuccessfulWorkflowIsDeployed(t *testing.T) {
 	}
 }
 
+func TestOldSuccessfulRunDoesNotHideNewReadyRelease(t *testing.T) {
+	state := &fakeGitHubState{
+		labels: []string{"upstream-release", "ready-for-vps", "vps-preloaded"},
+		runs: []map[string]string{{
+			"display_title": "AIFoo web update v0.1.172",
+			"status":        "completed",
+			"conclusion":    "success",
+		}},
+	}
+	_, bridge := newTestBridge(t, state)
+	defer bridge.Close()
+
+	resp := request(t, bridge.Client(), http.MethodGet, bridge.URL+"/status?release=v0.1.172", "")
+	status := decodeStatus(t, resp)
+	if status.State != "ready" || !status.CanDispatch {
+		t.Fatalf("old successful run hid a newly prepared candidate: %+v", status)
+	}
+}
+
+func TestFailedActivationRemainsRetryableAfterPreparation(t *testing.T) {
+	state := &fakeGitHubState{
+		labels: []string{
+			"upstream-release", "ready-for-vps", "vps-preloaded", "web-update-failed",
+		},
+		runs: []map[string]string{{
+			"display_title": "AIFoo web update v0.1.172",
+			"status":        "completed",
+			"conclusion":    "failure",
+		}},
+	}
+	_, bridge := newTestBridge(t, state)
+	defer bridge.Close()
+
+	resp := request(t, bridge.Client(), http.MethodGet, bridge.URL+"/status?release=v0.1.172", "")
+	status := decodeStatus(t, resp)
+	if status.State != "failed" || !status.CanDispatch {
+		t.Fatalf("prepared failed activation is not retryable: %+v", status)
+	}
+}
+
 func TestReadyStatusWaitsForVPSPreload(t *testing.T) {
 	state := &fakeGitHubState{labels: []string{"upstream-release", "ready-for-vps"}}
 	_, bridge := newTestBridge(t, state)
@@ -223,5 +266,49 @@ func TestReadyStatusWaitsForVPSPreload(t *testing.T) {
 	status := decodeStatus(t, resp)
 	if status.State != "preparing" || status.CanDispatch {
 		t.Fatalf("unpreloaded candidate became clickable: %+v", status)
+	}
+}
+
+func TestBackendReleaseWaitsForPreparedState(t *testing.T) {
+	state := &fakeGitHubState{labels: []string{
+		"upstream-release", "ready-for-vps", "vps-preloaded", "backend-deploy-required",
+	}}
+	_, bridge := newTestBridge(t, state)
+	defer bridge.Close()
+
+	resp := request(t, bridge.Client(), http.MethodGet, bridge.URL+"/status?release=v0.1.172", "")
+	status := decodeStatus(t, resp)
+	if status.State != "preparing" || status.CanDispatch || !status.BackendRequired {
+		t.Fatalf("unprepared backend candidate became clickable: %+v", status)
+	}
+}
+
+func TestPreparedBackendReleaseIsReady(t *testing.T) {
+	state := &fakeGitHubState{labels: []string{
+		"upstream-release", "ready-for-vps", "vps-preloaded",
+		"backend-deploy-required", "backend-prepared",
+	}}
+	_, bridge := newTestBridge(t, state)
+	defer bridge.Close()
+
+	resp := request(t, bridge.Client(), http.MethodGet, bridge.URL+"/status?release=v0.1.172", "")
+	status := decodeStatus(t, resp)
+	if status.State != "ready" || !status.CanDispatch || !status.BackendRequired {
+		t.Fatalf("prepared backend candidate is not clickable: %+v", status)
+	}
+}
+
+func TestBackendPreparationFailureBlocksDispatch(t *testing.T) {
+	state := &fakeGitHubState{labels: []string{
+		"upstream-release", "ready-for-vps", "vps-preloaded",
+		"backend-deploy-required", "backend-prepare-failed",
+	}}
+	_, bridge := newTestBridge(t, state)
+	defer bridge.Close()
+
+	resp := request(t, bridge.Client(), http.MethodPost, bridge.URL+"/dispatch", `{"release_tag":"v0.1.172"}`)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict || state.dispatches.Load() != 0 {
+		t.Fatalf("failed backend preparation reached dispatch: code=%d dispatches=%d", resp.StatusCode, state.dispatches.Load())
 	}
 }

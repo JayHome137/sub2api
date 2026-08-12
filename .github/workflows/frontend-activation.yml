@@ -66,6 +66,15 @@ jobs:
       name: production
       url: https://aifoo.cc.cd/login
     steps:
+      - name: Validate requested operation
+        env:
+          MODE: ${{ inputs.mode }}
+        run: |
+          case "$MODE" in
+            preload|activate) ;;
+            *) echo "mode must be preload or activate" >&2; exit 1 ;;
+          esac
+
       - name: Require repository owner approval for manual activation
         env:
           REPOSITORY_OWNER: ${{ github.repository_owner }}
@@ -84,17 +93,12 @@ jobs:
         if: inputs.mode == 'preload'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MODE: ${{ inputs.mode }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           IMAGE_DIGEST: ${{ inputs.image_digest }}
           SOURCE_SHA: ${{ inputs.source_sha }}
           ISSUE_NUMBER: ${{ inputs.issue_number }}
         run: |
           set -euo pipefail
-          case "$MODE" in
-            preload|activate) ;;
-            *) echo "mode must be preload or activate" >&2; exit 1 ;;
-          esac
           printf '%s' "$RELEASE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'
           printf '%s' "$IMAGE_DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$'
           printf '%s' "$SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$'
@@ -116,18 +120,12 @@ jobs:
           title=$(jq -r '.title' <<< "$issue_json")
           [ "$title" = "[Upstream $RELEASE_TAG] AIFoo frontend compatibility" ]
           labels=$(jq -r '.labels[].name' <<< "$issue_json")
-          printf '%s\n' "$labels" | grep -Fxq ready-for-vps
           for blocked_label in ui-review-required sync-failed vps-preload-failed; do
             if printf '%s\n' "$labels" | grep -Fxq "$blocked_label"; then
               echo "The candidate is blocked by $blocked_label" >&2
               exit 1
             fi
           done
-          if [ "$MODE" = "activate" ] \
-            && ! printf '%s\n' "$labels" | grep -Fxq vps-preloaded; then
-            echo "The candidate has not been preloaded on the VPS" >&2
-            exit 1
-          fi
 
           comments=$(gh api --paginate \
             "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/comments?per_page=100" | jq -s 'add')
@@ -162,8 +160,10 @@ jobs:
             fi
           fi
           labels=$(gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER" --jq '.labels[].name')
-          printf '%s\n' "$labels" | grep -Fxq vps-preloaded
-          for blocked_label in ui-review-required sync-failed vps-preload-failed; do
+          for required_label in ready-for-vps vps-preloaded; do
+            printf '%s\n' "$labels" | grep -Fxq "$required_label"
+          done
+          for blocked_label in ui-review-required sync-failed vps-preload-failed backend-prepare-failed backend-deploy-required; do
             if printf '%s\n' "$labels" | grep -Fxq "$blocked_label"; then
               echo "The activation target is blocked by $blocked_label" >&2
               exit 1
@@ -300,9 +300,13 @@ jobs:
               --remove-label vps-preload-failed >/dev/null 2>&1 || \
               gh issue edit "$ISSUE_NUMBER" --add-label vps-preloaded >/dev/null
             gh issue comment "$ISSUE_NUMBER" \
-              --body "The validated frontend image for $RELEASE_TAG is preloaded on the VPS (`$IMAGE_DIGEST`). No production container, Compose file, database, or backend was changed. The web button is now ready for a fast frontend-only activation."
+              --body "The validated frontend image for $RELEASE_TAG is preloaded on the VPS (`$IMAGE_DIGEST`). No production container, Compose file, database, or backend was changed. The web button remains hidden until all required preparation finishes."
           else
-            gh issue edit "$ISSUE_NUMBER" --add-label vps-preload-failed >/dev/null
+            gh issue edit "$ISSUE_NUMBER" \
+              --add-label vps-preload-failed \
+              --remove-label vps-preloaded \
+              --remove-label ready-for-vps >/dev/null 2>&1 || \
+              gh issue edit "$ISSUE_NUMBER" --add-label vps-preload-failed >/dev/null
             gh issue comment "$ISSUE_NUMBER" \
               --body "Preloading the validated frontend image for $RELEASE_TAG failed. Production was not switched; rerun the preload step after diagnosis."
             exit 1
