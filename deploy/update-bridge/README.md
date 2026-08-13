@@ -46,7 +46,3 @@ curl --fail http://127.0.0.1:8091/health
 go test ./...
 go vet ./...
 ```
-
-## 受控更新
-
-生产环境中更新 bridge 二进制或后端 helper 时，使用私有仓库的 `deploy-update-components.yml`。首次启用需由 VPS root 管理通道安装 root-owned `deploy-update-components`、签名公钥和窄 sudo 规则；后续工作流要求仓库 owner 在 `production` 上输入 `UPDATE-AIFOO-CONTROL-PLANE`，并只接收签名 manifest 验证通过的 payload。其本机备份、SHA 校验和失败回滚不涉及 Nginx、Docker Compose、数据库或 Sub2API 容器。

@@ -40,5 +40,3 @@
 ## Helper 安装边界
 
 生产 helper 固定为 `/usr/local/sbin/deploy-sub2api-backend`，须由 root 持有且 group/world 不可写。工作流用仓库 helper 的 SHA-256 做 preflight；helper 尚未按新版本更新到 VPS 时，准备流程会安全阻断，不会切换生产。
-
-`deploy-update-components.yml` 是唯一的 helper/网页更新 bridge 维护入口：只能由仓库 owner 在 `production` 显式确认后调用 VPS 上已部署的 root-owned `deploy-update-components` 维护命令。首次启用必须由 VPS root 管理通道安装该命令、root 持有的签名公钥和窄 sudo 规则；工作流只上传由 GitHub Secret 私钥签名的 manifest。它会在 SSH 前完成 bridge 的 Go 测试与构建，在写入前由 VPS 制作本机备份，随后只重启 `aifoo-update-bridge` 并验证 helper/bridge SHA 与本地 `/health`；不会操作 Docker Compose、数据库、Nginx 或 Sub2API 服务。

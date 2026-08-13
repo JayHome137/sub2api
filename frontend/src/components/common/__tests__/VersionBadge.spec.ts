@@ -105,7 +105,7 @@ describe('VersionBadge AIFoo upgrade status', () => {
     expect(appStore.fetchVersion).toHaveBeenCalledWith(false)
   })
 
-  it('shows a clean preparation state without exposing backend implementation details', async () => {
+  it('does not announce an update until background preparation is ready', async () => {
     authStore.isAdmin = true
     appStore.hasUpdate = true
     appStore.latestVersion = '0.1.170'
@@ -122,9 +122,12 @@ describe('VersionBadge AIFoo upgrade status', () => {
     await flushPromises()
     await wrapper.get('[data-testid="version-badge"]').trigger('click')
 
-    expect(wrapper.find('[data-testid="upgrade-status-preparing"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="upgrade-status-preparing"]').exists()).toBe(false)
     expect(upgradeMutations.getAIFooUpgradeStatus).toHaveBeenCalledWith('v0.1.170')
+    expect(wrapper.text()).not.toContain('version.upToDate')
+    expect(wrapper.text()).not.toContain('version.updateAvailable')
     expect(wrapper.text()).not.toContain('version.updateNow')
+    expect(wrapper.text()).not.toContain('version.viewChangelog')
     expect(wrapper.text()).not.toContain('version.rollback')
     expect(wrapper.text()).not.toContain('version.restartNow')
   })
@@ -169,7 +172,7 @@ describe('VersionBadge AIFoo upgrade status', () => {
     wrapper.unmount()
   })
 
-  it('keeps UI-related releases blocked from web dispatch', async () => {
+  it('keeps a blocked release hidden from the update prompt', async () => {
     authStore.isAdmin = true
     appStore.hasUpdate = true
     appStore.latestVersion = '0.1.170'
@@ -189,8 +192,35 @@ describe('VersionBadge AIFoo upgrade status', () => {
     await flushPromises()
     await wrapper.get('[data-testid="version-badge"]').trigger('click')
 
-    expect(wrapper.find('[data-testid="upgrade-status-ui_review_required"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="upgrade-status-ui_review_required"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('version.upToDate')
+    expect(wrapper.text()).not.toContain('version.updateAvailable')
     expect(wrapper.find('[data-testid="dispatch-aifoo-upgrade"]').exists()).toBe(false)
+  })
+
+  it('does not turn a preparation failure into an update prompt', async () => {
+    authStore.isAdmin = true
+    appStore.hasUpdate = true
+    appStore.latestVersion = '0.1.170'
+    appStore.fetchVersion.mockResolvedValue({
+      current_version: '0.1.169',
+      latest_version: '0.1.170',
+      has_update: true,
+    })
+    upgradeMutations.getAIFooUpgradeStatus.mockResolvedValue({
+      release_tag: 'v0.1.170',
+      state: 'failed',
+      can_dispatch: false,
+      backend_required: false,
+    })
+
+    const wrapper = mountBadge()
+    await flushPromises()
+    await wrapper.get('[data-testid="version-badge"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="upgrade-status-failed"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('version.updateAvailable')
+    expect(wrapper.text()).not.toContain('version.updateNow')
   })
 
   it('keeps showing an in-progress web update after the backend reaches the latest version', async () => {
