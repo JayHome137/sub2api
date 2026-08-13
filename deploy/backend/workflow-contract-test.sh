@@ -6,6 +6,7 @@ ROOT=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd)
 DEPLOY_WORKFLOW=$ROOT/.github/workflows/deploy-backend.yml
 PREPARE_WORKFLOW=$ROOT/.github/workflows/backend-preparation.yml
 PREFLIGHT_WORKFLOW=$ROOT/.github/workflows/preflight.yml
+UPDATE_COMPONENTS_WORKFLOW=$ROOT/.github/workflows/deploy-update-components.yml
 SYNC_WORKFLOW=$ROOT/.github/workflows/upstream-sync.yml
 WEB_UPDATE_WORKFLOW=$ROOT/.github/workflows/web-update.yml
 HELPER=$ROOT/deploy/backend/deploy-backend.sh
@@ -33,7 +34,8 @@ reject_text() {
 
 for file in \
   "$DEPLOY_WORKFLOW" "$PREPARE_WORKFLOW" "$PREFLIGHT_WORKFLOW" \
-  "$SYNC_WORKFLOW" "$WEB_UPDATE_WORKFLOW" "$HELPER" "$IMAGE_TEST"; do
+  "$SYNC_WORKFLOW" "$WEB_UPDATE_WORKFLOW" "$UPDATE_COMPONENTS_WORKFLOW" \
+  "$HELPER" "$IMAGE_TEST"; do
   [ -s "$file" ] || fail "required file is missing: $file"
 done
 
@@ -55,6 +57,21 @@ require_text "$SYNC_WORKFLOW" "needs.prepare.outputs.backend_deploy_required != 
 require_text "$SYNC_WORKFLOW" "needs.prepare_backend.result == 'success'"
 require_text "$SYNC_WORKFLOW" 'gh issue edit "$ISSUE_NUMBER" --add-label ready-for-vps'
 require_text "$WEB_UPDATE_WORKFLOW" 'grep -Fxq backend-prepared'
+
+# Control-plane maintenance is a separately approved path. It can replace only
+# the root-owned backend helper and web-update bridge, never the application.
+require_text "$UPDATE_COMPONENTS_WORKFLOW" 'workflow_dispatch:'
+require_text "$UPDATE_COMPONENTS_WORKFLOW" 'UPDATE-AIFOO-CONTROL-PLANE'
+require_text "$UPDATE_COMPONENTS_WORKFLOW" 'deploy-update-components preflight'
+require_text "$UPDATE_COMPONENTS_WORKFLOW" 'deploy-update-components install'
+require_text "$UPDATE_COMPONENTS_WORKFLOW" 'deploy-update-components verify'
+require_text "$UPDATE_COMPONENTS_WORKFLOW" 'deploy-update-components rollback'
+require_text "$UPDATE_COMPONENTS_WORKFLOW" 'go test ./...'
+require_text "$UPDATE_COMPONENTS_WORKFLOW" 'go vet ./...'
+reject_text "$UPDATE_COMPONENTS_WORKFLOW" 'deploy-sub2api-backend prepare'
+reject_text "$UPDATE_COMPONENTS_WORKFLOW" 'deploy-sub2api-backend deploy'
+reject_text "$UPDATE_COMPONENTS_WORKFLOW" 'docker-compose'
+reject_text "$UPDATE_COMPONENTS_WORKFLOW" 'web-update.yml'
 
 preload_gate=$(sed -n \
   '/name: Validate the exact approved candidate/,/name: Reconfirm the preloaded activation target/p' \

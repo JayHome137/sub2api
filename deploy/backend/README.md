@@ -4,7 +4,7 @@
 
 ## 按钮出现前
 
-`upstream-sync.yml` 每天北京时间 01:00 检查官方稳定 Release。候选源码、必要 CI、UI 兼容、前端镜像均通过后：
+`upstream-sync.yml` 每 3 小时（北京时间 02:17、05:17、…）检查官方稳定 Release。候选源码、必要 CI、UI 兼容、前端镜像均通过后：
 
 - 前端镜像预加载到 VPS；
 - 仅在官方后端运行时变化时，`backend-preparation.yml` 验证官方 tag、commit、不可变镜像和 migration 计划；
@@ -40,3 +40,5 @@
 ## Helper 安装边界
 
 生产 helper 固定为 `/usr/local/sbin/deploy-sub2api-backend`，须由 root 持有且 group/world 不可写。工作流用仓库 helper 的 SHA-256 做 preflight；helper 尚未按新版本更新到 VPS 时，准备流程会安全阻断，不会切换生产。
+
+`deploy-update-components.yml` 是唯一的 helper/网页更新 bridge 维护入口：只能由仓库 owner 在 `production` 显式确认后调用 VPS 上已部署的 root-owned `deploy-update-components` 维护命令。首次启用必须由 VPS root 管理通道安装该命令、root 持有的签名公钥和窄 sudo 规则；工作流只上传由 GitHub Secret 私钥签名的 manifest。它会在 SSH 前完成 bridge 的 Go 测试与构建，在写入前由 VPS 制作本机备份，随后只重启 `aifoo-update-bridge` 并验证 helper/bridge SHA 与本地 `/health`；不会操作 Docker Compose、数据库、Nginx 或 Sub2API 服务。

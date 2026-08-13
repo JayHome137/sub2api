@@ -14,6 +14,7 @@ MACOS_SHELL_WORKFLOW=$ROOT/.github/workflows/macos-shell-ci.yml
 DEPLOY_WORKFLOW=$ROOT/.github/workflows/deploy.yml
 BACKEND_DEPLOY_WORKFLOW=$ROOT/.github/workflows/deploy-backend.yml
 BACKEND_PREPARATION_WORKFLOW=$ROOT/.github/workflows/backend-preparation.yml
+UPDATE_COMPONENTS_WORKFLOW=$ROOT/.github/workflows/deploy-update-components.yml
 WEB_UPDATE_WORKFLOW=$ROOT/.github/workflows/web-update.yml
 FRONTEND_ACTIVATION_WORKFLOW=$ROOT/.github/workflows/frontend-activation.yml
 PREFLIGHT_WORKFLOW=$ROOT/.github/workflows/preflight.yml
@@ -102,8 +103,8 @@ require_text "$SYNC_WORKFLOW" "The exact validated candidate image is now being 
 reject_text "$SYNC_WORKFLOW" "final_frontend:"
 require_text "$SYNC_WORKFLOW" "group: aifoo-production-mutation"
 require_text "$SYNC_WORKFLOW" "statuses: write"
-require_text "$SYNC_WORKFLOW" "# 01:00 Asia/Shanghai (17:00 UTC) every day."
-require_text "$SYNC_WORKFLOW" "- cron: '0 17 * * *'"
+require_text "$SYNC_WORKFLOW" "# Every 3 hours, offset from busy whole-hour slots (Asia/Shanghai 02:17, 05:17, ...)."
+require_text "$SYNC_WORKFLOW" "- cron: '17 */3 * * *'"
 
 VM_RUNNER='[self-hosted, linux, x64, aifoo-vm]'
 GITHUB_RUNNER='ubuntu-latest'
@@ -114,6 +115,7 @@ for workflow in \
   "$VALIDATE_WORKFLOW" \
   "$BACKEND_DEPLOY_WORKFLOW" \
   "$BACKEND_PREPARATION_WORKFLOW" \
+  "$UPDATE_COMPONENTS_WORKFLOW" \
   "$WEB_UPDATE_WORKFLOW" \
   "$FRONTEND_ACTIVATION_WORKFLOW"; do
   require_runner_only "$workflow" "$VM_RUNNER"
@@ -125,6 +127,30 @@ for workflow in \
   require_runner_only "$workflow" "$GITHUB_RUNNER"
 done
 require_text "$BACKEND_CI_WORKFLOW" "if: inputs.checkout_ref != '' && inputs.run_macos"
+
+require_text "$UPDATE_COMPONENTS_WORKFLOW" 'workflow_dispatch:'
+reject_trigger "$UPDATE_COMPONENTS_WORKFLOW" schedule
+reject_trigger "$UPDATE_COMPONENTS_WORKFLOW" push
+reject_trigger "$UPDATE_COMPONENTS_WORKFLOW" pull_request
+require_text "$UPDATE_COMPONENTS_WORKFLOW" 'UPDATE-AIFOO-CONTROL-PLANE'
+require_text "$UPDATE_COMPONENTS_WORKFLOW" 'Only the repository owner can update VPS control-plane components'
+require_text "$UPDATE_COMPONENTS_WORKFLOW" "GITHUB_REF"
+require_text "$UPDATE_COMPONENTS_WORKFLOW" 'go test ./...'
+require_text "$UPDATE_COMPONENTS_WORKFLOW" 'go vet ./...'
+require_text "$UPDATE_COMPONENTS_WORKFLOW" 'actions/setup-go@v6'
+require_text "$UPDATE_COMPONENTS_WORKFLOW" 'deploy-update-components preflight'
+require_text "$UPDATE_COMPONENTS_WORKFLOW" 'deploy-update-components install'
+require_text "$UPDATE_COMPONENTS_WORKFLOW" 'deploy-update-components verify'
+require_text "$UPDATE_COMPONENTS_WORKFLOW" 'deploy-update-components rollback'
+require_text "$UPDATE_COMPONENTS_WORKFLOW" 'ARCHIVE_SHA'
+require_text "$UPDATE_COMPONENTS_WORKFLOW" 'No Docker Compose, database, Nginx, or Sub2API service command is issued by this workflow.'
+reject_text "$UPDATE_COMPONENTS_WORKFLOW" 'deploy-sub2api-backend prepare'
+reject_text "$UPDATE_COMPONENTS_WORKFLOW" 'deploy-sub2api-backend deploy'
+reject_text "$UPDATE_COMPONENTS_WORKFLOW" 'web-update.yml'
+reject_text "$UPDATE_COMPONENTS_WORKFLOW" 'docker-compose'
+reject_text "$UPDATE_COMPONENTS_WORKFLOW" 'systemctl restart sub2api'
+reject_text "$UPDATE_COMPONENTS_WORKFLOW" 'systemctl restart nginx'
+reject_text "$UPDATE_COMPONENTS_WORKFLOW" 'nginx -'
 
 for file in \
   "$WEB_UPDATE_WORKFLOW" \
