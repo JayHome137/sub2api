@@ -59,6 +59,8 @@ jobs:
       blocked: ${{ steps.prepare.outputs.blocked }}
       final_retry: ${{ steps.prepare.outputs.final_retry }}
       final_sha: ${{ steps.prepare.outputs.final_sha }}
+      frontend_preloaded: ${{ steps.prepare.outputs.frontend_preloaded }}
+      backend_prepared: ${{ steps.prepare.outputs.backend_prepared }}
     steps:
       - name: Checkout AIFoo production history
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -95,6 +97,8 @@ jobs:
           echo "blocked=false" >> "$GITHUB_OUTPUT"
           echo "final_retry=false" >> "$GITHUB_OUTPUT"
           echo "final_sha=" >> "$GITHUB_OUTPUT"
+          echo "frontend_preloaded=false" >> "$GITHUB_OUTPUT"
+          echo "backend_prepared=false" >> "$GITHUB_OUTPUT"
 
           if [ "$RETRY_FINAL" = "true" ] \
             && [ "$RETRY_EXISTING" = "true" ]; then
@@ -378,10 +382,11 @@ jobs:
             fi
 
             gh issue reopen "$issue_number" >/dev/null 2>&1 || true
-            gh issue edit "$issue_number" \
-              --add-label upstream-release \
-              --add-label candidate-testing >/dev/null
-            for stale_label in ready-for-vps sync-failed vps-preloaded vps-preload-failed backend-prepared backend-prepare-failed backend-deployed web-update-running web-update-failed; do
+            gh issue edit "$issue_number" --add-label upstream-release >/dev/null
+            if [ "$frontend_preloaded" != "true" ]; then
+              gh issue edit "$issue_number" --add-label candidate-testing >/dev/null
+            fi
+            for stale_label in ready-for-vps sync-failed vps-preload-failed backend-prepare-failed backend-deployed web-update-running web-update-failed; do
               gh issue edit "$issue_number" --remove-label "$stale_label" >/dev/null 2>&1 || true
             done
             echo "release_detected=true" >> "$GITHUB_OUTPUT"
@@ -390,6 +395,8 @@ jobs:
             echo "issue_number=$issue_number" >> "$GITHUB_OUTPUT"
             echo "final_retry=true" >> "$GITHUB_OUTPUT"
             echo "final_sha=$production_sha" >> "$GITHUB_OUTPUT"
+            echo "frontend_preloaded=$frontend_preloaded" >> "$GITHUB_OUTPUT"
+            echo "backend_prepared=$backend_prepared" >> "$GITHUB_OUTPUT"
             {
               echo "### Final delivery retry"
               echo
@@ -679,7 +686,9 @@ jobs:
 
   recover_final:
     needs: prepare
-    if: needs.prepare.outputs.final_retry == 'true'
+    if: >-
+      needs.prepare.outputs.final_retry == 'true' &&
+      needs.prepare.outputs.frontend_preloaded != 'true'
     runs-on: [self-hosted, linux, x64, aifoo-vm]
     permissions:
       contents: read
@@ -755,7 +764,8 @@ jobs:
     if: >-
       always() &&
       (needs.gate.outputs.merged == 'true' ||
-      needs.prepare.outputs.final_retry == 'true')
+      (needs.prepare.outputs.final_retry == 'true' &&
+      needs.prepare.outputs.frontend_preloaded != 'true'))
     runs-on: [self-hosted, linux, x64, aifoo-vm]
     permissions:
       contents: read
@@ -851,7 +861,11 @@ jobs:
       - prepare
       - gate
       - finalize_frontend
-    if: always() && needs.prepare.outputs.release_detected == 'true'
+    if: >-
+      always() &&
+      needs.prepare.outputs.release_detected == 'true' &&
+      (needs.prepare.outputs.final_retry != 'true' ||
+      needs.prepare.outputs.frontend_preloaded != 'true')
     runs-on: [self-hosted, linux, x64, aifoo-vm]
     steps:
       - name: Update release status issue
@@ -937,6 +951,7 @@ jobs:
       needs.notify.result == 'success' &&
       needs.prepare.outputs.release_detected == 'true' &&
       (needs.gate.outputs.merged == 'true' || needs.prepare.outputs.final_retry == 'true') &&
+      needs.prepare.outputs.frontend_preloaded != 'true' &&
       needs.finalize_frontend.result == 'success' &&
       needs.finalize_frontend.outputs.image_digest != ''
     uses: ./.github/workflows/frontend-activation.yml
@@ -956,16 +971,21 @@ jobs:
       - notify
     if: >-
       always() &&
-      needs.notify.result == 'success' &&
       needs.prepare.outputs.backend_deploy_required == 'true' &&
+      needs.prepare.outputs.backend_prepared != 'true' &&
       needs.prepare.outputs.release_detected == 'true' &&
       (needs.gate.outputs.merged == 'true' || needs.prepare.outputs.final_retry == 'true') &&
-      needs.finalize_frontend.result == 'success'
+      (needs.notify.result == 'success' ||
+      (needs.prepare.outputs.final_retry == 'true' &&
+      needs.prepare.outputs.frontend_preloaded == 'true')) &&
+      (needs.finalize_frontend.result == 'success' ||
+      (needs.prepare.outputs.final_retry == 'true' &&
+      needs.prepare.outputs.frontend_preloaded == 'true'))
     uses: ./.github/workflows/backend-preparation.yml
     with:
       release_tag: ${{ needs.prepare.outputs.release_tag }}
       image_digest: ${{ needs.prepare.outputs.backend_image_digest }}
-      source_sha: ${{ needs.finalize_frontend.outputs.source_sha }}
+      source_sha: ${{ needs.prepare.outputs.final_retry == 'true' && needs.prepare.outputs.final_sha || needs.finalize_frontend.outputs.source_sha }}
       release_commit: ${{ needs.prepare.outputs.release_commit }}
       expected_migrations: ${{ needs.prepare.outputs.expected_migrations }}
       issue_number: ${{ needs.prepare.outputs.issue_number }}
@@ -979,9 +999,11 @@ jobs:
       - prepare_backend
     if: >-
       always() &&
-      needs.preload_frontend.result == 'success' &&
+      (needs.preload_frontend.result == 'success' ||
+      needs.prepare.outputs.frontend_preloaded == 'true') &&
       (needs.prepare.outputs.backend_deploy_required != 'true' ||
-      needs.prepare_backend.result == 'success')
+      needs.prepare_backend.result == 'success' ||
+      needs.prepare.outputs.backend_prepared == 'true')
     runs-on: [self-hosted, linux, x64, aifoo-vm]
     timeout-minutes: 5
     steps:
