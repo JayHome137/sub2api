@@ -2,8 +2,8 @@ name: Sync official Sub2API releases
 
 on:
   schedule:
-    # 01:00 Asia/Shanghai (17:00 UTC) every day.
-    - cron: '0 17 * * *'
+    # Every 3 hours, offset from busy whole-hour slots (Asia/Shanghai 02:17, 05:17, ...).
+    - cron: '17 */3 * * *'
   workflow_dispatch:
     inputs:
       release_tag:
@@ -285,7 +285,7 @@ jobs:
           issue_title="[Upstream $tag] AIFoo frontend compatibility"
 
           ensure_labels() {
-            for label in upstream-release candidate-testing ui-review-required sync-failed ready-for-vps vps-preloaded vps-preload-failed backend-deploy-required backend-deployed backend-production-state; do
+            for label in upstream-release candidate-testing ui-review-required sync-failed ready-for-vps vps-preloaded vps-preload-failed backend-deploy-required backend-deployed backend-prepared backend-prepare-failed backend-production-state web-update-running web-update-failed; do
               case "$label" in
                 upstream-release) color=0969DA ;;
                 candidate-testing) color=FBCA04 ;;
@@ -296,7 +296,11 @@ jobs:
                 vps-preload-failed) color=B60205 ;;
                 backend-deploy-required) color=5319E7 ;;
                 backend-deployed) color=0E8A16 ;;
+                backend-prepared) color=0E8A16 ;;
+                backend-prepare-failed) color=B60205 ;;
                 backend-production-state) color=1D76DB ;;
+                web-update-running) color=1D76DB ;;
+                web-update-failed) color=B60205 ;;
               esac
               gh label create "$label" --color "$color" --force >/dev/null
             done
@@ -324,16 +328,32 @@ jobs:
             candidate_sha=$(git ls-remote --heads origin "refs/heads/$branch" \
               | awk '{print $1}' | sed -n '1p')
             ready_for_vps=false
+            frontend_preloaded=false
+            backend_prepared=false
             if [ -n "$issue_number" ] \
-              && gh issue view "$issue_number" --json labels --jq '.labels[].name' \
-                | grep -Fxq ready-for-vps; then
-              ready_for_vps=true
+              && issue_labels=$(gh issue view "$issue_number" --json labels --jq '.labels[].name'); then
+              if printf '%s\n' "$issue_labels" | grep -Fxq ready-for-vps; then
+                ready_for_vps=true
+              fi
+              if printf '%s\n' "$issue_labels" | grep -Fxq vps-preloaded; then
+                frontend_preloaded=true
+              fi
+              if printf '%s\n' "$issue_labels" | grep -Fxq backend-prepared; then
+                backend_prepared=true
+              fi
+            fi
+            fully_prepared=false
+            if [ "$ready_for_vps" = "true" ] \
+              && [ "$frontend_preloaded" = "true" ] \
+              && { [ "$backend_deploy_required" != "true" ] \
+                || [ "$backend_prepared" = "true" ]; }; then
+              fully_prepared=true
             fi
 
             if [ "$RETRY_FINAL" != "true" ] \
               && { [ -z "$issue_number" ] \
                 || [ "$candidate_sha" != "$production_sha" ] \
-                || [ "$ready_for_vps" = "true" ]; }; then
+                || [ "$fully_prepared" = "true" ]; }; then
               echo "production already contains official stable release $tag"
               {
                 echo "### Stable release check"
@@ -361,7 +381,7 @@ jobs:
             gh issue edit "$issue_number" \
               --add-label upstream-release \
               --add-label candidate-testing >/dev/null
-            for stale_label in ready-for-vps sync-failed; do
+            for stale_label in ready-for-vps sync-failed vps-preloaded vps-preload-failed backend-prepared backend-prepare-failed backend-deployed web-update-running web-update-failed; do
               gh issue edit "$issue_number" --remove-label "$stale_label" >/dev/null 2>&1 || true
             done
             echo "release_detected=true" >> "$GITHUB_OUTPUT"
@@ -449,7 +469,7 @@ jobs:
             git push origin "$branch"
           fi
 
-          for stale_label in ready-for-vps sync-failed ui-review-required; do
+          for stale_label in ready-for-vps sync-failed ui-review-required vps-preloaded vps-preload-failed backend-prepared backend-prepare-failed backend-deployed web-update-running web-update-failed; do
             gh issue edit "$issue_number" --remove-label "$stale_label" >/dev/null 2>&1 || true
           done
 
@@ -881,8 +901,7 @@ jobs:
             exit 1
           fi
 
-          gh issue edit "$ISSUE_NUMBER" --add-label ready-for-vps >/dev/null
-          for label in candidate-testing ui-review-required sync-failed vps-preloaded vps-preload-failed; do
+          for label in candidate-testing ui-review-required sync-failed vps-preloaded vps-preload-failed backend-prepared backend-prepare-failed; do
             gh issue edit "$ISSUE_NUMBER" --remove-label "$label" >/dev/null 2>&1 || true
           done
           comment_file=$(mktemp)
@@ -896,14 +915,14 @@ jobs:
             echo "- Official backend image: \`$BACKEND_IMAGE_REF\`"
             echo "- Backend deployment required: \`$BACKEND_DEPLOY_REQUIRED\`"
             echo "- Expected database migrations: \`$EXPECTED_MIGRATIONS\`"
-            echo "- Frontend status: \`ready-for-vps\`"
+            echo "- Frontend status: \`validated; preload pending\`"
             if [ "$BACKEND_DEPLOY_REQUIRED" = "true" ]; then
-              echo "- Backend status: \`pending manual owner-approved deployment\`"
+              echo "- Backend status: \`validation and preload pending\`"
             else
               echo "- Backend status: \`no official backend runtime input changed\`"
             fi
             echo
-            echo "The validated frontend image will now be preloaded on the VPS without changing the running service. After preload succeeds, the web button only activates that image and performs one lightweight health check. Backend deployment remains separate and only runs when the official release requires it."
+            echo "The validated frontend and, when required, official backend will now be prepared on the VPS without changing production. The web button remains hidden until every required artifact is ready."
           } > "$comment_file"
           gh issue comment "$ISSUE_NUMBER" --body-file "$comment_file"
 
@@ -928,3 +947,63 @@ jobs:
       source_sha: ${{ needs.finalize_frontend.outputs.source_sha }}
       issue_number: ${{ needs.prepare.outputs.issue_number }}
     secrets: inherit
+
+  prepare_backend:
+    needs:
+      - prepare
+      - gate
+      - finalize_frontend
+      - notify
+    if: >-
+      always() &&
+      needs.notify.result == 'success' &&
+      needs.prepare.outputs.backend_deploy_required == 'true' &&
+      needs.prepare.outputs.release_detected == 'true' &&
+      (needs.gate.outputs.merged == 'true' || needs.prepare.outputs.final_retry == 'true') &&
+      needs.finalize_frontend.result == 'success'
+    uses: ./.github/workflows/backend-preparation.yml
+    with:
+      release_tag: ${{ needs.prepare.outputs.release_tag }}
+      image_digest: ${{ needs.prepare.outputs.backend_image_digest }}
+      source_sha: ${{ needs.finalize_frontend.outputs.source_sha }}
+      release_commit: ${{ needs.prepare.outputs.release_commit }}
+      expected_migrations: ${{ needs.prepare.outputs.expected_migrations }}
+      issue_number: ${{ needs.prepare.outputs.issue_number }}
+    secrets: inherit
+
+  ready_for_update:
+    needs:
+      - prepare
+      - finalize_frontend
+      - preload_frontend
+      - prepare_backend
+    if: >-
+      always() &&
+      needs.preload_frontend.result == 'success' &&
+      (needs.prepare.outputs.backend_deploy_required != 'true' ||
+      needs.prepare_backend.result == 'success')
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
+    timeout-minutes: 5
+    steps:
+      - name: Expose the web update only after all required preparation
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ needs.prepare.outputs.issue_number }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+          BACKEND_DEPLOY_REQUIRED: ${{ needs.prepare.outputs.backend_deploy_required }}
+        run: |
+          set -euo pipefail
+          labels=$(gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER" --jq '.labels[].name')
+          printf '%s\n' "$labels" | grep -Fxq vps-preloaded
+          if [ "$BACKEND_DEPLOY_REQUIRED" = "true" ]; then
+            printf '%s\n' "$labels" | grep -Fxq backend-prepared
+          fi
+          for blocked_label in ui-review-required sync-failed vps-preload-failed backend-prepare-failed; do
+            if printf '%s\n' "$labels" | grep -Fxq "$blocked_label"; then
+              echo "The release is still blocked by $blocked_label" >&2
+              exit 1
+            fi
+          done
+          gh issue edit "$ISSUE_NUMBER" --add-label ready-for-vps >/dev/null
+          gh issue comment "$ISSUE_NUMBER" \
+            --body "All required preparation completed for $RELEASE_TAG. The web one-click update is now available; the click path only performs guarded production switching, a migration-aware PostgreSQL data backup when required, and lightweight health checks."

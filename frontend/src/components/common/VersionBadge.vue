@@ -73,9 +73,12 @@
                     ✓
                   </span>
                 </div>
-                <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">
+                <p
+                  v-if="showUpgradeCandidate || !upstreamHasUpdate"
+                  class="mt-1 text-xs text-gray-500 dark:text-dark-400"
+                >
                   {{
-                    needsUpgradeAttention && latestVersion
+                    showUpgradeCandidate && latestVersion
                       ? `${t('version.latestVersion')}: v${latestVersion}`
                       : t('version.upToDate')
                   }}
@@ -153,21 +156,8 @@
                 </button>
               </div>
 
-              <div
-                v-else-if="hasUpdate"
-                data-testid="upgrade-status-detected"
-                class="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/50 dark:bg-amber-900/20"
-              >
-                <p class="text-sm font-medium text-amber-700 dark:text-amber-300">
-                  {{ t('version.updateAvailable') }}
-                </p>
-                <p class="mt-1 text-xs text-amber-600/80 dark:text-amber-400/80">
-                  v{{ latestVersion }}
-                </p>
-              </div>
-
               <a
-                v-if="hasUpdate && officialReleaseUrl"
+                v-if="showUpgradeCandidate && officialReleaseUrl"
                 :href="officialReleaseUrl"
                 target="_blank"
                 rel="noopener noreferrer"
@@ -224,7 +214,7 @@ const isAdmin = computed(() => authStore.isAdmin)
 const loading = computed(() => appStore.versionLoading || bridgeLoading.value || dispatching.value)
 const displayVersion = computed(() => appStore.currentVersion || props.version || '')
 const latestVersion = computed(() => appStore.latestVersion || '')
-const hasUpdate = computed(() => Boolean(appStore.hasUpdate && latestVersion.value))
+const upstreamHasUpdate = computed(() => Boolean(appStore.hasUpdate && latestVersion.value))
 const officialReleaseUrl = computed(() => sanitizeUrl(appStore.releaseInfo?.html_url || ''))
 const canDispatch = computed(() => Boolean(upgradeStatus.value?.can_dispatch && !dispatching.value))
 const upgradeState = computed<AIFooUpgradeState>(
@@ -234,12 +224,12 @@ const upgradeStateTestId = computed(() => `upgrade-status-${upgradeState.value}`
 const upgradeStateTitleKey = computed(() => `version.state.${upgradeState.value}`)
 const upgradeStateHintKey = computed(() => `version.stateHint.${upgradeState.value}`)
 const showUpgradeCandidate = computed(
-  () => hasUpdate.value || Boolean(upgradeStatus.value && upgradeState.value !== 'preparing')
+  () =>
+    Boolean(upgradeStatus.value?.can_dispatch) ||
+    ['deploying', 'deployed'].includes(upgradeState.value)
 )
 const needsUpgradeAttention = computed(
-  () =>
-    hasUpdate.value ||
-    ['ready', 'deploying', 'failed', 'ui_review_required'].includes(upgradeState.value)
+  () => Boolean(upgradeStatus.value?.can_dispatch) || upgradeState.value === 'deploying'
 )
 const upgradeStateClass = computed(() => {
   switch (upgradeState.value) {
