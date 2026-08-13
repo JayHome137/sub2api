@@ -191,7 +191,7 @@ jobs:
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes \
             "$VPS_USER@$VPS_HOST" \
-            "sudo -n /usr/local/sbin/deploy-sub2api-backend prepared-status '$IMAGE_DIGEST' '$RELEASE_TAG' '$RELEASE_COMMIT' '$EXPECTED_MIGRATIONS'")
+            "sudo -n /usr/local/sbin/deploy-sub2api-backend preflight prepared '$IMAGE_DIGEST' '$RELEASE_TAG' '$RELEASE_COMMIT' '$EXPECTED_MIGRATIONS'")
           printf '%s\n' "$output"
           printf '%s\n' "$output" | grep -Eq '^prepared_state=(ready|already-current)$'
 
@@ -212,7 +212,7 @@ jobs:
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes \
             "$VPS_USER@$VPS_HOST" \
-            "sudo -n /usr/local/sbin/deploy-sub2api-backend backup-data '$IMAGE_DIGEST' '$RELEASE_TAG' '$RELEASE_COMMIT' '$EXPECTED_MIGRATIONS'")
+            "sudo -n /usr/local/sbin/deploy-sub2api-backend backup '$IMAGE_DIGEST' '$RELEASE_TAG' '$RELEASE_COMMIT' '$EXPECTED_MIGRATIONS'")
           printf '%s\n' "$output"
           backup_id=$(printf '%s\n' "$output" | sed -n 's/^backup_id=//p' | tail -n 1)
           if printf '%s\n' "$output" | grep -Fxq 'backup_policy=already-current'; then

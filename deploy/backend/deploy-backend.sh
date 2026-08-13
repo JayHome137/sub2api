@@ -1002,11 +1002,15 @@ if [ "${AIFOO_BACKEND_DEPLOY_LIBRARY_ONLY:-0}" != "1" ]; then
   command=${1:-}
   case "$command" in
     preflight)
-      preflight_readonly "${2:-}" "${3:-}" "${4:-}" "${5:-}" "${6:-none}"
+      if [ "${2:-}" = "prepared" ]; then
+        prepared_backend_status "${3:-}" "${4:-}" "${5:-}" "${6:-}"
+      else
+        preflight_readonly "${2:-}" "${3:-}" "${4:-}" "${5:-}" "${6:-none}"
+      fi
       ;;
     stage)
       acquire_mutation_lock
-      stage_image "${2:-}" "${3:-}" "${4:-}"
+      prepare_backend "${2:-}" "${3:-}" "${4:-}" "${5:-none}"
       ;;
     prepare)
       acquire_mutation_lock
@@ -1019,6 +1023,10 @@ if [ "${AIFOO_BACKEND_DEPLOY_LIBRARY_ONLY:-0}" != "1" ]; then
       acquire_mutation_lock
       create_data_backup "${2:-}" "${3:-}" "${4:-}" "${5:-}"
       ;;
+    backup)
+      acquire_mutation_lock
+      create_data_backup "${2:-}" "${3:-}" "${4:-}" "${5:-}"
+      ;;
     deploy)
       acquire_mutation_lock
       deploy_backend "${2:-}" "${3:-}" "${4:-}" "${5:-}" "${6:-}"
@@ -1028,7 +1036,7 @@ if [ "${AIFOO_BACKEND_DEPLOY_LIBRARY_ONLY:-0}" != "1" ]; then
       restore_image "${2:-}" "${3:-}" "${4:-}" "${5:-}" "${6:-}"
       ;;
     *)
-      echo "Usage: $0 {preflight <helper-sha256> <digest> <release-tag> <release-commit> [migrations]|stage <digest> <release-tag> <release-commit>|prepare <digest> <release-tag> <release-commit> <migrations>|prepared-status <digest> <release-tag> <release-commit> <migrations>|backup-data <digest> <release-tag> <release-commit> <migrations>|deploy <digest> <release-tag> <release-commit> <migrations> <data-backup-id>|restore-image <digest> <release-tag> <release-commit> <migrations> <data-backup-id>}" >&2
+      echo "Usage: $0 {preflight <helper-sha256> <digest> <release-tag> <release-commit> [migrations]|preflight prepared <digest> <release-tag> <release-commit> <migrations>|stage <digest> <release-tag> <release-commit> [migrations]|prepare <digest> <release-tag> <release-commit> <migrations>|prepared-status <digest> <release-tag> <release-commit> <migrations>|backup <digest> <release-tag> <release-commit> <migrations>|backup-data <digest> <release-tag> <release-commit> <migrations>|deploy <digest> <release-tag> <release-commit> <migrations> <data-backup-id>|restore-image <digest> <release-tag> <release-commit> <migrations> <data-backup-id>}" >&2
       exit 1
       ;;
   esac
