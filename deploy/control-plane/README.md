@@ -21,7 +21,7 @@ sudo ./install-control-plane.sh \
 
 bootstrap 必须从将要触发工作流的同一 `production` revision 执行；控制面 helper 自身变更后也必须重复 bootstrap，工作流会拒绝不匹配的 helper SHA。
 
-仓库中的 `component-signing-public.pem` 是本次 trust anchor（SHA-256：`44bd0b5ae65b03b37fa378e37f991cfa4608cd685687e8f7b60e923d89b008aa`）。将对应私钥以原 PEM 内容写入 GitHub Secret `AIFOO_CONTROL_PLANE_SIGNING_KEY`；私钥不进入仓库、Issue、日志或 VPS。
+仓库中的 `component-signing-public.pem` 是本次 trust anchor（SHA-256：`a27c123f3a7e66840c917f897ff086852e945cf1328cda7086c31e1325951184`）。将对应私钥以原 PEM 内容写入 GitHub Secret `AIFOO_CONTROL_PLANE_SIGNING_KEY`；私钥不进入仓库、Issue、日志或 VPS。
 
 ## 后续受控更新
 
