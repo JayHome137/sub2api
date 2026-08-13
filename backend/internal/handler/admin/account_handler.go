@@ -82,6 +82,10 @@ func (h *AccountHandler) SetOpenCodeGoUsageService(usage *service.OpenCodeGoUsag
 	h.opencodeGoUsage = usage
 }
 
+func (h *AccountHandler) SetOpenCodeGoUsageService(usage *service.OpenCodeGoUsageService) {
+	h.opencodeGoUsage = usage
+}
+
 // NewAccountHandler creates a new admin account handler
 func NewAccountHandler(
 	adminService service.AdminService,
