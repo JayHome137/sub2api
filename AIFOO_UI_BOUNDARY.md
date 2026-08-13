@@ -6,6 +6,34 @@ This fork exists to embed the AIFoo interface directly into the Sub2API
 frontend source. The result must build and load as one frontend application;
 it must not depend on a runtime overlay or a second UI layer.
 
+## Upstream Alignment Rule
+
+The official upstream update behavior is the default contract. Do not add an
+update, backup, migration, rollback, deployment, or safety step unless it
+exists in the official upstream flow or the user explicitly requests it.
+
+The only approved fork-specific update-flow differences are:
+
+- Merge each official stable release into the source-integrated AIFoo UI.
+- Complete the requested validation and image preparation before showing the
+  update prompt.
+- Show the update state in the existing web UI and dispatch the approved
+  production switch from that button.
+
+These three differences are mandatory because they are the reason this fork
+exists. Upstream alignment must not remove or bypass them.
+
+Successful validation evidence may be reused across a replacement PR when the
+relevant code, inputs, conditions, environment, base, workflow contract, and
+candidate content are unchanged. Re-run only failed, skipped, not-yet-run, or
+downstream checks affected by the fix; a new PR number alone is not a reason to
+repeat a successful check.
+
+These differences must not introduce database dumps, backup identifiers,
+backup-only gates, database restore automation, or repeated validation after
+the update button is clicked. If an older rule conflicts with this section,
+this section wins and the smallest conforming change must be used.
+
 ## In Scope
 
 - AIFoo UI source under `frontend/src` and its frontend assets.
@@ -13,7 +41,7 @@ it must not depend on a runtime overlay or a second UI layer.
 - Resolving upstream conflicts that affect the embedded UI or its API contract.
 - Frontend lint, type checks, build, focused browser checks, and the private
   frontend image.
-- Separate, manually approved frontend deployment with backup and rollback.
+- Separate, manually approved activation of the prepared update.
 
 ## Out Of Scope By Default
 
@@ -59,8 +87,9 @@ an existing UI contract working.
 2. Merge the exact upstream release commit into a candidate branch.
 3. Resolve only UI or UI-contract conflicts.
 4. Run focused frontend validation and build the private frontend image.
-5. Record the result for review; do not deploy automatically.
-6. Deploy to the VPS only after explicit approval, with backup and rollback.
+5. Record the result and expose the web update only after preparation; do not
+   switch production automatically.
+6. Activate the prepared update on the VPS only after explicit approval.
 
 This boundary is the default for future work. Requirements that exceed it
 must be called out before code or infrastructure changes begin.

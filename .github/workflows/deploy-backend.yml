@@ -195,39 +195,6 @@ jobs:
           printf '%s\n' "$output"
           printf '%s\n' "$output" | grep -Eq '^prepared_state=(ready|already-current)$'
 
-      - name: Back up PostgreSQL only when migrations will run
-        id: backup
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
-          RELEASE_COMMIT: ${{ inputs.release_commit }}
-          IMAGE_DIGEST: ${{ inputs.image_digest }}
-          EXPECTED_MIGRATIONS: ${{ inputs.expected_migrations }}
-        run: |
-          set -euo pipefail
-          output=$(ssh \
-            -i "$RUNNER_TEMP/ssh/id_ed25519" \
-            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
-            -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes \
-            "$VPS_USER@$VPS_HOST" \
-            "sudo -n /usr/local/sbin/deploy-sub2api-backend backup '$IMAGE_DIGEST' '$RELEASE_TAG' '$RELEASE_COMMIT' '$EXPECTED_MIGRATIONS'")
-          printf '%s\n' "$output"
-          backup_id=$(printf '%s\n' "$output" | sed -n 's/^backup_id=//p' | tail -n 1)
-          if printf '%s\n' "$output" | grep -Fxq 'backup_policy=already-current'; then
-            [ "$backup_id" = none ]
-          elif [ "$EXPECTED_MIGRATIONS" = none ]; then
-            [ "$backup_id" = none ]
-            printf '%s\n' "$output" | grep -Fxq 'backup_policy=none'
-          else
-            printf '%s' "$backup_id" \
-              | grep -Eq '^[0-9]{8}-[0-9]{6}-[A-Za-z0-9]{6}-postgres-v[0-9]+\.[0-9]+\.[0-9]+$'
-            printf '%s\n' "$output" | grep -Fxq 'backup_verified=true'
-            printf '%s\n' "$output" | grep -Fxq 'backup_policy=postgresql'
-          fi
-          echo "backup_id=$backup_id" >> "$GITHUB_OUTPUT"
-
       - name: Reconfirm production revision before switching
         run: |
           production_sha=$(git ls-remote origin refs/heads/production | awk '{print $1}')
@@ -237,7 +204,6 @@ jobs:
           }
 
       - name: Switch only the prepared official backend service
-        id: switch
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
@@ -245,7 +211,6 @@ jobs:
           RELEASE_COMMIT: ${{ inputs.release_commit }}
           IMAGE_DIGEST: ${{ inputs.image_digest }}
           EXPECTED_MIGRATIONS: ${{ inputs.expected_migrations }}
-          DATA_BACKUP_ID: ${{ steps.backup.outputs.backup_id }}
         run: |
           ssh \
             -i "$RUNNER_TEMP/ssh/id_ed25519" \
@@ -255,38 +220,12 @@ jobs:
             -o ServerAliveInterval=15 \
             -o ServerAliveCountMax=3 \
             "$VPS_USER@$VPS_HOST" \
-            "sudo -n /usr/local/sbin/deploy-sub2api-backend deploy '$IMAGE_DIGEST' '$RELEASE_TAG' '$RELEASE_COMMIT' '$EXPECTED_MIGRATIONS' '$DATA_BACKUP_ID'"
+            "sudo -n /usr/local/sbin/deploy-sub2api-backend deploy '$IMAGE_DIGEST' '$RELEASE_TAG' '$RELEASE_COMMIT' '$EXPECTED_MIGRATIONS'"
 
       - name: Perform one public backend health check
         run: |
           curl --fail --silent --show-error --connect-timeout 5 --max-time 15 \
             https://aifoo.cc.cd/health | grep -q '"status":"ok"'
-
-      - name: Close the automatic backend restore gate
-        id: backend-restore-gate
-        run: echo "passed=true" >> "$GITHUB_OUTPUT"
-
-      - name: Restore the prepared previous image after activation failure
-        if: >-
-          (failure() || cancelled()) &&
-          steps.switch.outcome == 'success' &&
-          steps.backend-restore-gate.outputs.passed != 'true'
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
-          RELEASE_COMMIT: ${{ inputs.release_commit }}
-          IMAGE_DIGEST: ${{ inputs.image_digest }}
-          EXPECTED_MIGRATIONS: ${{ inputs.expected_migrations }}
-          DATA_BACKUP_ID: ${{ steps.backup.outputs.backup_id }}
-        run: |
-          ssh \
-            -i "$RUNNER_TEMP/ssh/id_ed25519" \
-            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
-            -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes \
-            "$VPS_USER@$VPS_HOST" \
-            "sudo -n /usr/local/sbin/deploy-sub2api-backend restore-image '$IMAGE_DIGEST' '$RELEASE_TAG' '$RELEASE_COMMIT' '$EXPECTED_MIGRATIONS' '$DATA_BACKUP_ID'"
 
       - name: Record the activated official backend
         env:
@@ -297,7 +236,6 @@ jobs:
           RELEASE_TAG_OBJECT: ${{ steps.release.outputs.tag_object }}
           IMAGE_DIGEST: ${{ inputs.image_digest }}
           EXPECTED_MIGRATIONS: ${{ inputs.expected_migrations }}
-          DATA_BACKUP_ID: ${{ steps.backup.outputs.backup_id }}
         run: |
           set -euo pipefail
           gh label create backend-production-state --color 1D76DB --force >/dev/null
@@ -351,13 +289,8 @@ jobs:
           else
             gh issue edit "$state_issue" --body-file "$state_file" >/dev/null
           fi
-          if [ "$EXPECTED_MIGRATIONS" = none ]; then
-            backup_note='not required; no database migration'
-          else
-            backup_note="PostgreSQL custom dump $DATA_BACKUP_ID"
-          fi
           gh issue comment "$ISSUE_NUMBER" \
-            --body "Official backend $RELEASE_TAG activated from the prepared immutable image. Data backup: \`$backup_note\`. Frontend, PostgreSQL, and Redis containers were unchanged; database restore was not performed."
+            --body "Official backend $RELEASE_TAG activated from the prepared immutable image. Frontend, PostgreSQL, and Redis containers were unchanged."
           gh label create backend-deployed --color 0E8A16 --force >/dev/null
           gh issue edit "$ISSUE_NUMBER" \
             --add-label backend-deployed \

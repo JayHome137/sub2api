@@ -4,14 +4,12 @@ set -eu
 
 APP_DIR=${AIFOO_APP_DIR:-/opt/sub2api}
 COMPOSE_FILE=${AIFOO_COMPOSE_FILE:-$APP_DIR/docker-compose.yml}
-BACKUP_ROOT=${AIFOO_BACKUP_ROOT:-/var/backups/sub2api}
 IMAGE_REPOSITORY=${AIFOO_BACKEND_IMAGE_REPOSITORY:-weishaw/sub2api}
 BACKEND_CONTAINER=${AIFOO_BACKEND_CONTAINER:-sub2api}
 FRONTEND_CONTAINER=${AIFOO_FRONTEND_CONTAINER:-sub2api-frontend}
 POSTGRES_CONTAINER=${AIFOO_POSTGRES_CONTAINER:-sub2api-postgres}
 REDIS_CONTAINER=${AIFOO_REDIS_CONTAINER:-sub2api-redis}
 PRODUCTION_URL=${AIFOO_PRODUCTION_URL:-http://127.0.0.1:8080}
-DEPLOYMENT_STATE_FILE=$APP_DIR/.aifoo-backend-deployment-state
 PREPARED_ROOT=$APP_DIR/.aifoo-backend-prepared
 MUTATION_LOCK_FILE=${AIFOO_BACKEND_LOCK_FILE:-/run/lock/aifoo-backend-deploy.lock}
 
@@ -68,20 +66,8 @@ validate_migrations() {
   fi
 }
 
-validate_backup_id() {
-  if ! printf '%s' "$1" \
-    | grep -Eq '^[0-9]{8}-[0-9]{6}-[A-Za-z0-9]{6}-postgres-v[0-9]+\.[0-9]+\.[0-9]+$'; then
-    echo "Invalid backend backup ID" >&2
-    exit 1
-  fi
-}
-
 is_sha256() {
   printf '%s' "$1" | grep -Eq '^sha256:[0-9a-f]{64}$'
-}
-
-is_hex_sha256() {
-  printf '%s' "$1" | grep -Eq '^[0-9a-f]{64}$'
 }
 
 is_version() {
@@ -165,32 +151,6 @@ redis_command() {
   ' sh "$@"
 }
 
-quota_flusher_state() {
-  docker exec "$BACKEND_CONTAINER" sh -c '
-    value=${DATABASE_USER_PLATFORM_QUOTA_FLUSHER_ENABLED:-}
-    if [ -z "$value" ]; then
-      config_file=${CONFIG_FILE:-${DATA_DIR:-/app/data}/config.yaml}
-      if [ -r "$config_file" ]; then
-        value=$(awk '\''
-          /^[^[:space:]#][^:]*:/ { in_database = ($1 == "database:") }
-          in_database && /^[[:space:]]+user_platform_quota_flusher_enabled:/ {
-            sub(/^[^:]*:[[:space:]]*/, "")
-            sub(/[[:space:]#].*$/, "")
-            print tolower($0)
-            exit
-          }
-        '\'' "$config_file")
-      fi
-    fi
-    printf "%s\n" "${value:-false}" | tr "[:upper:]" "[:lower:]"
-  '
-}
-
-schema_migration_snapshot() {
-  postgres_query \
-    'SELECT filename || E'\''\t'\'' || checksum || E'\''\t'\'' || applied_at::text FROM schema_migrations ORDER BY filename;'
-}
-
 verify_expected_migrations() {
   migrations=$1
   if [ "$migrations" = "none" ]; then
@@ -250,20 +210,6 @@ prepared_dir() {
   digest=$1
   validate_digest "$digest"
   printf '%s/%s\n' "$PREPARED_ROOT" "${digest#sha256:}"
-}
-
-write_deployment_state() {
-  digest=$1
-  migrations=$2
-  data_backup_id=$3
-  state_tmp=$(mktemp "$APP_DIR/.aifoo-backend-state.XXXXXX")
-  {
-    printf 'digest=%s\n' "$digest"
-    printf 'migrations=%s\n' "$migrations"
-    printf 'data_backup_id=%s\n' "$data_backup_id"
-  } > "$state_tmp"
-  chmod 600 "$state_tmp"
-  mv "$state_tmp" "$DEPLOYMENT_STATE_FILE"
 }
 
 rewrite_backend_service() {
@@ -329,7 +275,7 @@ preflight_readonly() {
     block deploy_helper_group_or_world_writable
   fi
 
-  for command_name in docker docker-compose curl sha256sum awk sed df flock; do
+  for command_name in docker docker-compose curl sha256sum awk sed flock; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
       block "command_${command_name}_missing"
     fi
@@ -350,39 +296,6 @@ preflight_readonly() {
       fi
     done
   fi
-  available_disk_kb=$(df -Pk "$APP_DIR" 2>/dev/null | awk 'NR == 2 {print $4}')
-  required_backup_kb=0
-  backup_policy=none
-  if [ "$migrations" != "none" ]; then
-    backup_policy=postgresql
-    if [ ! -d "$BACKUP_ROOT" ]; then
-      block backup_root_missing
-    else
-      if [ "$(stat -c '%U' "$BACKUP_ROOT" 2>/dev/null || true)" != "root" ]; then
-        block backup_root_not_owned_by_root
-      fi
-      if find "$BACKUP_ROOT" -maxdepth 0 -perm /077 -print -quit 2>/dev/null | grep -q .; then
-        block backup_root_permissions_too_open
-      fi
-    fi
-    database_size_bytes=$(postgres_query \
-      'SELECT pg_database_size(current_database());' 2>/dev/null || true)
-    if ! printf '%s' "$database_size_bytes" | grep -Eq '^[0-9]+$'; then
-      block backup_size_estimate_failed
-      required_backup_kb=
-    else
-      required_backup_kb=$((database_size_bytes / 1024 + 262144))
-    fi
-  fi
-  printf 'backup_policy=%s\n' "$backup_policy"
-  printf 'available_disk_kb=%s\n' "${available_disk_kb:-unknown}"
-  printf 'required_backup_disk_kb=%s\n' "${required_backup_kb:-unknown}"
-  if [ -z "$available_disk_kb" ] \
-    || [ -z "$required_backup_kb" ] \
-    || [ "$available_disk_kb" -lt "$required_backup_kb" ]; then
-    block insufficient_backup_disk
-  fi
-
   for container in "$BACKEND_CONTAINER" "$FRONTEND_CONTAINER" "$POSTGRES_CONTAINER" "$REDIS_CONTAINER"; do
     if ! docker container inspect "$container" >/dev/null 2>&1; then
       block "container_${container}_missing"
@@ -501,26 +414,7 @@ prepare_backend() {
     verify_backend_health "$expected_image_id" "$release_tag" "$release_commit"
     verify_expected_migrations "$migrations"
     printf 'prepare_state=already-current\n'
-    printf 'backup_policy=already-current\n'
     return
-  fi
-
-  if [ "$migrations" != "none" ]; then
-    if ! quota_flusher_enabled=$(quota_flusher_state 2>/dev/null); then
-      echo "Unable to determine the quota flusher state before preparation" >&2
-      return 1
-    fi
-    case "$quota_flusher_enabled" in
-      true|1|yes|on)
-        echo "Migration updates require manual preparation while the quota flusher is enabled" >&2
-        return 1
-        ;;
-      false|0|no|off) ;;
-      *)
-        echo "Unable to determine the quota flusher state before preparation" >&2
-        return 1
-        ;;
-    esac
   fi
 
   stage_image "$digest" "$release_tag" "$release_commit" >/dev/null
@@ -586,7 +480,6 @@ prepare_backend() {
   trap - EXIT HUP INT TERM
   require_prepared "$digest" "$release_tag" "$release_commit" "$migrations"
   printf 'prepare_state=ready\n'
-  printf 'backup_policy=%s\n' "$([ "$migrations" = none ] && printf none || printf postgresql)"
 }
 
 require_prepared() {
@@ -657,141 +550,16 @@ prepared_backend_status() {
     verify_backend_health "$expected_image_id" "$release_tag" "$release_commit"
     verify_expected_migrations "$migrations"
     printf 'prepared_state=already-current\n'
-    printf 'backup_policy=already-current\n'
     return
   fi
   require_prepared "$1" "$2" "$3" "$4"
   printf 'prepared_state=ready\n'
-  printf 'backup_policy=%s\n' "$([ "$4" = none ] && printf none || printf postgresql)"
-}
-
-create_data_backup() {
-  digest=$1
-  release_tag=$2
-  release_commit=$3
-  migrations=$4
-  validate_digest "$digest"
-  validate_release_tag "$release_tag"
-  validate_commit "$release_commit"
-  validate_migrations "$migrations"
-  if [ "$(container_field "$BACKEND_CONTAINER" '{{.Config.Image}}' 2>/dev/null || true)" = "$(image_ref "$digest")" ]; then
-    printf 'backup_id=none\n'
-    printf 'backup_verified=not-required\n'
-    printf 'backup_policy=already-current\n'
-    return
-  fi
-  if [ "$migrations" = "none" ]; then
-    printf 'backup_id=none\n'
-    printf 'backup_verified=not-required\n'
-    printf 'backup_policy=none\n'
-    return
-  fi
-  require_prepared "$digest" "$release_tag" "$release_commit" "$migrations"
-
-  if ! quota_flusher_enabled=$(quota_flusher_state 2>/dev/null); then
-    echo "Unable to determine the quota flusher state before PostgreSQL backup" >&2
-    return 1
-  fi
-  case "$quota_flusher_enabled" in
-    true|1|yes|on)
-      echo "PostgreSQL backup requires the quota flusher to remain disabled" >&2
-      return 1
-      ;;
-    false|0|no|off) ;;
-    *)
-      echo "Unable to determine the quota flusher state before PostgreSQL backup" >&2
-      return 1
-      ;;
-  esac
-
-  umask 077
-  mkdir -p "$BACKUP_ROOT"
-  random_suffix=$(od -An -N3 -tx1 /dev/urandom | tr -d ' \n')
-  backup_id="$(date -u +%Y%m%d-%H%M%S)-${random_suffix}-postgres-$release_tag"
-  validate_backup_id "$backup_id"
-  backup_dir=$BACKUP_ROOT/$backup_id
-  mkdir "$backup_dir"
-  cleanup_incomplete_backup() {
-    status=$1
-    trap - EXIT HUP INT TERM
-    case "$backup_dir" in
-      "$BACKUP_ROOT"/*-postgres-v*) rm -rf -- "$backup_dir" ;;
-    esac
-    exit "$status"
-  }
-  trap 'cleanup_incomplete_backup $?' EXIT
-  trap 'cleanup_incomplete_backup 129' HUP
-  trap 'cleanup_incomplete_backup 130' INT
-  trap 'cleanup_incomplete_backup 143' TERM
-  docker exec "$POSTGRES_CONTAINER" sh -c \
-    'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom --no-owner --no-privileges' \
-    > "$backup_dir/postgres.dump"
-  docker exec -i "$POSTGRES_CONTAINER" pg_restore --list \
-    < "$backup_dir/postgres.dump" >/dev/null
-  {
-    printf 'backup_id=%s\n' "$backup_id"
-    printf 'created_at_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    printf 'target_digest=%s\n' "$digest"
-    printf 'target_release=%s\n' "$release_tag"
-    printf 'target_commit=%s\n' "$release_commit"
-    printf 'expected_migrations=%s\n' "$migrations"
-    printf 'compose_sha256=%s\n' "$(compose_sha256)"
-  } > "$backup_dir/metadata.env"
-  (
-    cd "$backup_dir"
-    sha256sum postgres.dump metadata.env > SHA256SUMS
-  )
-  chmod 700 "$backup_dir"
-  require_data_backup "$digest" "$release_tag" "$release_commit" "$migrations" "$backup_id"
-  trap - EXIT HUP INT TERM
-  printf 'backup_id=%s\n' "$backup_id"
-  printf 'backup_verified=true\n'
-  printf 'backup_policy=postgresql\n'
-}
-
-require_data_backup() {
-  digest=$1
-  release_tag=$2
-  release_commit=$3
-  migrations=$4
-  backup_id=$5
-  validate_digest "$digest"
-  validate_release_tag "$release_tag"
-  validate_commit "$release_commit"
-  validate_migrations "$migrations"
-  if [ "$migrations" = "none" ]; then
-    [ "$backup_id" = "none" ] \
-      || { echo "A migration-free update must not use a data backup" >&2; return 1; }
-    return
-  fi
-  validate_backup_id "$backup_id"
-  backup_dir=$BACKUP_ROOT/$backup_id
-  for required in postgres.dump metadata.env SHA256SUMS; do
-    [ -f "$backup_dir/$required" ] && [ ! -L "$backup_dir/$required" ] \
-      && [ -s "$backup_dir/$required" ] \
-      || { echo "PostgreSQL backup is incomplete: $required" >&2; return 1; }
-  done
-  (
-    cd "$backup_dir"
-    sha256sum -c SHA256SUMS >/dev/null
-  ) || { echo "PostgreSQL backup checksum verification failed" >&2; return 1; }
-  docker exec -i "$POSTGRES_CONTAINER" pg_restore --list \
-    < "$backup_dir/postgres.dump" >/dev/null \
-    || { echo "PostgreSQL backup catalog verification failed" >&2; return 1; }
-  metadata=$backup_dir/metadata.env
-  [ "$(metadata_value backup_id "$metadata")" = "$backup_id" ] \
-    && [ "$(metadata_value target_digest "$metadata")" = "$digest" ] \
-    && [ "$(metadata_value target_release "$metadata")" = "$release_tag" ] \
-    && [ "$(metadata_value target_commit "$metadata")" = "$release_commit" ] \
-    && [ "$(metadata_value expected_migrations "$metadata")" = "$migrations" ] \
-    && is_hex_sha256 "$(metadata_value compose_sha256 "$metadata")" \
-    || { echo "PostgreSQL backup metadata does not match the prepared update" >&2; return 1; }
 }
 
 verify_companions_unchanged() {
-  backup_dir=$1
+  prepared=$1
   current=$(companion_signatures)
-  expected=$(cat "$backup_dir/companion-containers.txt")
+  expected=$(cat "$prepared/companion-containers.txt")
   if [ "$current" != "$expected" ]; then
     echo "Frontend, PostgreSQL, or Redis changed during backend deployment" >&2
     return 1
@@ -803,9 +571,6 @@ restore_image() {
   release_tag=$2
   release_commit=$3
   migrations=$4
-  data_backup_id=$5
-  require_data_backup "$digest" "$release_tag" "$release_commit" "$migrations" "$data_backup_id" \
-    || return 1
   prepared=$(prepared_dir "$digest")
   metadata=$prepared/metadata.env
   [ -r "$metadata" ] || return 1
@@ -827,13 +592,12 @@ restore_image() {
       || return 1
     verify_companions_unchanged "$prepared" || return 1
     printf 'restore_state=already_previous\n'
-    printf 'database_restore=not_performed\n'
     return
   fi
 
   if [ "$current_image_id" != "$previous_image_id" ] \
     && [ "$current_image_id" != "$target_image_id" ]; then
-    echo "Refusing to restore a stale backup over an unrelated backend image" >&2
+    echo "Refusing to restore stale prepared state over an unrelated backend image" >&2
     return 1
   fi
   if [ "$current_image_id" = "$target_image_id" ] \
@@ -847,13 +611,6 @@ restore_image() {
     && [ "$current_compose_sha" != "$rollback_compose_sha" ] \
     && [ "$current_compose_sha" != "$candidate_compose_sha" ]; then
     echo "Previous backend Compose drifted; refusing image restore" >&2
-    return 1
-  fi
-  if [ ! -r "$DEPLOYMENT_STATE_FILE" ] \
-    || [ "$(metadata_value digest "$DEPLOYMENT_STATE_FILE")" != "$digest" ] \
-    || [ "$(metadata_value migrations "$DEPLOYMENT_STATE_FILE")" != "$migrations" ] \
-    || [ "$(metadata_value data_backup_id "$DEPLOYMENT_STATE_FILE")" != "$data_backup_id" ]; then
-    echo "Backend deployment state does not authorize this restore" >&2
     return 1
   fi
   [ "$(docker image inspect "$previous_image_ref" --format '{{.Id}}' 2>/dev/null || true)" = "$previous_image_id" ] \
@@ -876,7 +633,6 @@ restore_image() {
   verify_companions_unchanged "$prepared" || return 1
   printf 'restored_previous_image=%s\n' "$previous_image_ref"
   printf 'rollback_health=healthy\n'
-  printf 'database_restore=not_performed\n'
 }
 
 rollback_armed=false
@@ -884,7 +640,6 @@ active_digest=
 active_release_tag=
 active_release_commit=
 active_migrations=
-active_data_backup_id=
 
 restore_interrupted_deploy() {
   status=$?
@@ -896,8 +651,7 @@ restore_interrupted_deploy() {
       "$active_digest" \
       "$active_release_tag" \
       "$active_release_commit" \
-      "$active_migrations" \
-      "$active_data_backup_id"; then
+      "$active_migrations"; then
       echo "Interrupted deployment image restore failed; manual intervention is required" >&2
     fi
   fi
@@ -909,7 +663,6 @@ deploy_backend() {
   release_tag=$2
   release_commit=$3
   migrations=$4
-  data_backup_id=$5
   image=$(image_ref "$digest")
   if [ "$(container_field "$BACKEND_CONTAINER" '{{.Config.Image}}' 2>/dev/null || true)" = "$image" ]; then
     expected_image_id=$(docker image inspect "$image" --format '{{.Id}}')
@@ -919,7 +672,6 @@ deploy_backend() {
     return
   fi
   require_prepared "$digest" "$release_tag" "$release_commit" "$migrations"
-  require_data_backup "$digest" "$release_tag" "$release_commit" "$migrations" "$data_backup_id"
   prepared=$(prepared_dir "$digest")
   metadata=$prepared/metadata.env
   expected_image_id=$(docker image inspect "$image" --format '{{.Id}}')
@@ -948,12 +700,10 @@ deploy_backend() {
   candidate_file=$(mktemp "$APP_DIR/.docker-compose.backend-candidate.XXXXXX")
   cp "$prepared/candidate-compose.yml" "$candidate_file"
   docker-compose -f "$candidate_file" config -q
-  write_deployment_state "$digest" "$migrations" "$data_backup_id"
   active_digest=$digest
   active_release_tag=$release_tag
   active_release_commit=$release_commit
   active_migrations=$migrations
-  active_data_backup_id=$data_backup_id
   rollback_armed=true
   trap restore_interrupted_deploy EXIT HUP INT TERM
   mv "$candidate_file" "$COMPOSE_FILE"
@@ -971,14 +721,11 @@ deploy_backend() {
 
   if [ "$deploy_ok" != "true" ]; then
     echo "Backend deployment failed; restoring the verified previous image only" >&2
-    if ! restore_image "$digest" "$release_tag" "$release_commit" "$migrations" "$data_backup_id"; then
+    if ! restore_image "$digest" "$release_tag" "$release_commit" "$migrations"; then
       echo "Automatic backend image restore failed; manual intervention is required" >&2
     fi
     rollback_armed=false
     trap - EXIT HUP INT TERM
-    if [ "$migrations" != "none" ]; then
-      echo "The PostgreSQL backup was retained; database restore requires separate manual approval" >&2
-    fi
     return 1
   fi
 
@@ -987,7 +734,6 @@ deploy_backend() {
   active_release_tag=
   active_release_commit=
   active_migrations=
-  active_data_backup_id=
   trap - EXIT HUP INT TERM
 
   printf 'deployed_image=%s\n' "$image"
@@ -1019,24 +765,12 @@ if [ "${AIFOO_BACKEND_DEPLOY_LIBRARY_ONLY:-0}" != "1" ]; then
     prepared-status)
       prepared_backend_status "${2:-}" "${3:-}" "${4:-}" "${5:-}"
       ;;
-    backup-data)
-      acquire_mutation_lock
-      create_data_backup "${2:-}" "${3:-}" "${4:-}" "${5:-}"
-      ;;
-    backup)
-      acquire_mutation_lock
-      create_data_backup "${2:-}" "${3:-}" "${4:-}" "${5:-}"
-      ;;
     deploy)
       acquire_mutation_lock
-      deploy_backend "${2:-}" "${3:-}" "${4:-}" "${5:-}" "${6:-}"
-      ;;
-    restore-image)
-      acquire_mutation_lock
-      restore_image "${2:-}" "${3:-}" "${4:-}" "${5:-}" "${6:-}"
+      deploy_backend "${2:-}" "${3:-}" "${4:-}" "${5:-}"
       ;;
     *)
-      echo "Usage: $0 {preflight <helper-sha256> <digest> <release-tag> <release-commit> [migrations]|preflight prepared <digest> <release-tag> <release-commit> <migrations>|stage <digest> <release-tag> <release-commit> [migrations]|prepare <digest> <release-tag> <release-commit> <migrations>|prepared-status <digest> <release-tag> <release-commit> <migrations>|backup <digest> <release-tag> <release-commit> <migrations>|backup-data <digest> <release-tag> <release-commit> <migrations>|deploy <digest> <release-tag> <release-commit> <migrations> <data-backup-id>|restore-image <digest> <release-tag> <release-commit> <migrations> <data-backup-id>}" >&2
+      echo "Usage: $0 {preflight <helper-sha256> <digest> <release-tag> <release-commit> [migrations]|preflight prepared <digest> <release-tag> <release-commit> <migrations>|stage <digest> <release-tag> <release-commit> [migrations]|prepare <digest> <release-tag> <release-commit> <migrations>|prepared-status <digest> <release-tag> <release-commit> <migrations>|deploy <digest> <release-tag> <release-commit> <migrations>}" >&2
       exit 1
       ;;
   esac

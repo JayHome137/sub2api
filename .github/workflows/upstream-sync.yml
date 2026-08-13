@@ -851,7 +851,7 @@ jobs:
           gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$source_sha" \
             -f state=success \
             -f context=aifoo/frontend-validation \
-            -f description='Exact candidate tests, image, backup, and rollback validation passed' \
+            -f description='Exact candidate tests, image, and rollback validation passed' \
             -f target_url="$RUN_URL" >/dev/null
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
           echo "image_digest=$image_digest" >> "$GITHUB_OUTPUT"
@@ -1028,4 +1028,4 @@ jobs:
           done
           gh issue edit "$ISSUE_NUMBER" --add-label ready-for-vps >/dev/null
           gh issue comment "$ISSUE_NUMBER" \
-            --body "All required preparation completed for $RELEASE_TAG. The web one-click update is now available; the click path only performs guarded production switching, a migration-aware PostgreSQL data backup when required, and lightweight health checks."
+            --body "All required preparation completed for $RELEASE_TAG. The web one-click update is now available; the click path only switches the prepared production images, lets the official backend apply its migrations on startup, and performs lightweight health checks."

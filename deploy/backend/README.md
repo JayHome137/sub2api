@@ -8,7 +8,7 @@
 
 - 前端镜像预加载到 VPS；
 - 仅在官方后端运行时变化时，`backend-preparation.yml` 验证官方 tag、commit、不可变镜像和 migration 计划；
-- Runner 用隔离 PostgreSQL/Redis 验证升级及 image-only rollback；
+- Runner 用隔离 PostgreSQL/Redis 验证升级及旧镜像回滚；
 - VPS 只预拉取目标镜像，并保存当前 Compose、旧镜像引用和容器指纹作为本机回滚状态；
 - 不切换容器、不修改 Compose、不接触生产数据。
 
@@ -21,21 +21,18 @@
 后端更新只执行：
 
 1. 核对 prepared state 未漂移；
-2. 有 migration 时导出一次当前 Sub2API PostgreSQL custom dump，无 migration 时不创建备份目录；
-3. Compose 仅替换 `sub2api.image`，重建后端单个服务；
-4. 核对镜像、版本、commit、migration 和一次公网健康检查；
-5. 失败时用 VPS 本机保留的旧镜像和 prepared Compose 恢复后端。
+2. Compose 仅替换 `sub2api.image`，重建后端单个服务；
+3. 核对镜像、版本、commit、migration 和一次公网健康检查；
+4. 切换失败时恢复按钮出现前保存的旧镜像和 Compose。
 
 点击路径不会重新 pull 镜像、运行隔离升级测试或重复完整 CI。
 
 ## 数据边界
 
-- 纯前端：不备份生产数据。
-- 后端无 migration：不备份业务数据；仅使用按钮出现前保存的旧镜像/Compose 回滚元数据。
-- 后端有 migration：只导出当前应用 PostgreSQL custom dump，并以 `pg_restore --list` 校验。
-- 不执行 `pg_dumpall`、Redis BGSAVE、`/opt/sub2api/data` tar 或 Docker image save/load。
-- 数据库 dump 不由 Actions 自动恢复；恢复生产数据库必须另行人工批准。
-- 若生产显式启用了 `database.user_platform_quota_flusher_enabled`，含 migration 的自动准备会暂停，避免把 Redis 仍为权威的额度状态遗漏在 PostgreSQL dump 之外；仓库默认值为关闭。
+- 更新流程不创建数据库、Redis 或应用数据备份。
+- 更新流程不执行数据库恢复。
+- migration 仍由官方后端镜像启动时按原版逻辑执行。
+- 旧镜像和 Compose 只用于程序版本回滚，与业务数据备份无关。
 
 ## Helper 安装边界
 
