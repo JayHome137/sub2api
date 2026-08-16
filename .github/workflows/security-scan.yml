@@ -44,6 +44,9 @@ jobs:
           check-latest: false
           # The VM's Go build cache is large; avoid a long post-job archive/upload.
           cache: false
+      - name: Verify Go version
+        run: |
+          go version | grep -q 'go1.26.6'
       - name: Run govulncheck
         working-directory: backend
         run: |
