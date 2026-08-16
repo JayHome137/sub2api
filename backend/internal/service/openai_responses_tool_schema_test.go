@@ -233,8 +233,9 @@ func TestSanitizeOpenAIResponsesToolParameterTypes_RewriteCountIndependentOfHits
 		_, _, _ = sanitizeOpenAIResponsesToolParameterTypes(large)
 	})
 
-	// 命中切片扩容是对数级，留出充裕余量；线性写法在这里会是 2000 量级。
-	require.Less(t, largeAllocs, smallAllocs+40,
+	// 命中切片扩容是对数级，并为 Go patch 版本的分配实现差异留出余量；
+	// 线性写法在这里仍会是 2000 量级。
+	require.Less(t, largeAllocs, smallAllocs+128,
 		"分配次数随命中数线性增长，说明退回了逐路径全量重写 (small=%v large=%v)", smallAllocs, largeAllocs)
 
 	// 同时确认大 body 的结果确实全部修好了。
