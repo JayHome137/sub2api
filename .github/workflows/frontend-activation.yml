@@ -91,6 +91,7 @@ jobs:
 
       - name: Validate the exact approved candidate
         if: inputs.mode == 'preload'
+        id: validate_candidate
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ inputs.release_tag }}
@@ -127,8 +128,20 @@ jobs:
             fi
           done
 
-          comments=$(gh api --paginate \
-            "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/comments?per_page=100" | jq -s 'add')
+          comments_file="$RUNNER_TEMP/frontend-preload-comments.json"
+          for attempt in 1 2 3; do
+            if gh api --paginate \
+              "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/comments?per_page=100" \
+              > "$comments_file"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Unable to read the validated frontend evidence after 3 attempts" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          comments=$(jq -s 'add' "$comments_file")
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sub2api-frontend@$IMAGE_DIGEST"
           jq -e --arg image "$image" --arg source "$SOURCE_SHA" '
             any(.[]; (.body | contains($image)) and (.body | contains($source)))
@@ -178,6 +191,7 @@ jobs:
           fetch-depth: 0
 
       - name: Configure restricted SSH key
+        id: configure_ssh
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
@@ -267,7 +281,10 @@ jobs:
             "cd /opt/sub2api && sudo /usr/local/sbin/deploy-sub2api-frontend activate '$IMAGE_DIGEST'"
 
       - name: Remove temporary GHCR credentials
-        if: always() && inputs.mode == 'preload'
+        if: >-
+          always() &&
+          inputs.mode == 'preload' &&
+          steps.configure_ssh.outcome == 'success'
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
@@ -282,11 +299,12 @@ jobs:
             "$VPS_USER@$VPS_HOST" \
             "sudo /usr/local/sbin/deploy-sub2api-frontend logout" || true
 
-      - name: Record successful preload
+      - name: Record preload result
         if: always() && inputs.mode == 'preload'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUMBER: ${{ inputs.issue_number }}
+          VALIDATION_RESULT: ${{ steps.validate_candidate.outcome }}
           PRELOAD_RESULT: ${{ steps.preload.outcome }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           IMAGE_DIGEST: ${{ inputs.image_digest }}
@@ -294,20 +312,28 @@ jobs:
           set -euo pipefail
           gh label create vps-preloaded --color 0E8A16 --force >/dev/null
           gh label create vps-preload-failed --color B60205 --force >/dev/null
-          if [ "$PRELOAD_RESULT" = "success" ]; then
+          if [ "$VALIDATION_RESULT" != "success" ]; then
+            gh issue comment "$ISSUE_NUMBER" \
+              --body "Validating the exact frontend candidate for $RELEASE_TAG failed before VPS preload. Production was not switched; rerun after diagnosis."
+            exit 1
+          elif [ "$PRELOAD_RESULT" = "success" ]; then
             gh issue edit "$ISSUE_NUMBER" \
               --add-label vps-preloaded \
               --remove-label vps-preload-failed >/dev/null 2>&1 || \
               gh issue edit "$ISSUE_NUMBER" --add-label vps-preloaded >/dev/null
             gh issue comment "$ISSUE_NUMBER" \
               --body "The validated frontend image for $RELEASE_TAG is preloaded on the VPS (`$IMAGE_DIGEST`). No production container, Compose file, database, or backend was changed. The web button remains hidden until all required preparation finishes."
-          else
+          elif [ "$PRELOAD_RESULT" = "failure" ]; then
             gh issue edit "$ISSUE_NUMBER" \
               --add-label vps-preload-failed \
               --remove-label vps-preloaded \
               --remove-label ready-for-vps >/dev/null 2>&1 || \
               gh issue edit "$ISSUE_NUMBER" --add-label vps-preload-failed >/dev/null
             gh issue comment "$ISSUE_NUMBER" \
-              --body "Preloading the validated frontend image for $RELEASE_TAG failed. Production was not switched; rerun the preload step after diagnosis."
+              --body "The VPS frontend image preload command for $RELEASE_TAG failed. Production was not switched; rerun the preload step after diagnosis."
+            exit 1
+          else
+            gh issue comment "$ISSUE_NUMBER" \
+              --body "Frontend preload prerequisites for $RELEASE_TAG failed before the VPS preload command ran. Production was not switched; rerun after diagnosis."
             exit 1
           fi

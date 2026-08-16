@@ -322,6 +322,26 @@ jobs:
           if git merge-base --is-ancestor "$release_commit" "$production_sha"; then
             issue_number=$(find_issue_number)
             if [ -n "$issue_number" ]; then
+              issue_json=$(gh issue view "$issue_number" --json labels,state)
+              issue_labels=$(jq -r '.labels[].name' <<< "$issue_json")
+              issue_state=$(jq -r '.state' <<< "$issue_json")
+              if printf '%s\n' "$issue_labels" | grep -Fxq vps-deployed; then
+                for stale_label in candidate-testing ready-for-vps sync-failed ui-review-required vps-preloaded vps-preload-failed backend-deploy-required backend-prepared backend-prepare-failed web-update-running web-update-failed; do
+                  if printf '%s\n' "$issue_labels" | grep -Fxq "$stale_label"; then
+                    gh issue edit "$issue_number" --remove-label "$stale_label" >/dev/null
+                  fi
+                done
+                if [ "$issue_state" != "CLOSED" ]; then
+                  gh issue close "$issue_number" >/dev/null
+                fi
+                echo "production deployment already completed for official stable release $tag"
+                {
+                  echo "### Stable release check"
+                  echo
+                  echo "[$tag]($release_url) is already deployed. Its completed release Issue is closed; no validation, preload, or production action was started."
+                } >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+              fi
               if [ "$backend_deploy_required" = "true" ]; then
                 gh issue edit "$issue_number" --add-label backend-deploy-required >/dev/null
               else
@@ -334,8 +354,7 @@ jobs:
             ready_for_vps=false
             frontend_preloaded=false
             backend_prepared=false
-            if [ -n "$issue_number" ] \
-              && issue_labels=$(gh issue view "$issue_number" --json labels --jq '.labels[].name'); then
+            if [ -n "$issue_number" ]; then
               if printf '%s\n' "$issue_labels" | grep -Fxq ready-for-vps; then
                 ready_for_vps=true
               fi

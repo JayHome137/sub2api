@@ -85,6 +85,9 @@ require_text "$SYNC_WORKFLOW" 'needs.prepare.outputs.final_retry'
 require_text "$SYNC_WORKFLOW" 'backend/internal/(domain|middleware|model|pkg/response|setup)/'
 require_text "$SYNC_WORKFLOW" "ready-for-vps"
 require_text "$SYNC_WORKFLOW" "vps-preloaded"
+require_text "$SYNC_WORKFLOW" 'grep -Fxq vps-deployed'
+require_text "$SYNC_WORKFLOW" 'gh issue close "$issue_number"'
+require_text "$SYNC_WORKFLOW" 'production deployment already completed for official stable release'
 require_text "$SYNC_WORKFLOW" "preload_frontend:"
 require_text "$SYNC_WORKFLOW" "uses: ./.github/workflows/frontend-activation.yml"
 require_text "$SYNC_WORKFLOW" "prepare_backend:"
@@ -168,6 +171,11 @@ require_text "$FRONTEND_ACTIVATION_WORKFLOW" "inputs.mode == 'preload'"
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" "inputs.mode == 'activate'"
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'cd /opt/sub2api && sudo /usr/local/sbin/deploy-sub2api-frontend activate'
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'vps-preload-failed'
+require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'VALIDATION_RESULT: ${{ steps.validate_candidate.outcome }}'
+require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'Validating the exact frontend candidate for $RELEASE_TAG failed before VPS preload.'
+require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'The VPS frontend image preload command for $RELEASE_TAG failed.'
+require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'Frontend preload prerequisites for $RELEASE_TAG failed before the VPS preload command ran.'
+reject_text "$FRONTEND_ACTIVATION_WORKFLOW" 'Preloading the validated frontend image for $RELEASE_TAG failed.'
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'compare/$SOURCE_SHA...$production_sha'
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'Frontend image inputs changed after the validated image was built'
 preload_validation=$(sed -n \
