@@ -212,8 +212,19 @@ jobs:
               echo "Required backend deployment has neither pending nor deployed evidence" >&2
               exit 1
             fi
-            backend_state=$(gh issue list --state all --label backend-production-state \
-              --limit 2 --json body --jq 'if length == 1 then .[0].body else empty end')
+            state_title="[State] AIFoo production backend"
+            state_records=$(gh issue list --state all --label backend-production-state \
+              --limit 100 --json title,body,state)
+            backend_state=$(jq -r --arg title "$state_title" '
+              map(select(.title == $title))
+              | map(. + {parsed_body: (.body | fromjson)})
+              | if length == 0 then empty
+                elif ([.[] | select((.state | ascii_downcase) == "open")] | length) > 1 then empty
+                elif ([.[] | select((.state | ascii_downcase) == "open")] | length) == 1 then
+                  ([.[] | select((.state | ascii_downcase) == "open")][0].body)
+                else (sort_by(.parsed_body.deployed_at) | last.body)
+                end
+            ' <<< "$state_records")
             if [ -z "$backend_state" ] \
               || ! jq -e --arg release "$RELEASE_TAG" --arg digest "$backend_digest" '
                 .schema == 1

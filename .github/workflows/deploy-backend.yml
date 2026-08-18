@@ -242,18 +242,23 @@ jobs:
           state_title="[State] AIFoo production backend"
           states=$(gh issue list --state all --label backend-production-state \
             --limit 100 --json number,title,body,state)
-          count=$(jq --arg title "$state_title" '[.[] | select(.title == $title)] | length' <<< "$states")
-          [ "$count" -le 1 ] || { echo "Multiple production backend state issues exist" >&2; exit 1; }
+          state_candidates=$(jq -c --arg title "$state_title" '[.[] | select(.title == $title)]' <<< "$states")
+          count=$(jq 'length' <<< "$state_candidates")
+          open_state_count=$(jq '[.[] | select((.state | ascii_downcase) == "open")] | length' <<< "$state_candidates")
+          [ "$open_state_count" -le 1 ] || { echo "Multiple open production backend state issues exist" >&2; exit 1; }
           state_issue=
           generation=1
-          if [ "$count" -eq 1 ]; then
-            state_issue=$(jq -r --arg title "$state_title" '.[] | select(.title == $title) | .number' <<< "$states")
-            old_state=$(jq -r --arg title "$state_title" '.[] | select(.title == $title) | .body' <<< "$states")
-            generation=$(jq -er '
-              select(.schema == 1 and .kind == "aifoo.backend.production")
-              | .generation + 1
-            ' <<< "$old_state")
-            if [ "$(jq -r --arg title "$state_title" '.[] | select(.title == $title) | .state' <<< "$states")" = "CLOSED" ]; then
+          if [ "$count" -gt 0 ]; then
+            state_record=$(jq -c '
+              map(select((.state | ascii_downcase) == "open")) as $open
+              | if ($open | length) == 1 then $open[0]
+                else map(. + {parsed_body: (.body | fromjson)})
+                  | sort_by(.parsed_body.deployed_at) | last
+                end
+            ' <<< "$state_candidates")
+            state_issue=$(jq -r '.number' <<< "$state_record")
+            generation=$(jq -er '[.[] | (.body | fromjson) | select(.schema == 1 and .kind == "aifoo.backend.production") | .generation] | max + 1' <<< "$state_candidates")
+            if [ "$(jq -r '.state' <<< "$state_record" | tr '[:lower:]' '[:upper:]')" = "CLOSED" ]; then
               gh issue reopen "$state_issue" >/dev/null
             fi
           fi
