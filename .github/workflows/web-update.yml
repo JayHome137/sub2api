@@ -203,9 +203,8 @@ jobs:
             fi
             # Remote validation records the migration baseline before backend
             # preparation.  When the baseline was unknown, use only the
-            # latest preparation attestation tied to the current production
-            # source and exact release/image instead of reusing that stale
-            # `unknown-production-baseline` value.
+            # latest preparation attestation tied to the exact release/image
+            # instead of reusing that stale `unknown-production-baseline` value.
             production_sha=$(gh api \
               "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
             if ! printf '%s' "$production_sha" | grep -Eq '^[0-9a-f]{40}$'; then
@@ -223,7 +222,7 @@ jobs:
                   ((.user.login == "github-actions[bot]")
                     or ((.user.login | ascii_downcase) == ($owner | ascii_downcase)))
                   and (.body | contains("Backend preparation completed for " + $release))
-                  and (.body | contains("Production source: `" + $production + "`"))
+                  and (.body | contains("Production source: `"))
                   and (.body | contains("Official release commit: `" + $release_commit + "`"))
                   and (.body | contains("Official backend image: `" + $backend + "`"))
                   and (.body | contains("Backend status: `backend-prepared`"))
@@ -231,8 +230,31 @@ jobs:
               | first.body // empty
             ' <<< "$comments")
             if [ -z "$backend_preparation" ]; then
-              echo "The backend preparation attestation does not match the current production source" >&2
+              echo "The backend preparation attestation has no exact release/image match" >&2
               exit 1
+            fi
+            preparation_source=$(printf '%s\n' "$backend_preparation" \
+              | sed -n 's/.*Production source: `\([0-9a-f]\{40\}\)`.*/\1/p' \
+              | sed -n '1p')
+            if ! printf '%s' "$preparation_source" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "The backend preparation attestation has no valid production source" >&2
+              exit 1
+            fi
+            if [ "$preparation_source" != "$production_sha" ]; then
+              comparison=$(gh api \
+                "repos/$GITHUB_REPOSITORY/compare/$preparation_source...$production_sha")
+              if [ "$(jq -r '.status' <<< "$comparison")" != "ahead" ]; then
+                echo "The backend preparation source is not an ancestor of production" >&2
+                exit 1
+              fi
+              changed_backend_inputs=$(jq -r '.files[]?.filename' <<< "$comparison" \
+                | grep -E '^(backend/|Dockerfile$|deploy/backend/|\.github/workflows/(backend-preparation|deploy-backend)\.yml$)' \
+                || true)
+              if [ -n "$changed_backend_inputs" ]; then
+                echo "Backend preparation source is stale for current production inputs" >&2
+                printf '%s\n' "$changed_backend_inputs" >&2
+                exit 1
+              fi
             fi
             expected_migrations=$(printf '%s\n' "$backend_preparation" \
               | sed -n 's/.*Expected database migrations: `\([^`]*\)`.*/\1/p' \
