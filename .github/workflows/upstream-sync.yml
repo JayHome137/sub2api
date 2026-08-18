@@ -182,22 +182,27 @@ jobs:
           state_issues=$(gh api --paginate \
             "repos/$GITHUB_REPOSITORY/issues?state=all&per_page=100" \
             | jq -s '.')
-          state_count=$(jq --arg title "$state_title" '
-            [.[][] | select(.pull_request == null and .title == $title)] | length
+          state_records=$(jq -c --arg title "$state_title" '
+            [.[][] | select(.pull_request == null and .title == $title)]
           ' <<< "$state_issues")
-          if [ "$state_count" -gt 1 ]; then
-            echo "Multiple production backend state issues exist" >&2
-            exit 1
-          fi
-          if [ "$state_count" -eq 1 ]; then
-            state_record=$(jq -c --arg title "$state_title" '
-              .[][] | select(.pull_request == null and .title == $title)
-            ' <<< "$state_issues")
-            if ! jq -e 'any(.labels[]?; .name == "backend-production-state")' \
-              <<< "$state_record" >/dev/null; then
+          state_count=$(jq 'length' <<< "$state_records")
+          if [ "$(jq '[.[] | select(any(.labels[]?; .name == "backend-production-state") | not)] | length' <<< "$state_records")" -gt 0 ]; then
               echo "Production backend state issue is missing its ownership label" >&2
               exit 1
-            fi
+          fi
+          open_state_count=$(jq '[.[] | select((.state | ascii_downcase) == "open")] | length' <<< "$state_records")
+          if [ "$open_state_count" -gt 1 ]; then
+            echo "Multiple open production backend state issues exist" >&2
+            exit 1
+          fi
+          if [ "$state_count" -gt 0 ]; then
+            state_record=$(jq -c '
+              map(select((.state | ascii_downcase) == "open")) as $open
+              | if ($open | length) == 1 then $open[0]
+                else map(. + {parsed_body: (.body | fromjson)})
+                  | sort_by(.parsed_body.deployed_at) | last
+                end
+            ' <<< "$state_records")
             state_body=$(jq -r '.body' <<< "$state_record")
             if ! jq -e '
               type == "object"
