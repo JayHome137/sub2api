@@ -240,8 +240,8 @@ jobs:
           set -euo pipefail
           gh label create backend-production-state --color 1D76DB --force >/dev/null
           state_title="[State] AIFoo production backend"
-          states=$(gh issue list --state open --label backend-production-state \
-            --limit 100 --json number,title,body)
+          states=$(gh issue list --state all --label backend-production-state \
+            --limit 100 --json number,title,body,state)
           count=$(jq --arg title "$state_title" '[.[] | select(.title == $title)] | length' <<< "$states")
           [ "$count" -le 1 ] || { echo "Multiple production backend state issues exist" >&2; exit 1; }
           state_issue=
@@ -253,6 +253,9 @@ jobs:
               select(.schema == 1 and .kind == "aifoo.backend.production")
               | .generation + 1
             ' <<< "$old_state")
+            if [ "$(jq -r --arg title "$state_title" '.[] | select(.title == $title) | .state' <<< "$states")" = "CLOSED" ]; then
+              gh issue reopen "$state_issue" >/dev/null
+            fi
           fi
           migrations_tree_sha=$(git rev-parse "$RELEASE_COMMIT:backend/migrations")
           state_file=$(mktemp)

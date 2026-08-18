@@ -176,9 +176,11 @@ jobs:
           backend_baseline_release=unknown
           backend_baseline_commit=unknown
           state_title="[State] AIFoo production backend"
-          # Keep pagination compatible with older GitHub CLI versions on the VM.
+          # The canonical production state issue may be closed between backend
+          # activations; keep pagination compatible with older GitHub CLI versions
+          # on the VM while reading the complete state history.
           state_issues=$(gh api --paginate \
-            "repos/$GITHUB_REPOSITORY/issues?state=open&per_page=100" \
+            "repos/$GITHUB_REPOSITORY/issues?state=all&per_page=100" \
             | jq -s '.')
           state_count=$(jq --arg title "$state_title" '
             [.[][] | select(.pull_request == null and .title == $title)] | length

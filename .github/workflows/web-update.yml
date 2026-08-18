@@ -212,7 +212,7 @@ jobs:
               echo "Required backend deployment has neither pending nor deployed evidence" >&2
               exit 1
             fi
-            backend_state=$(gh issue list --state open --label backend-production-state \
+            backend_state=$(gh issue list --state all --label backend-production-state \
               --limit 2 --json body --jq 'if length == 1 then .[0].body else empty end')
             if [ -z "$backend_state" ] \
               || ! jq -e --arg release "$RELEASE_TAG" --arg digest "$backend_digest" '
