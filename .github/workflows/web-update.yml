@@ -166,11 +166,8 @@ jobs:
           expected_migrations=$(printf '%s\n' "$attestation" \
             | sed -n 's/.*Expected database migrations: `\([^`]*\)`.*/\1/p' \
             | sed -n '1p')
-          if ! printf '%s' "$release_commit" | grep -Eq '^[0-9a-f]{40}$' \
-            || { [ "$expected_migrations" != "none" ] \
-              && ! printf '%s' "$expected_migrations" \
-                | grep -Eq '^[0-9]{3}_[a-z0-9_]+(_notx)?\.sql(,[0-9]{3}_[a-z0-9_]+(_notx)?\.sql)*$'; }; then
-            echo "The backend preparation attestation is incomplete" >&2
+          if ! printf '%s' "$release_commit" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "The immutable image attestation has no valid official release commit" >&2
             exit 1
           fi
 
@@ -202,6 +199,49 @@ jobs:
             && [ "$label_requires_backend" = "true" ]; then
             if ! printf '%s\n' "$labels" | grep -Fxq backend-prepared; then
               echo "The required backend was not prepared before the web update" >&2
+              exit 1
+            fi
+            # Remote validation records the migration baseline before backend
+            # preparation.  When the baseline was unknown, use only the
+            # latest preparation attestation tied to the current production
+            # source and exact release/image instead of reusing that stale
+            # `unknown-production-baseline` value.
+            production_sha=$(gh api \
+              "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
+            if ! printf '%s' "$production_sha" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "Production has no valid source commit for backend preparation" >&2
+              exit 1
+            fi
+            backend_preparation=$(jq -r \
+              --arg release "$RELEASE_TAG" \
+              --arg owner "$GITHUB_REPOSITORY_OWNER" \
+              --arg production "$production_sha" \
+              --arg release_commit "$release_commit" \
+              --arg backend "weishaw/sub2api@$backend_digest" '
+              reverse
+              | [.[] | select(
+                  ((.user.login == "github-actions[bot]")
+                    or ((.user.login | ascii_downcase) == ($owner | ascii_downcase)))
+                  and (.body | contains("Backend preparation completed for " + $release))
+                  and (.body | contains("Production source: `" + $production + "`"))
+                  and (.body | contains("Official release commit: `" + $release_commit + "`"))
+                  and (.body | contains("Official backend image: `" + $backend + "`"))
+                  and (.body | contains("Backend status: `backend-prepared`"))
+                )]
+              | first.body // empty
+            ' <<< "$comments")
+            if [ -z "$backend_preparation" ]; then
+              echo "The backend preparation attestation does not match the current production source" >&2
+              exit 1
+            fi
+            expected_migrations=$(printf '%s\n' "$backend_preparation" \
+              | sed -n 's/.*Expected database migrations: `\([^`]*\)`.*/\1/p' \
+              | sed -n '1p')
+            if [ -z "$expected_migrations" ] \
+              || { [ "$expected_migrations" != "none" ] \
+                && ! printf '%s' "$expected_migrations" \
+                  | grep -Eq '^[0-9]{3}_[a-z0-9_]+(_notx)?\.sql(,[0-9]{3}_[a-z0-9_]+(_notx)?\.sql)*$'; }; then
+              echo "The backend preparation attestation has no valid migration plan" >&2
               exit 1
             fi
             backend_required=true

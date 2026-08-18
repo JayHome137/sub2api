@@ -105,8 +105,8 @@ require_text "$SYNC_WORKFLOW" "The exact validated candidate image is now being 
 reject_text "$SYNC_WORKFLOW" "final_frontend:"
 require_text "$SYNC_WORKFLOW" "group: aifoo-production-mutation"
 require_text "$SYNC_WORKFLOW" "statuses: write"
-require_text "$SYNC_WORKFLOW" "# Every 3 hours, offset from busy whole-hour slots (Asia/Shanghai 02:17, 05:17, ...)."
-require_text "$SYNC_WORKFLOW" "- cron: '17 */3 * * *'"
+require_text "$SYNC_WORKFLOW" "# Every 6 hours, offset from busy whole-hour slots (Asia/Shanghai 02:17, 08:17, ...)."
+require_text "$SYNC_WORKFLOW" "- cron: '17 */6 * * *'"
 
 VM_RUNNER='[self-hosted, linux, x64, aifoo-vm]'
 GITHUB_RUNNER='ubuntu-latest'
@@ -160,6 +160,9 @@ require_text "$WEB_UPDATE_WORKFLOW" 'GH_REPO: ${{ github.repository }}'
 require_text "$WEB_UPDATE_WORKFLOW" '.user.login == "github-actions[bot]"'
 require_text "$WEB_UPDATE_WORKFLOW" '($owner | ascii_downcase)'
 require_text "$WEB_UPDATE_WORKFLOW" 'Remote validation completed'
+require_text "$WEB_UPDATE_WORKFLOW" 'Backend preparation completed for " + $release'
+require_text "$WEB_UPDATE_WORKFLOW" 'Production source: `" + $production + "`'
+require_text "$WEB_UPDATE_WORKFLOW" 'The backend preparation attestation has no valid migration plan'
 require_text "$WEB_UPDATE_WORKFLOW" 'backend-deployed is not backed by the exact production State Issue'
 require_text "$WEB_UPDATE_WORKFLOW" 'vps-preloaded'
 reject_text "$WEB_UPDATE_WORKFLOW" 'schedule:'
