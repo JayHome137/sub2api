@@ -123,8 +123,18 @@ jobs:
           set -euo pipefail
           tagged_image="weishaw/sub2api:${RELEASE_TAG#v}"
           immutable_image="weishaw/sub2api@$IMAGE_DIGEST"
-          docker pull "$tagged_image" >/dev/null
-          docker pull "$immutable_image" >/dev/null
+          pull_image() {
+            image=$1
+            for attempt in 1 2 3; do
+              if docker pull "$image" >/dev/null; then
+                return 0
+              fi
+              [ "$attempt" -lt 3 ] || return 1
+              sleep $((attempt * 5))
+            done
+          }
+          pull_image "$tagged_image"
+          pull_image "$immutable_image"
           docker image inspect "$tagged_image" --format '{{json .RepoDigests}}' \
             | jq -e --arg image "$immutable_image" 'index($image) != null' >/dev/null
           [ "$(docker image inspect "$immutable_image" --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = "https://github.com/Wei-Shaw/sub2api" ]
