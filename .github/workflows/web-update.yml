@@ -373,13 +373,10 @@ jobs:
           set -euo pipefail
           gh label create vps-deployed --color 0E8A16 --force >/dev/null
           gh label create web-update-failed --color B60205 --force >/dev/null
-          gh issue edit "$ISSUE_NUMBER" \
-            --add-label vps-deployed \
-            --remove-label web-update-failed \
-            --remove-label web-update-running \
-            --remove-label vps-preloaded \
-            --remove-label vps-preload-failed >/dev/null 2>&1 || \
-            gh issue edit "$ISSUE_NUMBER" --add-label vps-deployed >/dev/null
+          gh issue edit "$ISSUE_NUMBER" --add-label vps-deployed >/dev/null
+          for transient_label in web-update-failed web-update-running vps-preloaded vps-preload-failed; do
+            gh issue edit "$ISSUE_NUMBER" --remove-label "$transient_label" >/dev/null 2>&1 || true
+          done
           gh issue comment "$ISSUE_NUMBER" --body "AIFoo web update completed for $RELEASE_TAG. Frontend digest \`$FRONTEND_DIGEST\`; backend deployment required: \`$BACKEND_REQUIRED\`. The validated frontend was preloaded before the click; activation only switched the frontend container and passed one lightweight health check."
           gh issue close "$ISSUE_NUMBER" >/dev/null
 
@@ -406,8 +403,6 @@ jobs:
         run: |
           set -euo pipefail
           gh label create web-update-failed --color B60205 --force >/dev/null
-          gh issue edit "$ISSUE_NUMBER" \
-            --add-label web-update-failed \
-            --remove-label web-update-running >/dev/null 2>&1 || \
-            gh issue edit "$ISSUE_NUMBER" --add-label web-update-failed >/dev/null
+          gh issue edit "$ISSUE_NUMBER" --add-label web-update-failed >/dev/null
+          gh issue edit "$ISSUE_NUMBER" --remove-label web-update-running >/dev/null 2>&1 || true
           gh issue comment "$ISSUE_NUMBER" --body "AIFoo web update failed or was cancelled for $RELEASE_TAG. Frontend activation restores the previous Compose service when its local activation gate fails; the Issue remains open for diagnosis and an explicit retry."
