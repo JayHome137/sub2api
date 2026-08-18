@@ -2,8 +2,8 @@ name: Sync official Sub2API releases
 
 on:
   schedule:
-    # Every 3 hours, offset from busy whole-hour slots (Asia/Shanghai 02:17, 05:17, ...).
-    - cron: '17 */3 * * *'
+    # Every 6 hours, offset from busy whole-hour slots (Asia/Shanghai 02:17, 08:17, ...).
+    - cron: '17 */6 * * *'
   workflow_dispatch:
     inputs:
       release_tag:
