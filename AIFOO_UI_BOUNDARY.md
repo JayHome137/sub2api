@@ -85,7 +85,10 @@ an existing UI contract working.
 
 1. Detect an official stable upstream release.
 2. Merge the exact upstream release commit into a candidate branch.
-3. Resolve only UI or UI-contract conflicts.
+3. Resolve every merge conflict deterministically: keep the fork-owned UI and
+   delivery contract, take official upstream hunks elsewhere, and continue to
+   validation. Only an unresolved conflict or a failed validation check stops
+   the candidate.
 4. Run focused frontend validation and build the private frontend image.
 5. Record the result and expose the web update only after preparation; do not
    switch production automatically.

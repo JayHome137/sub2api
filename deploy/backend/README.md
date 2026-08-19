@@ -4,7 +4,7 @@
 
 ## 按钮出现前
 
-`upstream-sync.yml` 每 3 小时（北京时间 02:17、05:17、…）检查官方稳定 Release。候选源码、必要 CI、UI 兼容、前端镜像均通过后：
+`upstream-sync.yml` 每 6 小时（北京时间 02:17、08:17、…）检查官方稳定 Release。候选源码、必要 CI、UI 兼容、前端镜像均通过后：
 
 - 前端镜像预加载到 VPS；
 - 仅在官方后端运行时变化时，`backend-preparation.yml` 验证官方 tag、commit、不可变镜像和 migration 计划；
