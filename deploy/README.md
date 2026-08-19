@@ -69,7 +69,7 @@ chmod +x docker-deploy.sh
 - Automatically generates secure secrets (JWT_SECRET, TOTP_ENCRYPTION_KEY, POSTGRES_PASSWORD)
 - Creates `.env` file with generated secrets
 - Creates necessary data directories (data/, postgres_data/, redis_data/)
-- **Displays generated credentials** (POSTGRES_PASSWORD, JWT_SECRET, etc.)
+- **Reports that generated credentials were written to `.env`** (mode `600`)
 
 **After running the script:**
 ```bash
@@ -233,7 +233,7 @@ docker compose down -v
 |----------|----------|---------|-------------|
 | `POSTGRES_PASSWORD` | **Yes** | - | PostgreSQL password |
 | `JWT_SECRET` | **Recommended** | *(auto-generated)* | JWT secret (fixed for persistent sessions) |
-| `TOTP_ENCRYPTION_KEY` | **Recommended** | *(auto-generated)* | TOTP encryption key (fixed for persistent 2FA) |
+| `TOTP_ENCRYPTION_KEY` | **Recommended** | *(new random key per startup if empty)* | Set a fixed key to preserve existing 2FA across restarts |
 | `SERVER_PORT` | No | `8080` | Server port |
 | `ADMIN_EMAIL` | No | `admin@sub2api.local` | Admin email |
 | `ADMIN_PASSWORD` | No | *(auto-generated)* | Admin password |
@@ -247,6 +247,7 @@ docker compose down -v
 See `.env.example` for all available options.
 
 > **Note:** The `docker-deploy.sh` script automatically generates `JWT_SECRET`, `TOTP_ENCRYPTION_KEY`, and `POSTGRES_PASSWORD` for you.
+> If you configure the stack manually, do not leave `TOTP_ENCRYPTION_KEY` empty in production: a new key on each restart invalidates existing TOTP configurations.
 
 ### Easy Migration (Local Directory Version)
 

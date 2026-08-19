@@ -4,7 +4,7 @@
 
 # Sub2API
 
-[![Go](https://img.shields.io/badge/Go-1.26.5-00ADD8.svg)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.26.6-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.4+-4FC08D.svg)](https://vuejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7+-DC382D.svg)](https://redis.io/)
@@ -206,7 +206,7 @@ Community projects that extend or integrate with Sub2API:
 
 | Component | Technology |
 |-----------|------------|
-| Backend | Go 1.26.5, Gin, Ent |
+| Backend | Go 1.26.6, Gin, Ent |
 | Frontend | Vue 3.4+, Vite 5+, TailwindCSS |
 | Database | PostgreSQL 15+ |
 | Cache/Queue | Redis 7+ |
@@ -328,7 +328,7 @@ docker compose logs -f sub2api
 - Generates secure credentials (JWT_SECRET, TOTP_ENCRYPTION_KEY, POSTGRES_PASSWORD)
 - Creates `.env` file with auto-generated secrets
 - Creates data directories (uses local directories for easy backup/migration)
-- Displays generated credentials for your reference
+- Reports that generated credentials were written to `.env` (mode `600`)
 
 #### Manual Deployment
 
@@ -351,17 +351,21 @@ nano .env
 
 ```bash
 # PostgreSQL password (REQUIRED)
-POSTGRES_PASSWORD=your_secure_password_here
+# Set a unique random value before starting the stack.
+POSTGRES_PASSWORD=
 
 # JWT Secret (RECOMMENDED - keeps users logged in after restart)
-JWT_SECRET=your_jwt_secret_here
+# Leave empty to auto-generate on first startup, or set a managed random value.
+JWT_SECRET=
 
-# TOTP Encryption Key (RECOMMENDED - preserves 2FA after restart)
-TOTP_ENCRYPTION_KEY=your_totp_key_here
+# TOTP Encryption Key (RECOMMENDED - set a fixed value to preserve 2FA)
+# Empty is development-only: a new key is generated on every startup and
+# existing TOTP configurations become invalid. Use: openssl rand -hex 32
+TOTP_ENCRYPTION_KEY=
 
 # Optional: Admin account
 ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=your_admin_password
+ADMIN_PASSWORD=
 
 # Optional: Custom port
 SERVER_PORT=8080
@@ -530,7 +534,8 @@ database:
   host: "localhost"
   port: 5432
   user: "postgres"
-  password: "your_password"
+  # Set a unique random value before starting the service.
+  password: ""
   dbname: "sub2api"
 
 redis:
@@ -540,7 +545,8 @@ redis:
   password: ""
 
 jwt:
-  secret: "change-this-to-a-secure-random-string"
+  # Leave empty to auto-generate on first startup, or set a managed random value.
+  secret: ""
   expire_hour: 24
 
 default:

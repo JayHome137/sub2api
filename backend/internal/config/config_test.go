@@ -1444,8 +1444,14 @@ func TestValidateConfigWithLinuxDoEnabled(t *testing.T) {
 }
 
 func TestValidateJWTSecretStrength(t *testing.T) {
-	if !isWeakJWTSecret("change-me-in-production") {
-		t.Fatalf("isWeakJWTSecret should detect weak secret")
+	for _, secret := range []string{
+		"change-me-in-production",
+		"change-this-to-a-secure-random-string",
+		"your_jwt_secret_here",
+	} {
+		if !isWeakJWTSecret(secret) {
+			t.Errorf("isWeakJWTSecret(%q) should detect weak secret", secret)
+		}
 	}
 	if !isWeakJWTSecret(strings.Repeat("0", 32)) {
 		t.Fatalf("isWeakJWTSecret should detect all-zero secret")
@@ -1541,8 +1547,9 @@ func TestValidateJWTSecretRejectsWeakLongValues(t *testing.T) {
 	}
 
 	for name, secret := range map[string]string{
-		"all zero":           strings.Repeat("0", 32),
-		"repeated character": strings.Repeat("a", 32),
+		"all zero":                  strings.Repeat("0", 32),
+		"repeated character":        strings.Repeat("a", 32),
+		"copied config placeholder": "change-this-to-a-secure-random-string",
 	} {
 		t.Run(name, func(t *testing.T) {
 			cfg.JWT.Secret = secret

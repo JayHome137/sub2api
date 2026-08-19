@@ -4,7 +4,7 @@
 
 # Sub2API
 
-[![Go](https://img.shields.io/badge/Go-1.26.5-00ADD8.svg)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.26.6-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.4+-4FC08D.svg)](https://vuejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7+-DC382D.svg)](https://redis.io/)
@@ -207,7 +207,7 @@ Sub2API を拡張・統合するコミュニティプロジェクト:
 
 | コンポーネント | 技術 |
 |-----------|------------|
-| バックエンド | Go 1.26.5, Gin, Ent |
+| バックエンド | Go 1.26.6, Gin, Ent |
 | フロントエンド | Vue 3.4+, Vite 5+, TailwindCSS |
 | データベース | PostgreSQL 15+ |
 | キャッシュ/キュー | Redis 7+ |
@@ -329,7 +329,7 @@ docker compose logs -f sub2api
 - セキュアな認証情報（JWT_SECRET、TOTP_ENCRYPTION_KEY、POSTGRES_PASSWORD）を自動生成
 - 自動生成されたシークレットで `.env` ファイルを作成
 - データディレクトリを作成（バックアップ・移行が容易なローカルディレクトリを使用）
-- 生成された認証情報を参照用に表示
+- 生成された認証情報を `.env`（権限 `600`）に保存したことを通知
 
 #### 手動デプロイ
 
@@ -352,17 +352,21 @@ nano .env
 
 ```bash
 # PostgreSQL パスワード（必須）
-POSTGRES_PASSWORD=your_secure_password_here
+# 起動前に一意のランダム値を設定してください。
+POSTGRES_PASSWORD=
 
 # JWT シークレット（推奨 - 再起動後もユーザーのログイン状態を保持）
-JWT_SECRET=your_jwt_secret_here
+# 空欄なら初回起動時に自動生成するか、管理されたランダム値を設定します。
+JWT_SECRET=
 
-# TOTP 暗号化キー（推奨 - 再起動後も二要素認証を維持）
-TOTP_ENCRYPTION_KEY=your_totp_key_here
+# TOTP 暗号化キー（推奨 - 固定値を設定して二要素認証を維持）
+# 空欄は開発環境のみ: 起動ごとに新しいキーが生成され、既存の TOTP 設定が無効になります。
+# 生成コマンド: openssl rand -hex 32
+TOTP_ENCRYPTION_KEY=
 
 # オプション: 管理者アカウント
 ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=your_admin_password
+ADMIN_PASSWORD=
 
 # オプション: カスタムポート
 SERVER_PORT=8080
@@ -531,7 +535,8 @@ database:
   host: "localhost"
   port: 5432
   user: "postgres"
-  password: "your_password"
+  # 起動前に一意のランダム値を設定してください。
+  password: ""
   dbname: "sub2api"
 
 redis:
@@ -540,7 +545,8 @@ redis:
   password: ""
 
 jwt:
-  secret: "change-this-to-a-secure-random-string"
+  # 空欄なら初回起動時に自動生成するか、管理されたランダム値を設定します。
+  secret: ""
   expire_hour: 24
 
 default:

@@ -490,10 +490,16 @@ jobs:
             git fetch origin "refs/heads/$branch:refs/remotes/origin/$branch"
             git checkout -B "$branch" "origin/$branch"
           else
+            # Keep the fork resolver executable outside the merge worktree. If
+            # upstream also edits the resolver, conflict markers must not make
+            # the recovery step itself unavailable.
+            resolver_copy="$RUNNER_TEMP/resolve-upstream-conflicts.sh"
+            cp .github/scripts/resolve-upstream-conflicts.sh "$resolver_copy"
+            chmod +x "$resolver_copy"
             git checkout -b "$branch" origin/production
             if ! git merge --no-edit "$tag"; then
               conflict_log="$RUNNER_TEMP/upstream-conflict-resolution.txt"
-              if ! .github/scripts/resolve-upstream-conflicts.sh > "$conflict_log" 2>&1; then
+              if ! "$resolver_copy" > "$conflict_log" 2>&1; then
                 cat "$conflict_log" >&2 || true
                 gh issue edit "$issue_number" --add-label sync-failed >/dev/null
                 comment_file=$(mktemp)

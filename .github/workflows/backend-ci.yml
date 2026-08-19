@@ -45,6 +45,7 @@ jobs:
           /bin/sh deploy/tests/docker-compose-security-test.sh
           /bin/sh deploy/tests/docker-runtime-resources-test.sh
           /bin/sh deploy/test-caddyfile-cache.sh
+          /bin/sh deploy/tests/docker-deploy-security-test.sh
           /bin/bash deploy/tests/install-checksum-test.sh
           /bin/sh deploy/frontend/workflow-contract-test.sh
           /bin/sh deploy/backend/workflow-contract-test.sh
