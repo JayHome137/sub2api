@@ -492,12 +492,30 @@ jobs:
           else
             git checkout -b "$branch" origin/production
             if ! git merge --no-edit "$tag"; then
-              git merge --abort
-              gh issue edit "$issue_number" --add-label sync-failed >/dev/null
-              gh issue comment "$issue_number" \
-                --body "The official $tag release conflicts with AIFoo production. No candidate branch was published and no deployment was attempted."
-              echo "blocked=true" >> "$GITHUB_OUTPUT"
-              exit 0
+              conflict_log="$RUNNER_TEMP/upstream-conflict-resolution.txt"
+              if ! .github/scripts/resolve-upstream-conflicts.sh > "$conflict_log" 2>&1; then
+                cat "$conflict_log" >&2 || true
+                gh issue edit "$issue_number" --add-label sync-failed >/dev/null
+                comment_file=$(mktemp)
+                {
+                  echo "The official $tag release still has an unresolved merge conflict after the deterministic resolver. No candidate branch was published and no deployment was attempted."
+                  echo
+                  echo 'Resolver output:'
+                  cat "$conflict_log"
+                } > "$comment_file"
+                gh issue comment "$issue_number" --body-file "$comment_file"
+                echo "blocked=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              cat "$conflict_log"
+              comment_file=$(mktemp)
+              {
+                echo "The official $tag release had merge conflicts. The deterministic resolver selected only conflict hunks, preserved AIFoo UI/API boundaries, and retained upstream non-conflicting changes. Candidate validation will continue."
+                echo
+                echo 'Resolver decisions:'
+                cat "$conflict_log"
+              } > "$comment_file"
+              gh issue comment "$issue_number" --body-file "$comment_file"
             fi
             git push origin "$branch"
           fi

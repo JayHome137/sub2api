@@ -7,10 +7,10 @@
 - `production`：AIFoo 生产代码。
 - `upgrade/vX.Y.Z`：由 `upstream-sync.yml` 从官方正式 Release tag 创建的升级候选。
 
-`upstream-sync.yml` 每 3 小时（北京时间 02:17、05:17、…）查询一次 `Wei-Shaw/sub2api` 最新正式 Release，不同步官方 `main`、draft 或 prerelease。候选分支依次运行 CI、安全扫描、AIFoo 测试、生产构建与容器 smoke test：
+`upstream-sync.yml` 每 6 小时（北京时间 02:17、08:17、…）查询一次 `Wei-Shaw/sub2api` 最新正式 Release，不同步官方 `main`、draft 或 prerelease。候选分支依次运行 CI、安全扫描、AIFoo 测试、生产构建与容器 smoke test：
 
 - 候选 SHA 只完整验证和构建一次，并把同一镜像推送到私有 GHCR；原子合入 `production` 后只核对 SHA、digest 和镜像来源标签，不重新构建或跑全量测试。
-- `frontend/`、`deploy/frontend/`、`docs/legal/`、`backend/internal/web/` 或可能改变前端 API 契约的后端路径发生变化时，仍由同一套 CI、安全扫描、AIFoo 浏览器测试和镜像 smoke test 判断兼容性；官方 Release 能干净合并且全部检查通过时自动合入 `production`。
+- `frontend/`、`deploy/frontend/`、`docs/legal/`、`backend/internal/web/` 或可能改变前端 API 契约的后端路径发生变化时，仍由同一套 CI、安全扫描、AIFoo 浏览器测试和镜像 smoke test 判断兼容性；冲突由确定性规则自动选取冲突块后继续验证，只有无法解析或验证失败时才阻断；官方 Release 全部检查通过时自动合入 `production`。
 - 上游新增而 AIFoo 尚未定制的页面、组件和交互默认保留官方 UI。只有源码冲突、测试失败、构建失败或候选基线变化时才暂停，不再因为检测到 UI 路径本身等待人工审批。
 - 若 `production` 已更新但最终记录失败，后续定时检查会优先复用 SHA 和来源标签仍有效的候选镜像；仅在镜像缺失或证据失效时才重跑必要构建，也可手动设置 `retry_final=true`。
 - 每个新 Release 创建一个分配给仓库所有者的 Issue。`ready-for-vps` 只在前端已预加载、且需要后端时 `backend-prepared` 也完成后添加；旧 Issue 的 `ui-review-required` 仍作为兼容性阻断标签被识别和清理。

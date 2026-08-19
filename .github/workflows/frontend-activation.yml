@@ -107,8 +107,19 @@ jobs:
 
           production_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
           if [ "$production_sha" != "$SOURCE_SHA" ]; then
-            echo "Production moved after the candidate was validated" >&2
-            exit 1
+            comparison=$(gh api "repos/$GITHUB_REPOSITORY/compare/$SOURCE_SHA...$production_sha")
+            if [ "$(jq -r '.status' <<< "$comparison")" != "ahead" ]; then
+              echo "Validated frontend source is no longer an ancestor of production" >&2
+              exit 1
+            fi
+            changed_image_inputs=$(jq -r '.files[]?.filename' <<< "$comparison" \
+              | grep -E '^(frontend/|docs/legal/|deploy/frontend/(Dockerfile$|landing/|nginx\\.conf$|security-headers\\.conf$))' \
+              || true)
+            if [ -n "$changed_image_inputs" ]; then
+              echo "Frontend image inputs changed after the validated image was built" >&2
+              printf '%s\n' "$changed_image_inputs" >&2
+              exit 1
+            fi
           fi
 
           statuses=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SOURCE_SHA/status")
@@ -313,6 +324,11 @@ jobs:
           gh label create vps-preloaded --color 0E8A16 --force >/dev/null
           gh label create vps-preload-failed --color B60205 --force >/dev/null
           if [ "$VALIDATION_RESULT" != "success" ]; then
+            gh issue edit "$ISSUE_NUMBER" \
+              --add-label vps-preload-failed \
+              --remove-label vps-preloaded \
+              --remove-label ready-for-vps >/dev/null 2>&1 || \
+              gh issue edit "$ISSUE_NUMBER" --add-label vps-preload-failed >/dev/null
             gh issue comment "$ISSUE_NUMBER" \
               --body "Validating the exact frontend candidate for $RELEASE_TAG failed before VPS preload. Production was not switched; rerun after diagnosis."
             exit 1
@@ -333,6 +349,11 @@ jobs:
               --body "The VPS frontend image preload command for $RELEASE_TAG failed. Production was not switched; rerun the preload step after diagnosis."
             exit 1
           else
+            gh issue edit "$ISSUE_NUMBER" \
+              --add-label vps-preload-failed \
+              --remove-label vps-preloaded \
+              --remove-label ready-for-vps >/dev/null 2>&1 || \
+              gh issue edit "$ISSUE_NUMBER" --add-label vps-preload-failed >/dev/null
             gh issue comment "$ISSUE_NUMBER" \
               --body "Frontend preload prerequisites for $RELEASE_TAG failed before the VPS preload command ran. Production was not switched; rerun after diagnosis."
             exit 1

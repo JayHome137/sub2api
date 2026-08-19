@@ -16,6 +16,8 @@ BACKEND_DEPLOY_WORKFLOW=$ROOT/.github/workflows/deploy-backend.yml
 BACKEND_PREPARATION_WORKFLOW=$ROOT/.github/workflows/backend-preparation.yml
 WEB_UPDATE_WORKFLOW=$ROOT/.github/workflows/web-update.yml
 FRONTEND_ACTIVATION_WORKFLOW=$ROOT/.github/workflows/frontend-activation.yml
+CONFLICT_RESOLVER=$ROOT/.github/scripts/resolve-upstream-conflicts.sh
+CONFLICT_RESOLVER_TEST=$ROOT/.github/scripts/resolve-upstream-conflicts-test.sh
 PREFLIGHT_WORKFLOW=$ROOT/.github/workflows/preflight.yml
 CLA_WORKFLOW=$ROOT/.github/workflows/cla.yml
 DEPLOY_HELPER=$ROOT/deploy/frontend/deploy-frontend.sh
@@ -80,6 +82,9 @@ require_text "$SYNC_WORKFLOW" 'newly added upstream surfaces retain their offici
 require_text "$SYNC_WORKFLOW" "retry_final"
 require_text "$SYNC_WORKFLOW" 'current_base=$(gh api'
 require_text "$SYNC_WORKFLOW" 'git merge-base --is-ancestor "$release_commit" "$candidate_sha"'
+require_text "$SYNC_WORKFLOW" '.github/scripts/resolve-upstream-conflicts.sh'
+require_text "$SYNC_WORKFLOW" 'deterministic resolver selected only conflict hunks'
+require_text "$SYNC_WORKFLOW" 'Resolver decisions:'
 require_text "$SYNC_WORKFLOW" '-F force=false'
 require_text "$SYNC_WORKFLOW" 'needs.prepare.outputs.final_retry'
 require_text "$SYNC_WORKFLOW" 'backend/internal/(domain|middleware|model|pkg/response|setup)/'
@@ -132,12 +137,25 @@ require_text "$BACKEND_CI_WORKFLOW" "if: inputs.checkout_ref != '' && inputs.run
 for file in \
   "$WEB_UPDATE_WORKFLOW" \
   "$FRONTEND_ACTIVATION_WORKFLOW" \
+  "$CONFLICT_RESOLVER" \
+  "$CONFLICT_RESOLVER_TEST" \
   "$UPDATE_BRIDGE" \
   "$UPDATE_BRIDGE_SERVICE" \
   "$UPDATE_BRIDGE_INSTALL" \
   "$UPDATE_BRIDGE_NGINX"; do
   [ -s "$file" ] || fail "required web update file is missing: $file"
 done
+
+require_text "$CONFLICT_RESOLVER" 'Only conflict hunks are selected'
+require_text "$CONFLICT_RESOLVER" 'frontend/src/*|frontend/e2e/*|frontend/public/*'
+require_text "$CONFLICT_RESOLVER" '.github/workflows/*|deploy/frontend/*|deploy/backend/*'
+require_text "$CONFLICT_RESOLVER" 'git merge-file --"$strategy"'
+require_text "$CONFLICT_RESOLVER" 'git diff --name-only --diff-filter=U'
+require_text "$CONFLICT_RESOLVER" 'No in-progress merge found; refusing to resolve an unrelated failure'
+reject_text "$CONFLICT_RESOLVER" 'git add -A'
+sh -n "$CONFLICT_RESOLVER"
+sh -n "$CONFLICT_RESOLVER_TEST"
+sh "$CONFLICT_RESOLVER_TEST"
 
 require_text "$DEPLOY_WORKFLOW" 'workflow_call:'
 require_text "$BACKEND_DEPLOY_WORKFLOW" 'workflow_call:'
@@ -179,6 +197,10 @@ require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'VALIDATION_RESULT: ${{ steps.valid
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'Validating the exact frontend candidate for $RELEASE_TAG failed before VPS preload.'
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'The VPS frontend image preload command for $RELEASE_TAG failed.'
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'Frontend preload prerequisites for $RELEASE_TAG failed before the VPS preload command ran.'
+require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'Validated frontend source is no longer an ancestor of production'
+require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'Frontend image inputs changed after the validated image was built'
+require_text "$FRONTEND_ACTIVATION_WORKFLOW" '--add-label vps-preload-failed'
+require_text "$FRONTEND_ACTIVATION_WORKFLOW" '--remove-label ready-for-vps'
 reject_text "$FRONTEND_ACTIVATION_WORKFLOW" 'Preloading the validated frontend image for $RELEASE_TAG failed.'
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'compare/$SOURCE_SHA...$production_sha'
 require_text "$FRONTEND_ACTIVATION_WORKFLOW" 'Frontend image inputs changed after the validated image was built'
