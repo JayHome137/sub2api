@@ -50,6 +50,26 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Download a deployment file and fail closed on HTTP/network errors or an empty response.
+download_file() {
+    local url="$1"
+    local output="$2"
+
+    if command_exists curl; then
+        curl --fail --location --silent --show-error --retry 3 "$url" -o "$output"
+    elif command_exists wget; then
+        wget --quiet --tries=3 "$url" -O "$output"
+    else
+        print_error "Neither curl nor wget is installed. Please install one of them."
+        return 1
+    fi
+
+    if [ ! -s "$output" ]; then
+        print_error "Downloaded file is empty: ${url}"
+        return 1
+    fi
+}
+
 # Main installation function
 main() {
     echo ""
@@ -77,23 +97,12 @@ main() {
 
     # Download docker-compose.local.yml and save as docker-compose.yml
     print_info "Downloading docker-compose.yml..."
-    if command_exists curl; then
-        curl -sSL "${GITHUB_RAW_URL}/docker-compose.local.yml" -o docker-compose.yml
-    elif command_exists wget; then
-        wget -q "${GITHUB_RAW_URL}/docker-compose.local.yml" -O docker-compose.yml
-    else
-        print_error "Neither curl nor wget is installed. Please install one of them."
-        exit 1
-    fi
+    download_file "${GITHUB_RAW_URL}/docker-compose.local.yml" docker-compose.yml
     print_success "Downloaded docker-compose.yml"
 
     # Download .env.example
     print_info "Downloading .env.example..."
-    if command_exists curl; then
-        curl -sSL "${GITHUB_RAW_URL}/.env.example" -o .env.example
-    else
-        wget -q "${GITHUB_RAW_URL}/.env.example" -O .env.example
-    fi
+    download_file "${GITHUB_RAW_URL}/.env.example" .env.example
     print_success "Downloaded .env.example"
 
     # Generate .env file with auto-generated secrets
@@ -135,13 +144,8 @@ main() {
     echo "  Preparation Complete!"
     echo "=========================================="
     echo ""
-    echo "Generated secure credentials:"
-    echo "  POSTGRES_PASSWORD:     ${POSTGRES_PASSWORD}"
-    echo "  JWT_SECRET:            ${JWT_SECRET}"
-    echo "  TOTP_ENCRYPTION_KEY:   ${TOTP_ENCRYPTION_KEY}"
-    echo ""
-    print_warning "These credentials have been saved to .env file."
-    print_warning "Please keep them secure and do not share publicly!"
+    print_success "Generated credentials and saved them to .env (permissions: 600)."
+    print_warning "Keep .env secure and do not commit or share it."
     echo ""
     echo "Directory structure:"
     echo "  docker-compose.yml        - Docker Compose configuration"

@@ -19,7 +19,7 @@ fail() {
 git -C "$TEST_ROOT" init -q
 git -C "$TEST_ROOT" config user.name 'AIFoo conflict resolver test'
 git -C "$TEST_ROOT" config user.email 'aifoo-conflict-resolver@example.invalid'
-mkdir -p "$TEST_ROOT/.github/workflows" "$TEST_ROOT/backend/internal/ordinary" "$TEST_ROOT/frontend/src"
+mkdir -p "$TEST_ROOT/.github/workflows" "$TEST_ROOT/backend/internal/ordinary" "$TEST_ROOT/frontend/src" "$TEST_ROOT/deploy"
 
 printf '%s\n' 'shared=base' > "$TEST_ROOT/.github/workflows/policy.yml"
 printf '%s\n' 'shared=base' > "$TEST_ROOT/backend/internal/ordinary/policy.go"
@@ -42,6 +42,7 @@ printf '\000base' > "$TEST_ROOT/backend/internal/ordinary/binary.bin"
 printf '%s\n' 'vite=base' > "$TEST_ROOT/frontend/vite.config.ts"
 printf '%s\n' 'tsconfig=base' > "$TEST_ROOT/frontend/tsconfig.json"
 printf '%s\n' 'future=base' > "$TEST_ROOT/frontend/future-tool.config.ts"
+printf '%s\n' 'deployment=base' > "$TEST_ROOT/deploy/docker-deploy.sh"
 git -C "$TEST_ROOT" add .
 git -C "$TEST_ROOT" commit -qm base
 
@@ -68,6 +69,7 @@ printf '\000ours' > "$TEST_ROOT/backend/internal/ordinary/binary.bin"
 printf '%s\n' 'vite=ours' > "$TEST_ROOT/frontend/vite.config.ts"
 printf '%s\n' 'tsconfig=ours' > "$TEST_ROOT/frontend/tsconfig.json"
 printf '%s\n' 'future=ours' > "$TEST_ROOT/frontend/future-tool.config.ts"
+printf '%s\n' 'deployment=ours' > "$TEST_ROOT/deploy/docker-deploy.sh"
 git -C "$TEST_ROOT" add .
 git -C "$TEST_ROOT" commit -qm ours
 
@@ -94,6 +96,7 @@ printf '\000theirs' > "$TEST_ROOT/backend/internal/ordinary/binary.bin"
 printf '%s\n' 'vite=theirs' > "$TEST_ROOT/frontend/vite.config.ts"
 printf '%s\n' 'tsconfig=theirs' > "$TEST_ROOT/frontend/tsconfig.json"
 printf '%s\n' 'future=theirs' > "$TEST_ROOT/frontend/future-tool.config.ts"
+printf '%s\n' 'deployment=theirs' > "$TEST_ROOT/deploy/docker-deploy.sh"
 git -C "$TEST_ROOT" add .
 git -C "$TEST_ROOT" commit -qm theirs
 
@@ -137,6 +140,8 @@ grep -Fxq 'tsconfig=ours' "$TEST_ROOT/frontend/tsconfig.json" \
   || fail 'frontend root TypeScript configuration was not protected'
 grep -Fxq 'future=ours' "$TEST_ROOT/frontend/future-tool.config.ts" \
   || fail 'future frontend root configuration was not protected'
+grep -Fxq 'deployment=ours' "$TEST_ROOT/deploy/docker-deploy.sh" \
+  || fail 'deployment security contract was not protected'
 if (cd "$TEST_ROOT" && .github/scripts/resolve-upstream-conflicts.sh >/dev/null 2>&1); then
   fail 'resolver accepted a non-merge state and faked success'
 fi

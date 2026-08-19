@@ -942,7 +942,9 @@ database:
   user: "postgres"
   # Database password
   # 数据库密码
-  password: "your_secure_password_here"
+  # Set a unique random value before starting the service.
+  # 启动服务前请设置唯一的随机值。
+  password: ""
   # Database name
   # 数据库名称
   dbname: "sub2api"
@@ -1011,10 +1013,10 @@ ops:
 # JWT 配置
 # =============================================================================
 jwt:
-  # IMPORTANT: Change this to a random string in production!
-  # 重要：生产环境中请更改为随机字符串！
+  # Leave empty to auto-generate on first startup, or set a managed random value.
+  # 留空可在首次启动时自动生成，也可填入托管的随机值。
   # Generate with / 生成命令: openssl rand -hex 32
-  secret: "change-this-to-a-secure-random-string"
+  secret: ""
   # Token expiration time in hours (max 168)
   # 令牌过期时间（小时，最大 168）
   expire_hour: 24
@@ -1109,10 +1111,13 @@ oidc_connect:
 # 默认设置
 # =============================================================================
 default:
-  # Initial admin account (created on first run)
-  # 初始管理员账户（首次运行时创建）
+  # Legacy fields retained for compatibility; the setup wizard collects the
+  # initial admin credentials separately.
+  # 为兼容性保留的历史字段；初始管理员凭据由 setup 向导单独收集。
   admin_email: "admin@example.com"
-  admin_password: "admin123"
+  # Leave empty; this field is not used to create the initial admin account.
+  # 留空；此字段不会用于创建初始管理员账号。
+  admin_password: ""
 
   # Default settings for new users
   # 新用户默认设置

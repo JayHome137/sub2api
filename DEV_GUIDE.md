@@ -21,8 +21,8 @@
 | 端口 | 5432 |
 | psql 路径 | `C:\Program Files\PostgreSQL\16\bin\psql.exe` |
 | pg_hba.conf | `C:\Program Files\PostgreSQL\16\data\pg_hba.conf` |
-| 数据库凭据 | user=`sub2api`, password=`sub2api`, dbname=`sub2api` |
-| 超级用户 | user=`postgres`, password=`postgres` |
+| 数据库凭据 | user=`sub2api`, password=`<LOCAL_DB_PASSWORD>`, dbname=`sub2api`（仅限本地测试，请替换为本机值） |
+| 超级用户 | user=`postgres`, password=`<LOCAL_DB_ADMIN_PASSWORD>`（仅限本地测试，请替换为本机值） |
 
 ### Redis
 
@@ -148,8 +148,8 @@ psql -f "C:\temp.sql"
 3. 无密码登录并重置
    ```bash
    psql -U postgres -h 127.0.0.1
-   ALTER USER sub2api WITH PASSWORD 'sub2api';
-   ALTER USER postgres WITH PASSWORD 'postgres';
+   ALTER USER sub2api WITH PASSWORD '<LOCAL_DB_PASSWORD>';
+   ALTER USER postgres WITH PASSWORD '<LOCAL_DB_ADMIN_PASSWORD>';
    ```
 4. 改回 `scram-sha-256` 并重启
 

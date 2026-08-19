@@ -1,9 +1,9 @@
 # Sub2API 全量代码审计报告
 
 审计日期：2026-08-19
-审计分支：`production`
+审计分支：`codex/full-code-audit-fixes-20260820`
 审计基线：`7f20d2953 fix(sync): resolve upstream conflicts deterministically`
-交付状态：以下修复均在本地工作树，未提交、未推送、未部署。
+交付状态：审计修复已提交并推送到审计分支；尚未合并 `production`，也未触发部署。
 
 ## 1. 结论
 
@@ -15,6 +15,7 @@
 2. 删除了未接入生产依赖图的 `GroupService`、`ProxyService` 及其 Wire provider，删除无调用的 `RedeemService.GetStats`，并删除无实际刷新逻辑的 `RefreshAccountCredentials`。
 3. 删除无源码 import 的 `@lobehub/icons` 及仅为它保留的 Mermaid override；内联 SVG UI 未改变。
 4. 修正 Redeem stats 测试路由，使其与生产路由一致。
+5. 清理文档、示例配置和部署脚本中的固定凭据；部署下载失败时 fail-closed，生成的凭据不再写入终端日志，并对长占位 JWT 做拒绝校验。
 
 尚不能安全“顺手修掉”的项目被保留为明确 follow-up：支付限额并发竞态、API Key 明文存储、四个假统计 API、超大 Vue 文件，以及 EasyPay 时间字段兼容性。这些项目都需要事务/迁移/协议或视觉回归证据；强行改动会比保留当前行为更容易中断生产或影响 UI。
 
@@ -37,6 +38,8 @@
 | C-06 | `@lobehub/icons` 是无用直接依赖 | 已修复并验证 | 业务源码无 import，`pnpm why @lobehub/icons` 已无输出；删除后锁文件、测试和生产构建均通过。 |
 | C-07 | 旧服务/空刷新接口造成冗余 | 已修复，待 Go 环境复核 | 删除未注入的 `GroupService`、`ProxyService`、Wire provider、无调用 `RedeemService.GetStats` 和无实现的 `RefreshAccountCredentials`。全仓引用与 Wire 检索无残留；本机无 Go，尚不能编译确认。 |
 | C-08 | group/proxy/redeem/user usage API 返回假统计 | 已确认，保留兼容 | `group_handler.go`、`proxy_handler.go`、`redeem_handler.go`、`admin_user.go` 返回固定 0 值；部分接口仍被前端 API 层暴露，也可能被外部调用。统计口径未定义，不能删路由、改 501 或伪造数值。 |
+| C-09 | 文档/示例含固定数据库、管理员和 JWT 占位凭据；部署下载器对 HTTP 错误不 fail-closed，且曾回显生成密钥 | 已修复并加合同测试 | 示例值改为空值或明确占位说明；`docker-deploy.sh` 使用失败即停与空文件检查，不再打印密钥；新增 `deploy/tests/docker-deploy-security-test.sh` 并接入 backend CI。 |
+| C-10 | 长的 JWT 配置占位符可能绕过原有长度/重复字符检查 | 已修复并测试 | `isWeakJWTSecret` 拒绝已知长占位符，配置单测覆盖默认示例值。 |
 
 ## 4. 复杂度与供应链结论
 
@@ -50,7 +53,7 @@
 当前规则已落地为：
 
 1. 稳定上游 Release 进入候选分支。
-2. resolver 对真正冲突的 `frontend/*` 与 fork 交付文件取 fork 侧；其他冲突取上游侧；不冲突的双方改动由三方合并保留。
+2. resolver 对真正冲突的 `frontend/*`、CI/同步脚本、部署合同和安全示例（包括 `deploy/docker-deploy.sh`、空凭据模板及其合同测试）取 fork 侧；其他冲突取上游侧；不冲突的双方改动由三方合并保留。
 3. 对 add/delete/rename/binary 按 Git stage 选择或暂存删除，不留下 `U` 状态。
 4. resolver、合同测试、前端验证、候选 SHA/digest 检查通过后才进入预加载和网页手动激活。
 5. 无法通过验证的候选只停止该候选，不部署、不污染下次同步；后续上游检查仍可继续运行。
@@ -61,7 +64,7 @@
 
 | 检查 | 结果 |
 |---|---|
-| `sh .github/scripts/resolve-upstream-conflicts-test.sh` | 通过，含文本、add/add、delete/modify、rename/delete、binary、未来前端根配置 fixture |
+| `sh .github/scripts/resolve-upstream-conflicts-test.sh` | 通过，含文本、add/add、delete/modify、rename/delete、binary、未来前端根配置和部署安全合同 fixture |
 | `sh deploy/frontend/workflow-contract-test.sh` | 通过 |
 | `sh deploy/backend/workflow-contract-test.sh` | 通过 |
 | `corepack pnpm@10.28.2 install --frozen-lockfile --offline` | 通过 |
@@ -70,7 +73,10 @@
 | `pnpm exec vitest run --reporter=dot --silent` | 233 个文件、1,639 个测试全部通过 |
 | `pnpm run build` | 通过；仅有第 4 节列出的 warning |
 | `pnpm audit --prod` | 仅剩 `xlsx` 的两个已知 high advisory |
-| `sh -n`（3 个改动 shell 脚本）与 `git diff --check` | 通过 |
+| `sh deploy/tests/docker-deploy-security-test.sh` | 通过；验证下载 fail-closed、空响应拒绝和凭据不回显 |
+| `bash -n`/`sh -n`（4 个改动 shell 脚本）与 `git diff --check` | 通过 |
+
+已推送提交 `980be1f81` 对应的远端检查也全部通过：CI `32283716587`、Security Scan `32283716275`、Validate AIFoo frontend `32283716226`。这些检查覆盖 Go 单元/集成测试、shell 合同、golangci-lint、前后端安全扫描、lint/typecheck/Vitest/生产构建、Playwright、Docker image smoke 与 backup/restore。
 
 ## 7. 后续优先级
 

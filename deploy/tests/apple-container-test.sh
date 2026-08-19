@@ -36,6 +36,7 @@ mkdir -p "${STATE_DIR}"
 "${SCRIPT}" init
 [[ "$(stat -f '%Lp' "${ENV_FILE}")" == "600" ]] || fail "init did not create a mode-600 env file"
 grep -q '^POSTGRES_PASSWORD=change_this_secure_password$' "${ENV_FILE}" && fail "init retained the placeholder password"
+grep -q '^POSTGRES_PASSWORD=$' "${ENV_FILE}" && fail "init left the PostgreSQL password empty"
 
 chmod 644 "${ENV_FILE}"
 if "${SCRIPT}" up >/dev/null 2>&1; then

@@ -4,7 +4,7 @@
 
 # Sub2API
 
-[![Go](https://img.shields.io/badge/Go-1.26.5-00ADD8.svg)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.26.6-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.4+-4FC08D.svg)](https://vuejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7+-DC382D.svg)](https://redis.io/)
@@ -208,7 +208,7 @@ Sub2API 是一个 AI API 网关平台，用于分发和管理 AI 产品订阅的
 
 | 组件 | 技术 |
 |------|------|
-| 后端 | Go 1.26.5, Gin, Ent |
+| 后端 | Go 1.26.6, Gin, Ent |
 | 前端 | Vue 3.4+, Vite 5+, TailwindCSS |
 | 数据库 | PostgreSQL 15+ |
 | 缓存/队列 | Redis 7+ |
@@ -330,7 +330,7 @@ docker compose logs -f sub2api
 - 自动生成安全凭证（JWT_SECRET、TOTP_ENCRYPTION_KEY、POSTGRES_PASSWORD）
 - 创建 `.env` 文件并填充自动生成的密钥
 - 创建数据目录（使用本地目录，便于备份和迁移）
-- 显示生成的凭证供你记录
+- 提示生成的凭证已写入 `.env`（权限为 `600`）
 
 #### 手动部署
 
@@ -353,17 +353,21 @@ nano .env
 
 ```bash
 # PostgreSQL 密码（必需）
-POSTGRES_PASSWORD=your_secure_password_here
+# 启动服务前请设置唯一的随机值。
+POSTGRES_PASSWORD=
 
 # JWT 密钥（推荐 - 重启后保持用户登录状态）
-JWT_SECRET=your_jwt_secret_here
+# 留空可在首次启动时自动生成，也可填入托管的随机值。
+JWT_SECRET=
 
-# TOTP 加密密钥（推荐 - 重启后保留双因素认证）
-TOTP_ENCRYPTION_KEY=your_totp_key_here
+# TOTP 加密密钥（推荐 - 设置固定值以保留双因素认证）
+# 留空仅适合开发环境：每次启动都会生成新密钥，现有 TOTP 配置将失效。
+# 生成命令：openssl rand -hex 32
+TOTP_ENCRYPTION_KEY=
 
 # 可选：管理员账号
 ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=your_admin_password
+ADMIN_PASSWORD=
 
 # 可选：自定义端口
 SERVER_PORT=8080
@@ -544,7 +548,8 @@ database:
   host: "localhost"
   port: 5432
   user: "postgres"
-  password: "your_password"
+  # 启动服务前请设置唯一的随机值。
+  password: ""
   dbname: "sub2api"
 
 redis:
@@ -553,7 +558,8 @@ redis:
   password: ""
 
 jwt:
-  secret: "change-this-to-a-secure-random-string"
+  # 留空可在首次启动时自动生成，也可填入托管的随机值。
+  secret: ""
   expire_hour: 24
 
 default:
@@ -578,7 +584,7 @@ gateway:
   # /sora/media 是否强制要求 API Key（默认 false）
   sora_media_require_api_key: false
   # 媒体临时签名密钥（为空则禁用签名）
-  sora_media_signing_key: "your-signing-key"
+  sora_media_signing_key: ""
   # 临时签名 URL 有效期（秒）
   sora_media_signed_url_ttl_seconds: 900
 ```
