@@ -1547,9 +1547,9 @@ func TestValidateJWTSecretRejectsWeakLongValues(t *testing.T) {
 	}
 
 	for name, secret := range map[string]string{
-		"all zero":                         strings.Repeat("0", 32),
-		"repeated character":               strings.Repeat("a", 32),
-		"copied config placeholder":        "change-this-to-a-secure-random-string",
+		"all zero":                  strings.Repeat("0", 32),
+		"repeated character":        strings.Repeat("a", 32),
+		"copied config placeholder": "change-this-to-a-secure-random-string",
 	} {
 		t.Run(name, func(t *testing.T) {
 			cfg.JWT.Secret = secret

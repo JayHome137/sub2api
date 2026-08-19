@@ -3630,16 +3630,16 @@ func isWeakJWTSecret(secret string) bool {
 		return true
 	}
 	weak := map[string]struct{}{
-		"change-me-in-production":                   {},
-		"change-this-to-a-secure-random-string":     {},
-		"your_jwt_secret_here":                      {},
-		"changeme":                                  {},
-		"secret":                                    {},
-		"password":                                  {},
-		"123456":                                    {},
-		"12345678":                                  {},
-		"admin":                                     {},
-		"jwt-secret":                                {},
+		"change-me-in-production":               {},
+		"change-this-to-a-secure-random-string": {},
+		"your_jwt_secret_here":                  {},
+		"changeme":                              {},
+		"secret":                                {},
+		"password":                              {},
+		"123456":                                {},
+		"12345678":                              {},
+		"admin":                                 {},
+		"jwt-secret":                            {},
 	}
 	if _, exists := weak[lower]; exists {
 		return true
