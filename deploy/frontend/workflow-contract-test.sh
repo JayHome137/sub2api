@@ -147,9 +147,11 @@ for file in \
 done
 
 require_text "$CONFLICT_RESOLVER" 'Only conflict hunks are selected'
-require_text "$CONFLICT_RESOLVER" 'frontend/src/*|frontend/e2e/*|frontend/public/*'
+require_text "$CONFLICT_RESOLVER" 'frontend/*)'
 require_text "$CONFLICT_RESOLVER" '.github/workflows/*|deploy/frontend/*|deploy/backend/*'
 require_text "$CONFLICT_RESOLVER" 'git merge-file --"$strategy"'
+require_text "$CONFLICT_RESOLVER" 'is_binary_conflict'
+require_text "$CONFLICT_RESOLVER" 'action=stage-delete'
 require_text "$CONFLICT_RESOLVER" 'git diff --name-only --diff-filter=U'
 require_text "$CONFLICT_RESOLVER" 'No in-progress merge found; refusing to resolve an unrelated failure'
 reject_text "$CONFLICT_RESOLVER" 'git add -A'

@@ -9,9 +9,10 @@ set -eu
 
 policy_for() {
   case "$1" in
-    frontend/src/*|frontend/e2e/*|frontend/public/*|frontend/package.json|frontend/pnpm-lock.yaml|frontend/playwright.config.ts)
-      # A conflict means this file already has fork-owned UI code. Keep that
-      # contract; upstream-only new files merge normally without this branch.
+    frontend/*)
+      # A conflict means this file already has fork-owned UI or build code.
+      # Keep that contract; upstream-only new files merge normally without
+      # entering this conflict branch.
       printf '%s\n' ours
       ;;
     .github/workflows/*|deploy/frontend/*|deploy/backend/*)
@@ -31,15 +32,60 @@ if [ -z "$merge_head" ]; then
   exit 1
 fi
 
+stage_exists() {
+  stage=$1
+  path=$2
+  git ls-files -u -- "$path" | awk -v stage="$stage" '
+    $3 == stage { found = 1 }
+    END { exit(found ? 0 : 1) }
+  '
+}
+
 checkout_stage() {
   strategy=$1
   path=$2
+  reason=${3:-missing-stage}
+  stage=
   case "$strategy" in
-    ours|ours-contract) git checkout --ours -- "$path" ;;
-    theirs) git checkout --theirs -- "$path" ;;
-    *) return 1 ;;
+    ours|ours-contract) stage=2 ;;
+    theirs) stage=3 ;;
+    *)
+      echo "Unknown conflict policy '$strategy' for $path" >&2
+      return 1
+      ;;
   esac
-  git add -- "$path"
+
+  if stage_exists "$stage" "$path"; then
+    case "$strategy" in
+      ours|ours-contract) git checkout --ours -- "$path" ;;
+      theirs) git checkout --theirs -- "$path" ;;
+    esac
+    git add -- "$path"
+    printf 'path=%s policy=%s mode=stage-fallback reason=%s action=checkout-stage-%s\n' "$path" "$strategy" "$reason" "$stage"
+    return 0
+  fi
+
+  # In delete/modify and rename/delete conflicts, the selected side has no
+  # stage. That is an intentional deletion, not a failed checkout.
+  if ! git ls-files -u -- "$path" | grep -q .; then
+    echo "No merge stages found while resolving $path" >&2
+    return 1
+  fi
+  git rm -f -- "$path"
+  printf 'path=%s policy=%s mode=stage-fallback reason=%s action=stage-delete\n' "$path" "$strategy" "$reason"
+}
+
+is_binary_pair() {
+  git diff --no-index --numstat -- "$1" "$2" 2>/dev/null | awk '
+    $1 == "-" && $2 == "-" { found = 1 }
+    END { exit(found ? 0 : 1) }
+  '
+}
+
+is_binary_conflict() {
+  is_binary_pair "$1" "$2" \
+    || is_binary_pair "$1" "$3" \
+    || is_binary_pair "$2" "$3"
 }
 
 resolve_path() {
@@ -55,26 +101,45 @@ resolve_path() {
   }
   trap cleanup EXIT HUP INT TERM
 
+  # Add/add and delete/modify conflicts intentionally lack one or more merge
+  # stages. Select the policy side when present; otherwise stage the deletion.
+  if ! stage_exists 1 "$path" \
+    || ! stage_exists 2 "$path" \
+    || ! stage_exists 3 "$path"; then
+    checkout_stage "$strategy" "$path"
+    trap - EXIT HUP INT TERM
+    cleanup
+    return 0
+  fi
+
   if ! git show ":1:$path" > "$base" 2>/dev/null \
     || ! git show ":2:$path" > "$ours" 2>/dev/null \
     || ! git show ":3:$path" > "$theirs" 2>/dev/null; then
-    checkout_stage "$strategy" "$path"
-    printf 'path=%s policy=%s mode=stage-fallback\n' "$path" "$policy"
+    echo "Unable to materialize merge stages for $path" >&2
+    trap - EXIT HUP INT TERM
+    cleanup
+    return 1
+  fi
+
+  if is_binary_conflict "$base" "$ours" "$theirs"; then
+    checkout_stage "$strategy" "$path" binary
     trap - EXIT HUP INT TERM
     cleanup
     return 0
   fi
 
   resolved=$(mktemp)
-  if ! git merge-file --"$strategy" -p "$ours" "$base" "$theirs" > "$resolved"; then
+  if git merge-file --"$strategy" -p "$ours" "$base" "$theirs" > "$resolved"; then
+    mv "$resolved" "$path"
+    git add -- "$path"
+    printf 'path=%s policy=%s mode=conflict-hunks\n' "$path" "$policy"
+  else
+    # git merge-file rejects binary content. It can also reject another
+    # unmergeable representation; in either case the explicit path policy is
+    # safer than leaving a U state or manufacturing a text merge.
     rm -f "$resolved"
-    trap - EXIT HUP INT TERM
-    cleanup
-    return 1
+    checkout_stage "$strategy" "$path" unmergeable
   fi
-  mv "$resolved" "$path"
-  git add -- "$path"
-  printf 'path=%s policy=%s mode=conflict-hunks\n' "$path" "$policy"
   trap - EXIT HUP INT TERM
   cleanup
 }
