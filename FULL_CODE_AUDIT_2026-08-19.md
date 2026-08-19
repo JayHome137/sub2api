@@ -3,7 +3,7 @@
 审计日期：2026-08-19
 审计分支：`codex/full-code-audit-fixes-20260820`
 审计基线：`7f20d2953 fix(sync): resolve upstream conflicts deterministically`
-交付状态：审计修复已提交并推送到审计分支；尚未合并 `production`，也未触发部署。
+交付状态：审计修复已提交、推送并合并到远端 `production`；未触发生产部署。
 
 ## 1. 结论
 
@@ -24,7 +24,7 @@
 - 范围：`backend/` 的认证、支付、订单、Webhook、数据访问；`frontend/` 的依赖、构建、源码和复杂度；`.github/` 与 `deploy/` 的上游同步、冲突解析和交付门禁。
 - 方法：源码与调用链检索、Git 双边差异、依赖树、resolver fixture、工作流合同测试、前端 lint/typecheck/test/build、锁文件一致性与 `git diff --check`。
 - 上游基线：共同祖先为 `e0c48a19ed794a565e3858662520afe0a1f9f0ba`；本地独有 103 个提交、上游独有 39 个提交。双边实际修改重叠仅 3 个后端文件：`gateway_handler.go`、`channel_monitor_quota_fetcher.go`、`gateway_service.go`。
-- 限制：本机没有 Go、Semgrep、govulncheck、ShellCheck 或 actionlint，因而不能宣称 Go 编译/测试、Go SAST、ShellCheck 或 actionlint 已通过。
+- 限制：本机没有 Go、Semgrep、govulncheck、ShellCheck 或 actionlint；Go 编译/测试与 Go SAST 以远端 Actions 证据为准，ShellCheck/actionlint 仍不在本轮声明范围内。
 
 ## 3. 已确认问题与处置
 
@@ -77,6 +77,16 @@
 | `bash -n`/`sh -n`（4 个改动 shell 脚本）与 `git diff --check` | 通过 |
 
 已推送提交 `980be1f81` 对应的远端检查也全部通过：CI `32283716587`、Security Scan `32283716275`、Validate AIFoo frontend `32283716226`。这些检查覆盖 Go 单元/集成测试、shell 合同、golangci-lint、前后端安全扫描、lint/typecheck/Vitest/生产构建、Playwright、Docker image smoke 与 backup/restore。
+
+最终提交 `c04361bae6e4ee8c4694908857d07037c19c715b` 的远端证据：
+
+- CI `32292417011`：shell、Go unit/integration、golangci-lint 全部成功；macOS 子 job 按 workflow 条件 skipped。
+- Security Scan `32292416699`：backend-security、frontend-security 成功。
+- Validate AIFoo frontend `32292416743`：frontend、image、attest 成功；publish 按未请求生产发布的规则 skipped。frontend job 实际通过 lint/typecheck、Vitest、生产构建、Chromium/Playwright；image job 实际通过容器 smoke 与部署 backup/restore 集成。
+- PR #65 已合并，合并提交为 `b2643d1c75d3269cf8dc537f78188bbdf9d55ff4`，远端 `origin/production` 已核对为该 SHA。
+- 合并后的 push 仅触发了配置为 skipped 的 macOS Shell CI；没有触发 deploy、frontend activation 或 backend activation workflow。
+- 只读公网探针（2026-08-20 Asia/Shanghai）：`https://aifoo.cc.cd/health`、`/frontend-health` 返回 HTTP 200 和 `{"status":"ok"}`；Landing `/` 与 `/login` 返回 HTTP 200，安全响应头存在。
+- 仓库自带 VPS Read-only Preflight `32294944976` 未进入 runner：GitHub check annotation 明确为账户付款失败/消费上限，两个 job 均 0 秒、无步骤执行；这不是代码或 VPS 返回。因而不能把该 run 记为 VPS `ready`，也没有尝试绕过账单或执行生产写操作。
 
 ## 7. 后续优先级
 
