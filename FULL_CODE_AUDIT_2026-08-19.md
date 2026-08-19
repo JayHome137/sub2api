@@ -83,7 +83,7 @@
 - CI `32292417011`：shell、Go unit/integration、golangci-lint 全部成功；macOS 子 job 按 workflow 条件 skipped。
 - Security Scan `32292416699`：backend-security、frontend-security 成功。
 - Validate AIFoo frontend `32292416743`：frontend、image、attest 成功；publish 按未请求生产发布的规则 skipped。frontend job 实际通过 lint/typecheck、Vitest、生产构建、Chromium/Playwright；image job 实际通过容器 smoke 与部署 backup/restore 集成。
-- PR #65 已合并，合并提交为 `b2643d1c75d3269cf8dc537f78188bbdf9d55ff4`，远端 `origin/production` 已核对为该 SHA。
+- PR #65 已合并，代码合并提交为 `b2643d1c75d3269cf8dc537f78188bbdf9d55ff4`；随后 PR #66 合并审计证据文档，最终远端 `origin/production` 已核对为 `8816c4ed872b6e050d17c70deb4d7a9599e51163`。
 - 合并后的 push 仅触发了配置为 skipped 的 macOS Shell CI；没有触发 deploy、frontend activation 或 backend activation workflow。
 - 只读公网探针（2026-08-20 Asia/Shanghai）：`https://aifoo.cc.cd/health`、`/frontend-health` 返回 HTTP 200 和 `{"status":"ok"}`；Landing `/` 与 `/login` 返回 HTTP 200，安全响应头存在。
 - 仓库自带 VPS Read-only Preflight `32294944976` 未进入 runner：GitHub check annotation 明确为账户付款失败/消费上限，两个 job 均 0 秒、无步骤执行；这不是代码或 VPS 返回。因而不能把该 run 记为 VPS `ready`，也没有尝试绕过账单或执行生产写操作。
