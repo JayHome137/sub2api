@@ -813,13 +813,16 @@ func (r *apiKeyRepository) IncrementQuotaUsedAndGetState(ctx context.Context, id
 		}
 		return nil, err
 	}
-	// Authentication cache invalidation only needs the non-reversible hash.
-	// Keep this lookup best-effort so a transient metadata read cannot turn a
-	// successful atomic billing update into a failed request.
-	if hash, err := r.keyHashByID(ctx, id); err == nil {
-		state.KeyHash = hash
-	} else if !errors.Is(err, service.ErrAPIKeyNotFound) {
-		slog.Warn("api key hash lookup after quota update failed", "api_key_id", id, "error", err)
+	// Authentication cache invalidation only needs the non-reversible hash when
+	// this update actually exhausted the key. Avoid a metadata query on every
+	// successful billing update; keep the lookup best-effort so a transient read
+	// cannot turn a committed atomic update into a failed request.
+	if state.Status == service.StatusAPIKeyQuotaExhausted {
+		if hash, err := r.keyHashByID(ctx, id); err == nil {
+			state.KeyHash = hash
+		} else if !errors.Is(err, service.ErrAPIKeyNotFound) {
+			slog.Warn("api key hash lookup after quota update failed", "api_key_id", id, "error", err)
+		}
 	}
 	return state, nil
 }

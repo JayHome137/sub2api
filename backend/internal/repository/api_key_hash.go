@@ -232,6 +232,11 @@ func (r *apiKeyRepository) listAPIKeyHashes(ctx context.Context, predicate strin
 		}
 		return nil, err
 	}
+	type legacyKeyRow struct {
+		id  int64
+		key string
+	}
+	legacyEntries := make([]legacyKeyRow, 0)
 	for legacyRows.Next() {
 		var rowID int64
 		var legacyKey string
@@ -242,9 +247,7 @@ func (r *apiKeyRepository) listAPIKeyHashes(ctx context.Context, predicate strin
 		if legacyKey == "" {
 			continue
 		}
-		hash := apiKeyCredentialHash(legacyKey)
-		hashes = append(hashes, hash)
-		r.backfillAPIKeyHash(ctx, rowID, legacyKey)
+		legacyEntries = append(legacyEntries, legacyKeyRow{id: rowID, key: legacyKey})
 	}
 	if err := legacyRows.Err(); err != nil {
 		_ = legacyRows.Close()
@@ -252,6 +255,10 @@ func (r *apiKeyRepository) listAPIKeyHashes(ctx context.Context, predicate strin
 	}
 	if err := legacyRows.Close(); err != nil {
 		return nil, err
+	}
+	for _, entry := range legacyEntries {
+		hashes = append(hashes, apiKeyCredentialHash(entry.key))
+		r.backfillAPIKeyHash(ctx, entry.id, entry.key)
 	}
 	return hashes, nil
 }
@@ -262,23 +269,27 @@ func (r *apiKeyRepository) listAPIKeyHashesLegacy(ctx context.Context, predicate
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	hashes := make([]string, 0)
 	for rows.Next() {
-		var rowID int64
+		var ignoredID int64
 		var legacyKey string
-		if err := rows.Scan(&rowID, &legacyKey); err != nil {
+		if err := rows.Scan(&ignoredID, &legacyKey); err != nil {
+			_ = rows.Close()
 			return nil, err
 		}
 		if legacyKey == "" {
 			continue
 		}
 		hashes = append(hashes, apiKeyCredentialHash(legacyKey))
-		// The column is absent on an old instance, so this is intentionally a
-		// no-op there; backfillAPIKeyHash treats the missing column as benign.
-		r.backfillAPIKeyHash(ctx, rowID, legacyKey)
 	}
-	return hashes, rows.Err()
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	return hashes, nil
 }
 
 func (r *apiKeyRepository) ListKeyHashesByUserID(ctx context.Context, userID int64) ([]string, error) {
