@@ -9,6 +9,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func readAPIKeyHashForTest(t *testing.T, db *sql.DB, ctx context.Context, id int64) string {
+	t.Helper()
+	rows, err := db.QueryContext(ctx, "SELECT key_hash FROM api_keys WHERE id = $1", id)
+	if err != nil {
+		t.Fatalf("query key_hash: %v", err)
+	}
+	if !rows.Next() {
+		_ = rows.Close()
+		t.Fatalf("key_hash row is missing")
+	}
+	var hash string
+	if err := rows.Scan(&hash); err != nil {
+		_ = rows.Close()
+		t.Fatalf("scan key_hash: %v", err)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		t.Fatalf("iterate key_hash: %v", err)
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatalf("close key_hash rows: %v", err)
+	}
+	return hash
+}
+
 func TestAPIKeyRepositoryHashLookupAndLegacyBackfillSQLite(t *testing.T) {
 	repo, client := newAPIKeyRepoSQLite(t)
 	ctx := context.Background()
@@ -18,6 +43,10 @@ func TestAPIKeyRepositoryHashLookupAndLegacyBackfillSQLite(t *testing.T) {
 	require.NoError(t, err)
 
 	user := mustCreateAPIKeyRepoUser(t, ctx, client, "api-key-hash-compat@test.com")
+	db, ok := repo.sql.(*sql.DB)
+	if !ok {
+		t.Fatalf("repository SQL executor has type %T, want *sql.DB", repo.sql)
+	}
 	key := &service.APIKey{
 		UserID: user.ID,
 		Key:    "sk-api-key-hash-compat",
@@ -27,9 +56,7 @@ func TestAPIKeyRepositoryHashLookupAndLegacyBackfillSQLite(t *testing.T) {
 	require.NoError(t, repo.Create(ctx, key))
 
 	var storedHash string
-	row := repo.sql.(*sql.DB).QueryRowContext(ctx, "SELECT key_hash FROM api_keys WHERE id = $1", key.ID)
-	err = row.Scan(&storedHash)
-	require.NoError(t, err)
+	storedHash = readAPIKeyHashForTest(t, db, ctx, key.ID)
 	require.Equal(t, apiKeyCredentialHash(key.Key), storedHash)
 
 	// Simulate an old row that has not been lazily backfilled yet.
@@ -38,9 +65,7 @@ func TestAPIKeyRepositoryHashLookupAndLegacyBackfillSQLite(t *testing.T) {
 	got, err := repo.GetByKeyForAuth(ctx, key.Key)
 	require.NoError(t, err)
 	require.Equal(t, key.ID, got.ID)
-	row = repo.sql.(*sql.DB).QueryRowContext(ctx, "SELECT key_hash FROM api_keys WHERE id = $1", key.ID)
-	err = row.Scan(&storedHash)
-	require.NoError(t, err)
+	storedHash = readAPIKeyHashForTest(t, db, ctx, key.ID)
 	require.Equal(t, apiKeyCredentialHash(key.Key), storedHash)
 
 	// Delete/cache invalidation callers can obtain only the owner and hash;
@@ -51,7 +76,7 @@ func TestAPIKeyRepositoryHashLookupAndLegacyBackfillSQLite(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, user.ID, ownerID)
 	require.Equal(t, apiKeyCredentialHash(key.Key), keyHash)
-	require.NoError(t, repo.sql.(*sql.DB).QueryRowContext(ctx, "SELECT key_hash FROM api_keys WHERE id = $1", key.ID).Scan(&storedHash))
+	storedHash = readAPIKeyHashForTest(t, db, ctx, key.ID)
 	require.Equal(t, keyHash, storedHash)
 
 	hashes, err := repo.ListKeyHashesByUserID(ctx, user.ID)

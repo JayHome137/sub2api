@@ -399,7 +399,7 @@ func (s *adminServiceImpl) DeleteUser(ctx context.Context, id int64) error {
 	}
 
 	if s.authCacheInvalidator != nil {
-		if !(useHashKeys && invalidateAuthCacheByHashes(ctx, s.authCacheInvalidator, apiKeyHashes)) {
+		if !useHashKeys || !invalidateAuthCacheByHashes(ctx, s.authCacheInvalidator, apiKeyHashes) {
 			for _, key := range apiKeys {
 				if keyValue := strings.TrimSpace(key.Key); keyValue != "" {
 					s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, keyValue)

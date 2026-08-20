@@ -1053,7 +1053,7 @@ func (s *adminServiceImpl) DeleteGroup(ctx context.Context, id int64) error {
 		}()
 	}
 	if s.authCacheInvalidator != nil {
-		if !(useHashKeys && invalidateAuthCacheByHashes(ctx, s.authCacheInvalidator, groupKeyHashes)) {
+		if !useHashKeys || !invalidateAuthCacheByHashes(ctx, s.authCacheInvalidator, groupKeyHashes) {
 			for _, key := range groupKeys {
 				s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, key)
 			}
