@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
@@ -75,6 +76,25 @@ type PaymentResumeService struct {
 type visibleMethodLoadBalancer struct {
 	inner         payment.LoadBalancer
 	configService *PaymentConfigService
+}
+
+// ReserveInstance forwards the transaction-scoped capacity reservation to
+// the wrapped load balancer.  Keeping this optional interface visible is
+// important: payment order creation uses it to close the daily-limit
+// check-then-insert window.  Without the forwarding method, the wrapper would
+// silently downgrade production requests back to the non-serialized path.
+func (lb *visibleMethodLoadBalancer) ReserveInstance(
+	ctx context.Context,
+	tx *dbent.Tx,
+	selection *payment.InstanceSelection,
+	paymentType payment.PaymentType,
+	orderAmount float64,
+) error {
+	reserver, ok := lb.inner.(payment.InstanceCapacityReserver)
+	if !ok {
+		return nil
+	}
+	return reserver.ReserveInstance(ctx, tx, selection, paymentType, orderAmount)
 }
 
 func NewPaymentResumeService(signingKey []byte, verifyFallbacks ...[]byte) *PaymentResumeService {

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
@@ -794,9 +795,33 @@ func TestVisibleMethodLoadBalancerRejectsMissingEnabledVisibleMethodProvider(t *
 	}
 }
 
+func TestVisibleMethodLoadBalancerForwardsCapacityReservation(t *testing.T) {
+	t.Parallel()
+
+	inner := &capacityCaptureLoadBalancer{}
+	lb := &visibleMethodLoadBalancer{inner: inner}
+	selection := &payment.InstanceSelection{InstanceID: "7", ProviderKey: payment.TypeAlipay}
+	if err := lb.ReserveInstance(context.Background(), nil, selection, payment.TypeAlipay, 12.5); err != nil {
+		t.Fatalf("ReserveInstance returned error: %v", err)
+	}
+	if !inner.called {
+		t.Fatal("ReserveInstance did not reach the wrapped load balancer")
+	}
+}
+
 type captureLoadBalancer struct {
 	lastProviderKey string
 	lastPaymentType string
+}
+
+type capacityCaptureLoadBalancer struct {
+	captureLoadBalancer
+	called bool
+}
+
+func (c *capacityCaptureLoadBalancer) ReserveInstance(context.Context, *dbent.Tx, *payment.InstanceSelection, payment.PaymentType, float64) error {
+	c.called = true
+	return nil
 }
 
 func (c *captureLoadBalancer) GetInstanceConfig(context.Context, int64) (map[string]string, error) {
