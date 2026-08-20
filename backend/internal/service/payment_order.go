@@ -161,6 +161,18 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 	if err := s.checkDailyLimit(ctx, tx, req.UserID, limitAmount, cfg.DailyLimit); err != nil {
 		return nil, err
 	}
+	// SelectInstance is intentionally read-only for fast candidate picking.
+	// Before inserting the pending order, production load balancers must lock
+	// and re-check the selected provider instance in this same transaction so
+	// concurrent requests cannot both consume the remaining daily capacity.
+	if reserver, ok := s.loadBalancer.(payment.InstanceCapacityReserver); ok {
+		if err := reserver.ReserveInstance(ctx, tx, sel, req.PaymentType, payAmount); err != nil {
+			if errors.Is(err, payment.ErrInstanceLimitsExhausted) {
+				return nil, infraerrors.TooManyRequests("NO_AVAILABLE_INSTANCE", "no_available_instance")
+			}
+			return nil, fmt.Errorf("reserve payment instance capacity: %w", err)
+		}
+	}
 	tm := cfg.OrderTimeoutMin
 	if tm <= 0 {
 		tm = defaultOrderTimeoutMin
