@@ -15,7 +15,7 @@ policy_for() {
       # entering this conflict branch.
       printf '%s\n' ours
       ;;
-    .github/scripts/*|.github/workflows/*|deploy/frontend/*|deploy/backend/*|deploy/tests/*|deploy/docker-deploy.sh|deploy/.env.example|deploy/config.example.yaml|deploy/DOCKER.md|deploy/README.md|README.md|README_CN.md|README_JA.md|DEV_GUIDE.md)
+    .github/scripts/*|.github/workflows/*|deploy/frontend/*|deploy/backend/*|deploy/tests/*|deploy/docker-deploy.sh|deploy/.env.example|deploy/config.example.yaml|deploy/APPLE_CONTAINER.md|deploy/DOCKER.md|deploy/README.md|README.md|README_CN.md|README_JA.md|DEV_GUIDE.md)
       # These are the fork's delivery and security contracts. Upstream
       # application commits must not replace the preparation, validation,
       # conflict-resolution, or fail-closed deployment gates.

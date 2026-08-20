@@ -414,9 +414,12 @@ docker compose -f docker-compose.local.yml logs -f sub2api
 
 Open `http://YOUR_SERVER_IP:8080` in your browser.
 
-If admin password was auto-generated, find it in logs:
+If `ADMIN_PASSWORD` was empty, read the generated credential from `/app/data/admin-password` (mode `0600`):
 ```bash
-docker compose -f docker-compose.local.yml logs sub2api | grep "admin password"
+docker compose -f docker-compose.local.yml exec -T sub2api cat /app/data/admin-password
+
+# After changing the admin password, remove the credential file:
+docker compose -f docker-compose.local.yml exec -T sub2api rm -f /app/data/admin-password
 ```
 
 #### Upgrade

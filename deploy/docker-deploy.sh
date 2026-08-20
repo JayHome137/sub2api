@@ -166,8 +166,9 @@ main() {
     echo "  4. Access Web UI:"
     echo "     http://localhost:8080"
     echo ""
-    print_info "If admin password is not set in .env, it will be auto-generated."
-    print_info "Check logs for the generated admin password on first startup."
+    print_info "If ADMIN_PASSWORD is empty, first startup writes it to data/admin-password (mode 600)."
+    print_info "Read it with: docker compose exec -T sub2api cat /app/data/admin-password"
+    print_info "After changing the admin password, remove the credential file."
     echo ""
 }
 

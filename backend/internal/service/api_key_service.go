@@ -121,6 +121,30 @@ type APIKeyRepository interface {
 	GetRateLimitData(ctx context.Context, id int64) (*APIKeyRateLimitData, error)
 }
 
+// APIKeyHashRepository is an optional rolling-upgrade capability implemented
+// by repositories that can invalidate authentication caches without exposing
+// the legacy plaintext credential to the service layer.  It deliberately
+// remains separate from APIKeyRepository so older adapters and test doubles
+// continue to compile while the key_hash migration rolls out.
+type APIKeyHashRepository interface {
+	GetOwnerIDAndKeyHash(ctx context.Context, id int64) (ownerID int64, keyHash string, err error)
+	ListKeyHashesByUserID(ctx context.Context, userID int64) ([]string, error)
+	ListKeyHashesByGroupID(ctx context.Context, groupID int64) ([]string, error)
+}
+
+// APIKeyIDRepository is an optional projection used by destructive admin
+// workflows that need identifiers but never need to expose credentials.
+type APIKeyIDRepository interface {
+	ListAPIKeyIDsByUserID(ctx context.Context, userID int64) ([]int64, error)
+}
+
+// APIKeyHashCacheInvalidator is the hash-only counterpart to
+// APIKeyAuthCacheInvalidator.  The hash is already the cache namespace key;
+// implementations must not hash it a second time.
+type APIKeyHashCacheInvalidator interface {
+	InvalidateAuthCacheByHash(ctx context.Context, keyHash string)
+}
+
 type apiKeyAllByUserIDLister interface {
 	ListAllByUserID(ctx context.Context, userID int64, filters APIKeyListFilters) ([]APIKey, error)
 }
@@ -164,8 +188,12 @@ func (d *APIKeyRateLimitData) EffectiveUsage7d() float64 {
 type APIKeyQuotaUsageState struct {
 	QuotaUsed float64
 	Quota     float64
-	Key       string
-	Status    string
+	// KeyHash is populated by hash-aware repositories.  Key remains for
+	// rolling compatibility with older repository implementations and test
+	// doubles; new code should prefer KeyHash.
+	KeyHash string
+	Key     string
+	Status  string
 }
 
 // APIKeyCache defines cache operations for API key service
@@ -915,7 +943,24 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 
 // Delete 删除API Key
 func (s *APIKeyService) Delete(ctx context.Context, id int64, userID int64) error {
-	key, ownerID, err := s.apiKeyRepo.GetKeyAndOwnerID(ctx, id)
+	var (
+		key     string
+		keyHash string
+		ownerID int64
+		err     error
+	)
+	if hashRepo, ok := s.apiKeyRepo.(APIKeyHashRepository); ok {
+		ownerID, keyHash, err = hashRepo.GetOwnerIDAndKeyHash(ctx, id)
+		if err != nil {
+			// A transient/mixed-version hash projection failure must not stop
+			// deletion. Fall back to the legacy owner+key projection; the
+			// fallback is intentionally limited to this exceptional path.
+			key, ownerID, err = s.apiKeyRepo.GetKeyAndOwnerID(ctx, id)
+			keyHash = ""
+		}
+	} else {
+		key, ownerID, err = s.apiKeyRepo.GetKeyAndOwnerID(ctx, id)
+	}
 	if err != nil {
 		return fmt.Errorf("get api key: %w", err)
 	}
@@ -934,7 +979,11 @@ func (s *APIKeyService) Delete(ctx context.Context, id int64, userID int64) erro
 	if s.cache != nil {
 		_ = s.cache.DeleteCreateAttemptCount(ctx, userID)
 	}
-	s.InvalidateAuthCacheByKey(ctx, key)
+	if keyHash != "" {
+		s.InvalidateAuthCacheByHash(ctx, keyHash)
+	} else {
+		s.InvalidateAuthCacheByKey(ctx, key)
+	}
 	s.lastUsedTouchL1.Delete(id)
 
 	return nil
@@ -1132,8 +1181,14 @@ func (s *APIKeyService) UpdateQuotaUsed(ctx context.Context, apiKeyID int64, cos
 		if err != nil {
 			return fmt.Errorf("increment quota used: %w", err)
 		}
-		if state != nil && state.Status == StatusAPIKeyQuotaExhausted && strings.TrimSpace(state.Key) != "" {
-			s.InvalidateAuthCacheByKey(ctx, state.Key)
+		if state != nil && state.Status == StatusAPIKeyQuotaExhausted {
+			if strings.TrimSpace(state.KeyHash) != "" {
+				s.InvalidateAuthCacheByHash(ctx, state.KeyHash)
+			} else if strings.TrimSpace(state.Key) != "" {
+				// Legacy repository adapters may still return plaintext until
+				// they implement the optional hash capability.
+				s.InvalidateAuthCacheByKey(ctx, state.Key)
+			}
 		}
 		return nil
 	}

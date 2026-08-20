@@ -1,51 +1,54 @@
 # Sub2API 全量代码审计报告
 
-审计日期：2026-08-19
-审计分支：`codex/full-code-audit-fixes-20260820`
-审计基线：`7f20d2953 fix(sync): resolve upstream conflicts deterministically`
-交付状态：审计修复已提交、推送并合并到远端 `production`；未触发生产部署。
+审计日期：2026-08-19 至 2026-08-20
+审计与加固分支：`codex/security-hardening-20260820`
+原始审计基线：`7f20d2953 fix(sync): resolve upstream conflicts deterministically`；本轮加固起点：`8ad56ffcc Merge VM preflight workspace fix into production`
+交付状态：原始审计修复已合并到远端 `production`；本轮安全加固在独立分支和 PR #70 推进，未触发生产部署。
 
 ## 1. 结论
 
 仓库不是整体性的“屎山”；主链路、测试和前端构建都仍可验证。但有两类需要持续控制的风险：少数真实的后端安全/并发问题，以及两个过大的管理端 Vue 文件。
 
-本轮已完成的、安全可验证的修复没有改变现有 UI：
+本轮已完成或正在验证的、安全可验证修复没有改变现有 UI：
 
 1. 上游冲突 resolver 已覆盖普通文本、add/add、delete/modify、rename/delete 和二进制冲突；真正冲突的 `frontend/*` 保留 fork 版本，同时保留上游的非冲突 hunk。
 2. 删除了未接入生产依赖图的 `GroupService`、`ProxyService` 及其 Wire provider，删除无调用的 `RedeemService.GetStats`，并删除无实际刷新逻辑的 `RefreshAccountCredentials`。
 3. 删除无源码 import 的 `@lobehub/icons` 及仅为它保留的 Mermaid override；内联 SVG UI 未改变。
 4. 修正 Redeem stats 测试路由，使其与生产路由一致。
-5. 清理文档、示例配置和部署脚本中的固定凭据；部署下载失败时 fail-closed，生成的凭据不再写入终端日志，并对长占位 JWT 做拒绝校验。
+5. 清理文档、示例配置和部署脚本中的固定凭据；部署下载失败时 fail-closed；自动生成的管理员密码不再进入 stdout/容器日志，只写入数据目录下的 `0600` 受保护文件；并对长占位 JWT 做拒绝校验。
 
-尚不能安全“顺手修掉”的项目被保留为明确 follow-up：支付限额并发竞态、API Key 明文存储、四个假统计 API、超大 Vue 文件，以及 EasyPay 时间字段兼容性。这些项目都需要事务/迁移/协议或视觉回归证据；强行改动会比保留当前行为更容易中断生产或影响 UI。
+API Key 的第二阶段最小收口也已落地：认证缓存失效、配额耗尽通知、用户/分组列表和删除路径优先使用不可逆 hash/ID 投影，SQL 配额更新不再返回明文 Key；旧列和旧 DTO/API 合同仍保留受控回退，以便滚动升级不打断现有 UI/API。最终清除明文列仍需独立迁移窗口。
+
+仍需后续治理的项目被保留为明确 follow-up：API Key 旧列最终清除、四个假统计 API、超大 Vue 文件、EasyPay 统一时间窗口和 xlsx advisory。这些项目分别需要滚动迁移/版本化合同/视觉回归/供应商协议或依赖替换证据；强行改动会比保留当前行为更容易中断生产或影响 UI。
 
 ## 2. 范围、方法与限制
 
 - 范围：`backend/` 的认证、支付、订单、Webhook、数据访问；`frontend/` 的依赖、构建、源码和复杂度；`.github/` 与 `deploy/` 的上游同步、冲突解析和交付门禁。
 - 方法：源码与调用链检索、Git 双边差异、依赖树、resolver fixture、工作流合同测试、前端 lint/typecheck/test/build、锁文件一致性与 `git diff --check`。
-- 上游基线：共同祖先为 `e0c48a19ed794a565e3858662520afe0a1f9f0ba`；本地独有 103 个提交、上游独有 39 个提交。双边实际修改重叠仅 3 个后端文件：`gateway_handler.go`、`channel_monitor_quota_fetcher.go`、`gateway_service.go`。
-- 限制：本机没有 Go、Semgrep、govulncheck、ShellCheck 或 actionlint；Go 编译/测试与 Go SAST 以远端 Actions 证据为准，ShellCheck/actionlint 仍不在本轮声明范围内。
+- 上游基线：共同祖先仍为 `e0c48a19ed794a565e3858662520afe0a1f9f0ba`（官方 `v0.1.178`）。截至 2026-08-20，分支相对尚未发布的 `upstream/main` 为本地独有 119 个提交、上游独有 63 个提交；双边修改重叠 10 个文件，Git 预演产生 2 个文本冲突，均命中现有 fork 保护策略。下一稳定 Release 出现后仍须在候选 SHA 上重跑完整门禁。
+- 限制：本机初始没有系统 Go、Semgrep、govulncheck、ShellCheck 或 actionlint；本轮使用临时 Go 1.26.6 工具链完成核心包定向测试，完整 Go 编译/测试与 Go SAST 仍以远端 Actions 为最终证据。Semgrep、ShellCheck/actionlint 不在本轮已验证声明范围内。
 
 ## 3. 已确认问题与处置
 
 | 编号 | 结论 | 状态 | 证据与处理边界 |
 |---|---|---|---|
-| C-01 | 支付实例日限额存在 TOCTOU 并发窗口 | 待定向修复 | `load_balancer.go` 先读取 `dailyUsed`，`payment_order.go` 随后在另一个订单事务写入；两个请求可同时通过。需要在订单事务内锁定/原子保留实例容量，并做 PostgreSQL 并发测试。 |
-| C-02 | API Key 以明文存入 `api_keys.key` | 待兼容迁移 | schema、创建和认证查询都直接使用明文。需要哈希索引列、新 Key 哈希、旧 Key 双读迁移和最终清除方案，不能一次性改列使现有 Key 失效。 |
-| C-03 | EasyPay webhook 未验证时间新鲜度 | 待协议证据 | 当前只验证签名。代码未证明所有兼容 EasyPay 服务商都会发送统一、可解析的时间字段；直接拒绝无时间字段的通知可能中断真实付款，故本轮未加入猜测性的窗口校验。 |
+| C-01 | 支付实例日限额存在 TOCTOU 并发窗口 | 已定向修复，待本轮远端复核 | `load_balancer.go` 在订单事务内锁定实例并重算额度；`visibleMethodLoadBalancer` 转发 `InstanceCapacityReserver`，且包装对象缺少该能力时 fail-closed 为 503，不再静默绕过锁。远端 CI/VM 仍需对最终提交复核。 |
+| C-02 | API Key 以明文存入 `api_keys.key` | 第二阶段最小收口已落地，仍有明文兼容残余 | migration 227 增加可空 `key_hash`，migration 228 增加非事务 partial unique index；创建、认证、Exists 已 hash-first，旧明文双读并懒回填。owner/list/删除/用户清理、缓存失效和配额耗尽路径优先使用 hash/ID 投影，配额 SQL `RETURNING` 不带明文 Key；遍历结果先关闭再回填，旧库无 `key_hash` 列时不做必然失败的回填。为保持现有 UI/API 和滚动升级兼容，`key` 及部分 DTO/旧适配器仍可能接触明文；最终需迁移合同并清除旧列。 |
+| C-03 | EasyPay webhook 未验证时间新鲜度 | 已增加持久化交易号重放防护，统一时间窗待协议证据 | 已记录的 EasyPay `trade_no` 不得再次用于取消/过期订单恢复，并保留幂等/审计行为。当前兼容层仍不强制猜测性的 timestamp/5 分钟窗口；不同服务商的字段和签名语义需用真实协议与回调样本确认后再增加按服务商配置的 freshness 校验。 |
 | C-04 | resolver 的缺失 stage 使合并卡住 | 已修复并验证 | 现在先检查 Git stage；策略侧不存在时显式暂存删除。fixture 覆盖 add/add、delete/modify、rename/delete、binary 和文本 hunk。 |
 | C-05 | 前端根配置遗漏 UI 保护集合 | 已修复并验证 | 策略改为 `frontend/*`，未来前端根配置也受保护；fixture 已验证未知根配置文件。 |
 | C-06 | `@lobehub/icons` 是无用直接依赖 | 已修复并验证 | 业务源码无 import，`pnpm why @lobehub/icons` 已无输出；删除后锁文件、测试和生产构建均通过。 |
-| C-07 | 旧服务/空刷新接口造成冗余 | 已修复，待 Go 环境复核 | 删除未注入的 `GroupService`、`ProxyService`、Wire provider、无调用 `RedeemService.GetStats` 和无实现的 `RefreshAccountCredentials`。全仓引用与 Wire 检索无残留；本机无 Go，尚不能编译确认。 |
-| C-08 | group/proxy/redeem/user usage API 返回假统计 | 已确认，保留兼容 | `group_handler.go`、`proxy_handler.go`、`redeem_handler.go`、`admin_user.go` 返回固定 0 值；部分接口仍被前端 API 层暴露，也可能被外部调用。统计口径未定义，不能删路由、改 501 或伪造数值。 |
-| C-09 | 文档/示例含固定数据库、管理员和 JWT 占位凭据；部署下载器对 HTTP 错误不 fail-closed，且曾回显生成密钥 | 已修复并加合同测试 | 示例值改为空值或明确占位说明；`docker-deploy.sh` 使用失败即停与空文件检查，不再打印密钥；新增 `deploy/tests/docker-deploy-security-test.sh` 并接入 backend CI。 |
+| C-07 | 旧服务/空刷新接口造成冗余 | 已修复并通过 Go 定向验证 | 删除未注入的 `GroupService`、`ProxyService`、Wire provider、无调用 `RedeemService.GetStats` 和无实现的 `RefreshAccountCredentials`。全仓引用与 Wire 检索无残留；临时 Go 工具链下 repository/service 测试与 vet 已通过。 |
+| C-08 | group/proxy/redeem/user usage API 返回假统计 | 已确认，暂不修改 | 四个生产路由仍注册，前端只保留 API 封装、未找到页面调用，外部调用方仍可能存在。group/user 可复用部分聚合但周期和成本口径未定义；`usage_logs` 没有 `proxy_id`，proxy 请求数/成功率/延迟无法正确计算；redeem 的状态/类型口径也已超出旧结构。不能删路由、改 501 或继续伪造“正常”数值；需先确定统计周期、成本和状态口径，再实现真实统计或版本化弃用。 |
+| C-09 | 文档/示例含固定凭据；部署下载器曾不 fail-closed；自动管理员密码曾进入 stdout/容器日志 | 已修复并加合同测试 | 示例值改为空值或明确占位说明；`docker-deploy.sh` 使用失败即停与空文件检查；自动管理员密码原子写入数据目录下的 `0600` 文件，数据库创建失败时清理，日志只提示文件路径；相关部署文档不再指导从日志提取密码。 |
 | C-10 | 长的 JWT 配置占位符可能绕过原有长度/重复字符检查 | 已修复并测试 | `isWeakJWTSecret` 拒绝已知长占位符，配置单测覆盖默认示例值。 |
+| C-11 | golangci action 的可选在线 schema 校验会因网络超时阻断 lint | 已修复，本地 lint 通过，待远端复跑 | 首次远端试跑在真正 lint 前因 JSONSchema URL 超时退出。`backend-ci.yml` 关闭 action 的在线 `verify`，仍由同一 golangci 版本读取同一仓库配置并运行全部 analyzer；本机 golangci-lint 2.9.0 已报告 0 issues，后端 workflow 合同测试锁定该离线边界。 |
 
 ## 4. 复杂度与供应链结论
 
-- `SettingsView.vue` 为 12,999 行，`GroupsView.vue` 为 6,840 行，是最明显的维护风险；二者不是可在本轮无视觉回归保障下安全拆分的“死代码”。建议以领域为单位单独拆分，并为每一步增加组件和视觉回归。
+- `SettingsView.vue` 为 12,999 行，`GroupsView.vue` 为 6,840 行，是最明显的维护和上游冲突风险；二者不是可在本轮无视觉回归保障下安全拆分的“死代码”。本轮不拆分，后续应以领域为单位逐步抽取组件/composable，并为每一步增加组件、类型和视觉回归。
 - 前端生产构建仍报告大 chunk：`AccountsView` 约 738 kB；另有静态/动态 import 重复、过期 Browserslist 数据和 Node shell deprecation warning。这些均未导致构建失败，属于后续性能/工具链治理，不应混入当前冲突修复。
-- `xlsx@0.18.5` 仍有两个高危 advisory：`GHSA-4r6h-8v6p-xvw6` 与 `GHSA-5pgg-2g8v-p4x9`。当前前端仅在 `UsageView.vue` 导出 xlsx，不读取用户上传的 xlsx，实际可达面较窄；npm 无可直接升级的修复版本，改用供应商 CDN 版本应另做来源、许可和回归评估。
+- `xlsx@0.18.5` 仍有两个高危 advisory：`GHSA-4r6h-8v6p-xvw6` 与 `GHSA-5pgg-2g8v-p4x9`。当前前端仅在 `UsageView.vue` 生成并导出 xlsx，不读取用户上传的 xlsx，实际可达面较窄；本轮保持 export-only 边界，未贸然改成 CSV/替代库，以免改变 UI/下载合同。替代依赖仍需单独完成来源、许可和回归评估。
 - AES legacy ciphertext fallback 与历史迁移是兼容层，不是可删除的冗余代码；本轮未动。
 
 ## 5. 可持续上游合并流程
@@ -76,6 +79,19 @@
 | `sh deploy/tests/docker-deploy-security-test.sh` | 通过；验证下载 fail-closed、空响应拒绝和凭据不回显 |
 | `bash -n`/`sh -n`（4 个改动 shell 脚本）与 `git diff --check` | 通过 |
 
+本轮最终本地复核（临时 Go 1.26.6 工具链）追加记录：
+
+| 检查 | 结果 |
+|---|---|
+| `go test ./internal/payment ./internal/repository ./internal/service` | 通过；包含支付日限额、API Key hash/backfill、DeleteUser、配额路径及旧 SQLite 兼容测试 |
+| `go vet ./internal/repository ./internal/service` | 通过 |
+| `golangci-lint 2.9.0 run --timeout=30m --concurrency=1` | 通过，0 issues；使用与 CI 相同的 `.golangci.yml` |
+| API Key hash/backfill、DeleteUser、Quota 定向单测 | 通过；配额未耗尽时不再执行 hash 元数据查询 |
+| `git diff --check` | 通过；hash 列表遍历在回填前显式关闭 rows，旧库无 hash 列时不执行无效回填 |
+| `sh deploy/backend/workflow-contract-test.sh` | 通过；锁定 golangci 不依赖在线 JSONSchema 校验 |
+
+上述本地结果只证明候选工作树；最终推送后的远端 CI、Security Scan、Frontend validation 和受信任 VM 预检仍需以本轮最终 SHA 重新取得。全程不执行生产部署或重启。
+
 已推送提交 `980be1f81` 对应的远端检查也全部通过：CI `32283716587`、Security Scan `32283716275`、Validate AIFoo frontend `32283716226`。这些检查覆盖 Go 单元/集成测试、shell 合同、golangci-lint、前后端安全扫描、lint/typecheck/Vitest/生产构建、Playwright、Docker image smoke 与 backup/restore。
 
 最终提交 `c04361bae6e4ee8c4694908857d07037c19c715b` 的远端证据：
@@ -85,13 +101,16 @@
 - Validate AIFoo frontend `32292416743`：frontend、image、attest 成功；publish 按未请求生产发布的规则 skipped。frontend job 实际通过 lint/typecheck、Vitest、生产构建、Chromium/Playwright；image job 实际通过容器 smoke 与部署 backup/restore 集成。
 - PR #65 已合并，代码合并提交为 `b2643d1c75d3269cf8dc537f78188bbdf9d55ff4`；随后 PR #66 合并审计证据文档，最终远端 `origin/production` 已核对为 `8816c4ed872b6e050d17c70deb4d7a9599e51163`。
 - 合并后的 push 仅触发了配置为 skipped 的 macOS Shell CI；没有触发 deploy、frontend activation 或 backend activation workflow。
-- 只读公网探针（2026-08-20 Asia/Shanghai）：`https://aifoo.cc.cd/health`、`/frontend-health` 返回 HTTP 200 和 `{"status":"ok"}`；Landing `/` 与 `/login` 返回 HTTP 200，安全响应头存在。
-- 仓库自带 VPS Read-only Preflight `32294944976` 未进入 runner：GitHub check annotation 明确为账户付款失败/消费上限，两个 job 均 0 秒、无步骤执行；这不是代码或 VPS 返回。因而不能把该 run 记为 VPS `ready`，也没有尝试绕过账单或执行生产写操作。
+- 只读公网探针（2026-08-20 Asia/Shanghai）：`https://<redacted-domain>/health`、`/frontend-health` 返回 HTTP 200 和 `{"status":"ok"}`；Landing `/` 与 `/login` 返回 HTTP 200，安全响应头存在。
+- 旧的 VPS Read-only Preflight（运行记录已脱敏）因错误使用 `ubuntu-latest` 未进入 runner，GitHub annotation 为账户付款失败/消费上限。随后两个 job 改为受信任的 self-hosted Linux VM；首次 VM 运行证明 frontend preflight 成功，但暴露持久化 workspace 的 `official` remote 不是幂等操作。后续改为 `set-url-or-add` 并更新合同测试，最终两个 job 均成功：backend `target_state=current`、`preflight_result=ready`，frontend `blocker_count=0`、`preflight_result=ready`。全程未执行部署、重启或生产写操作。
+- PR #69 的最终 workflow 修复已合并，远端 `origin/production` 当前为 `8ad56ffcc1ed3d3e663be725baac5744335cc24c`；该提交只改变 preflight runner/持久化 remote 处理和合同测试，不改变 UI。
 
 ## 7. 后续优先级
 
-1. 在具备 Go 与 PostgreSQL 并发测试环境后，定向修复 C-01；这是唯一会直接突破支付限额的已确认运行时竞态。
-2. 设计并测试 C-02 的 API Key 哈希兼容迁移；不要直接覆盖现有明文列。
+1. 在最终远端 CI/VM 复核 C-01 的事务锁路径；必要时补 PostgreSQL 并发集成测试。
+2. 完成 C-02 最终迁移：迁移剩余 DTO/旧适配器与管理端读取边界，分批清除 `api_keys.key` 明文并保留可回滚窗口。
 3. 确定 C-08 的统计口径和 API 兼容承诺后，再实现真实统计或走版本化弃用。
 4. 收集实际 EasyPay 服务商 webhook 样本/协议后，再决定是否加入 C-03 时间窗口。
 5. 单独建立带视觉回归的 `SettingsView` / `GroupsView` 渐进拆分任务；不要把它混入上游同步变更。
+
+本地工作树中另有两份未跟踪的旧审计草稿：`Codex_Session_019fb840_Audit.md`、`Sub2API_Audit_Report.md`。它们不是本报告的证据，不纳入本次提交或推送；如未来需要上传，必须先单独审阅并脱敏。

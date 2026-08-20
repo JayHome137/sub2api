@@ -415,9 +415,12 @@ docker compose -f docker-compose.local.yml logs -f sub2api
 
 ブラウザで `http://YOUR_SERVER_IP:8080` を開いてください。
 
-管理者パスワードが自動生成された場合は、ログで確認できます:
+`ADMIN_PASSWORD` を空欄にした場合、生成された管理者パスワードは `/app/data/admin-password`（権限 `0600`）から確認します:
 ```bash
-docker compose -f docker-compose.local.yml logs sub2api | grep "admin password"
+docker compose -f docker-compose.local.yml exec -T sub2api cat /app/data/admin-password
+
+# 管理者パスワードを変更した後、認証情報ファイルを削除します:
+docker compose -f docker-compose.local.yml exec -T sub2api rm -f /app/data/admin-password
 ```
 
 #### アップグレード

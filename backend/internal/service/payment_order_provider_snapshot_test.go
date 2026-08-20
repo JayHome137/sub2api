@@ -4,10 +4,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -64,7 +66,7 @@ func TestCreateOrderInTx_WritesProviderSnapshot(t *testing.T) {
 		Save(ctx)
 	require.NoError(t, err)
 
-	svc := &PaymentService{entClient: client}
+	svc := &PaymentService{entClient: client, loadBalancer: &capacityCaptureLoadBalancer{}}
 	order, err := svc.createOrderInTx(
 		ctx,
 		CreateOrderRequest{
@@ -109,6 +111,41 @@ func TestCreateOrderInTx_WritesProviderSnapshot(t *testing.T) {
 	require.NotContains(t, order.ProviderSnapshot, "secretKey")
 	require.NotContains(t, order.ProviderSnapshot, "supported_types")
 	require.NotContains(t, order.ProviderSnapshot, "instance_name")
+}
+
+func TestCreateOrderInTxMapsMissingCapacityReservationToServiceUnavailable(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentService{
+		entClient:    client,
+		loadBalancer: &visibleMethodLoadBalancer{inner: &captureLoadBalancer{}},
+	}
+
+	order, err := svc.createOrderInTx(
+		ctx,
+		CreateOrderRequest{
+			UserID:      1,
+			PaymentType: payment.TypeAlipay,
+			OrderType:   payment.OrderTypeBalance,
+		},
+		&User{ID: 1, Email: "capacity@example.com", Username: "capacity-user"},
+		nil,
+		&PaymentConfig{MaxPendingOrders: 3, OrderTimeoutMin: 30},
+		10,
+		0,
+		0,
+		10,
+		&payment.InstanceSelection{InstanceID: "7", ProviderKey: payment.TypeAlipay},
+	)
+
+	require.Nil(t, order)
+	require.Error(t, err)
+	require.Equal(t, 503, infraerrors.Code(err))
+	require.Equal(t, "PAYMENT_CAPACITY_RESERVATION_UNAVAILABLE", infraerrors.Reason(err))
+	require.True(t, errors.Is(err, payment.ErrInstanceCapacityReservationUnavailable))
+	count, countErr := client.PaymentOrder.Query().Count(ctx)
+	require.NoError(t, countErr)
+	require.Zero(t, count, "capacity reservation failure must not create an order")
 }
 
 func TestBuildPaymentOrderProviderSnapshot_UsesWxpayJSAPIAppIDForOpenIDOrders(t *testing.T) {
