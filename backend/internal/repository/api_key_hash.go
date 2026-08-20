@@ -39,7 +39,10 @@ func (r *apiKeyRepository) apiKeyHashSQLExecutor(ctx context.Context) sqlExecuto
 			return exec
 		}
 	}
-	return r.sql
+	if r.sql != nil {
+		return r.sql
+	}
+	return sqlExecutorFromEntClient(r.client)
 }
 
 func (r *apiKeyRepository) apiKeyHashPlaceholder() string {
@@ -110,6 +113,209 @@ func (r *apiKeyRepository) findAPIKeyIDByKey(ctx context.Context, key string) (i
 		r.backfillAPIKeyHash(ctx, m.ID, key)
 	}
 	return m.ID, nil
+}
+
+// GetOwnerIDAndKeyHash returns the owner and cache namespace for an active
+// key.  The legacy plaintext column is consulted only when key_hash is not
+// available yet (or the rolling migration has not reached this database), and
+// is immediately converted to the non-reversible hash before returning.
+func (r *apiKeyRepository) GetOwnerIDAndKeyHash(ctx context.Context, id int64) (int64, string, error) {
+	exec := r.apiKeyHashSQLExecutor(ctx)
+	if exec == nil {
+		return 0, "", service.ErrAPIKeyNotFound
+	}
+	placeholder := r.apiKeyHashPlaceholder()
+	var ownerID int64
+	var keyHash sql.NullString
+	query := fmt.Sprintf(`
+		SELECT user_id, key_hash
+		FROM api_keys
+		WHERE id = %s AND deleted_at IS NULL`, placeholder)
+	err := scanSingleRow(ctx, exec, query, []any{id}, &ownerID, &keyHash)
+	if err != nil {
+		if isMissingAPIKeyHashColumn(err) {
+			return r.getOwnerIDAndKeyHashLegacy(ctx, id, exec, placeholder)
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, "", service.ErrAPIKeyNotFound
+		}
+		return 0, "", err
+	}
+	if keyHash.Valid && strings.TrimSpace(keyHash.String) != "" {
+		return ownerID, keyHash.String, nil
+	}
+
+	var legacyKey string
+	legacyQuery := fmt.Sprintf(`
+		SELECT key
+		FROM api_keys
+		WHERE id = %s AND deleted_at IS NULL`, placeholder)
+	if err := scanSingleRow(ctx, exec, legacyQuery, []any{id}, &legacyKey); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, "", service.ErrAPIKeyNotFound
+		}
+		return 0, "", err
+	}
+	keyHashValue := apiKeyCredentialHash(legacyKey)
+	r.backfillAPIKeyHash(ctx, id, legacyKey)
+	return ownerID, keyHashValue, nil
+}
+
+func (r *apiKeyRepository) getOwnerIDAndKeyHashLegacy(ctx context.Context, id int64, exec sqlExecutor, placeholder string) (int64, string, error) {
+	var ownerID int64
+	var legacyKey string
+	query := fmt.Sprintf(`
+		SELECT user_id, key
+		FROM api_keys
+		WHERE id = %s AND deleted_at IS NULL`, placeholder)
+	if err := scanSingleRow(ctx, exec, query, []any{id}, &ownerID, &legacyKey); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, "", service.ErrAPIKeyNotFound
+		}
+		return 0, "", err
+	}
+	return ownerID, apiKeyCredentialHash(legacyKey), nil
+}
+
+// keyHashByID is used by the quota hot path after its atomic UPDATE.  It
+// follows the same hash-first/legacy-null fallback as GetOwnerIDAndKeyHash.
+func (r *apiKeyRepository) keyHashByID(ctx context.Context, id int64) (string, error) {
+	_, keyHash, err := r.GetOwnerIDAndKeyHash(ctx, id)
+	return keyHash, err
+}
+
+// listAPIKeyHashes returns only cache hashes.  During a rolling migration it
+// performs a second, narrowly-scoped query for rows whose hash is NULL and
+// lazily backfills those rows.  It never selects plaintext for rows that
+// already have key_hash populated.
+func (r *apiKeyRepository) listAPIKeyHashes(ctx context.Context, predicate string, id int64) ([]string, error) {
+	exec := r.apiKeyHashSQLExecutor(ctx)
+	if exec == nil {
+		return nil, errors.New("api key hash SQL executor is not configured")
+	}
+	placeholder := r.apiKeyHashPlaceholder()
+	args := []any{id}
+	base := fmt.Sprintf("FROM api_keys WHERE %s = %s AND deleted_at IS NULL", predicate, placeholder)
+
+	hashes := make([]string, 0)
+	rows, err := exec.QueryContext(ctx, fmt.Sprintf("SELECT key_hash %s AND key_hash IS NOT NULL", base), args...)
+	if err != nil {
+		if !isMissingAPIKeyHashColumn(err) {
+			return nil, err
+		}
+		return r.listAPIKeyHashesLegacy(ctx, predicate, id, exec, placeholder)
+	}
+	for rows.Next() {
+		var keyHash string
+		if err := rows.Scan(&keyHash); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		if keyHash != "" {
+			hashes = append(hashes, keyHash)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	// Only legacy rows need the plaintext fallback. Include IDs so the
+	// best-effort backfill can avoid a future plaintext read.
+	legacyRows, err := exec.QueryContext(ctx, fmt.Sprintf("SELECT id, key %s AND key_hash IS NULL", base), args...)
+	if err != nil {
+		if isMissingAPIKeyHashColumn(err) {
+			return r.listAPIKeyHashesLegacy(ctx, predicate, id, exec, placeholder)
+		}
+		return nil, err
+	}
+	for legacyRows.Next() {
+		var rowID int64
+		var legacyKey string
+		if err := legacyRows.Scan(&rowID, &legacyKey); err != nil {
+			_ = legacyRows.Close()
+			return nil, err
+		}
+		if legacyKey == "" {
+			continue
+		}
+		hash := apiKeyCredentialHash(legacyKey)
+		hashes = append(hashes, hash)
+		r.backfillAPIKeyHash(ctx, rowID, legacyKey)
+	}
+	if err := legacyRows.Err(); err != nil {
+		_ = legacyRows.Close()
+		return nil, err
+	}
+	if err := legacyRows.Close(); err != nil {
+		return nil, err
+	}
+	return hashes, nil
+}
+
+func (r *apiKeyRepository) listAPIKeyHashesLegacy(ctx context.Context, predicate string, id int64, exec sqlExecutor, placeholder string) ([]string, error) {
+	query := fmt.Sprintf("SELECT id, key FROM api_keys WHERE %s = %s AND deleted_at IS NULL", predicate, placeholder)
+	rows, err := exec.QueryContext(ctx, query, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	hashes := make([]string, 0)
+	for rows.Next() {
+		var rowID int64
+		var legacyKey string
+		if err := rows.Scan(&rowID, &legacyKey); err != nil {
+			return nil, err
+		}
+		if legacyKey == "" {
+			continue
+		}
+		hashes = append(hashes, apiKeyCredentialHash(legacyKey))
+		// The column is absent on an old instance, so this is intentionally a
+		// no-op there; backfillAPIKeyHash treats the missing column as benign.
+		r.backfillAPIKeyHash(ctx, rowID, legacyKey)
+	}
+	return hashes, rows.Err()
+}
+
+func (r *apiKeyRepository) ListKeyHashesByUserID(ctx context.Context, userID int64) ([]string, error) {
+	return r.listAPIKeyHashes(ctx, "user_id", userID)
+}
+
+func (r *apiKeyRepository) ListKeyHashesByGroupID(ctx context.Context, groupID int64) ([]string, error) {
+	return r.listAPIKeyHashes(ctx, "group_id", groupID)
+}
+
+// ListAPIKeyIDsByUserID is the minimal projection needed when an admin deletes
+// a user and its keys. It deliberately avoids the legacy key column.
+func (r *apiKeyRepository) ListAPIKeyIDsByUserID(ctx context.Context, userID int64) ([]int64, error) {
+	exec := r.apiKeyHashSQLExecutor(ctx)
+	if exec == nil {
+		return nil, errors.New("api key ID SQL executor is not configured")
+	}
+	placeholder := r.apiKeyHashPlaceholder()
+	query := fmt.Sprintf(`
+		SELECT id
+		FROM api_keys
+		WHERE user_id = %s AND deleted_at IS NULL
+		ORDER BY id ASC`, placeholder)
+	rows, err := exec.QueryContext(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := make([]int64, 0)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // backfillAPIKeyHash is deliberately best-effort.  During a rolling upgrade

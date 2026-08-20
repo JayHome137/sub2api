@@ -803,15 +803,23 @@ func (r *apiKeyRepository) IncrementQuotaUsedAndGetState(ctx context.Context, id
 			END,
 			updated_at = NOW()
 		WHERE id = $3 AND deleted_at IS NULL
-		RETURNING quota_used, quota, key, status
+		RETURNING quota_used, quota, status
 	`
 
 	state := &service.APIKeyQuotaUsageState{}
-	if err := scanSingleRow(ctx, r.sql, query, []any{amount, service.StatusAPIKeyQuotaExhausted, id}, &state.QuotaUsed, &state.Quota, &state.Key, &state.Status); err != nil {
+	if err := scanSingleRow(ctx, r.sql, query, []any{amount, service.StatusAPIKeyQuotaExhausted, id}, &state.QuotaUsed, &state.Quota, &state.Status); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, service.ErrAPIKeyNotFound
 		}
 		return nil, err
+	}
+	// Authentication cache invalidation only needs the non-reversible hash.
+	// Keep this lookup best-effort so a transient metadata read cannot turn a
+	// successful atomic billing update into a failed request.
+	if hash, err := r.keyHashByID(ctx, id); err == nil {
+		state.KeyHash = hash
+	} else if !errors.Is(err, service.ErrAPIKeyNotFound) {
+		slog.Warn("api key hash lookup after quota update failed", "api_key_id", id, "error", err)
 	}
 	return state, nil
 }

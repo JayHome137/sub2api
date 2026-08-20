@@ -42,4 +42,43 @@ func TestAPIKeyRepositoryHashLookupAndLegacyBackfillSQLite(t *testing.T) {
 	err = row.Scan(&storedHash)
 	require.NoError(t, err)
 	require.Equal(t, apiKeyCredentialHash(key.Key), storedHash)
+
+	// Delete/cache invalidation callers can obtain only the owner and hash;
+	// they do not need to materialize the legacy credential in the service.
+	_, err = repo.sql.ExecContext(ctx, "UPDATE api_keys SET key_hash = NULL WHERE id = $1", key.ID)
+	require.NoError(t, err)
+	ownerID, keyHash, err := repo.GetOwnerIDAndKeyHash(ctx, key.ID)
+	require.NoError(t, err)
+	require.Equal(t, user.ID, ownerID)
+	require.Equal(t, apiKeyCredentialHash(key.Key), keyHash)
+	require.NoError(t, repo.sql.(*sql.DB).QueryRowContext(ctx, "SELECT key_hash FROM api_keys WHERE id = $1", key.ID).Scan(&storedHash))
+	require.Equal(t, keyHash, storedHash)
+
+	hashes, err := repo.ListKeyHashesByUserID(ctx, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, []string{keyHash}, hashes)
+	hashes, err = repo.ListKeyHashesByGroupID(ctx, 999999)
+	require.NoError(t, err)
+	require.Empty(t, hashes)
+}
+
+func TestAPIKeyRepositoryHashHelpersFallbackWithoutMigrationSQLite(t *testing.T) {
+	repo, client := newAPIKeyRepoSQLite(t)
+	ctx := context.Background()
+	user := mustCreateAPIKeyRepoUser(t, ctx, client, "api-key-hash-legacy@test.com")
+	key := &service.APIKey{
+		UserID: user.ID,
+		Key:    "sk-api-key-hash-legacy",
+		Name:   "Legacy hash fallback",
+		Status: service.StatusActive,
+	}
+	require.NoError(t, repo.Create(ctx, key))
+
+	ownerID, keyHash, err := repo.GetOwnerIDAndKeyHash(ctx, key.ID)
+	require.NoError(t, err)
+	require.Equal(t, user.ID, ownerID)
+	require.Equal(t, apiKeyCredentialHash(key.Key), keyHash)
+	hashes, err := repo.ListKeyHashesByUserID(ctx, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, []string{keyHash}, hashes)
 }
