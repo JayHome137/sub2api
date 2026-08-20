@@ -42,8 +42,16 @@ func (r *apiKeyRepository) activeQuery() *dbent.APIKeyQuery {
 	return r.client.APIKey.Query().Where(apikey.DeletedAtIsNil())
 }
 
+func (r *apiKeyRepository) activeQueryForContext(ctx context.Context) *dbent.APIKeyQuery {
+	// Reads in a service transaction must use the transaction client; the hash
+	// compatibility lookup also uses this boundary before falling back to the
+	// legacy key column.
+	return clientFromContext(ctx, r.client).APIKey.Query().Where(apikey.DeletedAtIsNil())
+}
+
 func (r *apiKeyRepository) Create(ctx context.Context, key *service.APIKey) error {
-	builder := r.client.APIKey.Create().
+	client := clientFromContext(ctx, r.client)
+	builder := client.APIKey.Create().
 		SetUserID(key.UserID).
 		SetKey(key.Key).
 		SetName(key.Name).
@@ -70,12 +78,16 @@ func (r *apiKeyRepository) Create(ctx context.Context, key *service.APIKey) erro
 		key.LastUsedAt = created.LastUsedAt
 		key.CreatedAt = created.CreatedAt
 		key.UpdatedAt = created.UpdatedAt
+		// The nullable hash column is introduced by a forward migration.  Keep
+		// this write best-effort so an older instance can finish a rolling
+		// upgrade without making a successful key creation look failed.
+		r.backfillAPIKeyHash(ctx, key.ID, key.Key)
 	}
 	return translatePersistenceError(err, nil, service.ErrAPIKeyExists)
 }
 
 func (r *apiKeyRepository) GetByID(ctx context.Context, id int64) (*service.APIKey, error) {
-	m, err := r.activeQuery().
+	m, err := r.activeQueryForContext(ctx).
 		Where(apikey.IDEQ(id)).
 		WithUser().
 		WithGroup().
@@ -95,7 +107,7 @@ func (r *apiKeyRepository) GetByID(ctx context.Context, id int64) (*service.APIK
 //   - 不加载完整的 API Key 实体及其关联数据（User、Group 等）
 //   - 适用于删除等只需 key 与用户 ID 的场景
 func (r *apiKeyRepository) GetKeyAndOwnerID(ctx context.Context, id int64) (string, int64, error) {
-	m, err := r.activeQuery().
+	m, err := r.activeQueryForContext(ctx).
 		Where(apikey.IDEQ(id)).
 		Select(apikey.FieldKey, apikey.FieldUserID).
 		Only(ctx)
@@ -109,8 +121,12 @@ func (r *apiKeyRepository) GetKeyAndOwnerID(ctx context.Context, id int64) (stri
 }
 
 func (r *apiKeyRepository) GetByKey(ctx context.Context, key string) (*service.APIKey, error) {
-	m, err := r.activeQuery().
-		Where(apikey.KeyEQ(key)).
+	id, err := r.findAPIKeyIDByKey(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	m, err := r.activeQueryForContext(ctx).
+		Where(apikey.IDEQ(id)).
 		WithUser(func(q *dbent.UserQuery) {
 			q.WithAllowedGroups(func(gq *dbent.GroupQuery) {
 				gq.Select(group.FieldID)
@@ -128,8 +144,12 @@ func (r *apiKeyRepository) GetByKey(ctx context.Context, key string) (*service.A
 }
 
 func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*service.APIKey, error) {
-	m, err := r.activeQuery().
-		Where(apikey.KeyEQ(key)).
+	id, err := r.findAPIKeyIDByKey(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	m, err := r.activeQueryForContext(ctx).
+		Where(apikey.IDEQ(id)).
 		Select(
 			apikey.FieldID,
 			apikey.FieldUserID,
@@ -610,8 +630,14 @@ func (r *apiKeyRepository) CountByUserID(ctx context.Context, userID int64) (int
 }
 
 func (r *apiKeyRepository) ExistsByKey(ctx context.Context, key string) (bool, error) {
-	count, err := r.activeQuery().Where(apikey.KeyEQ(key)).Count(ctx)
-	return count > 0, err
+	_, err := r.findAPIKeyIDByKey(ctx, key)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, service.ErrAPIKeyNotFound) {
+		return false, nil
+	}
+	return false, err
 }
 
 func (r *apiKeyRepository) ListByGroupID(ctx context.Context, groupID int64, params pagination.PaginationParams) ([]service.APIKey, *pagination.PaginationResult, error) {
