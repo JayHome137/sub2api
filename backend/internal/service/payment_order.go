@@ -170,6 +170,12 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 			if errors.Is(err, payment.ErrInstanceLimitsExhausted) {
 				return nil, infraerrors.TooManyRequests("NO_AVAILABLE_INSTANCE", "no_available_instance")
 			}
+			if errors.Is(err, payment.ErrInstanceCapacityReservationUnavailable) {
+				return nil, infraerrors.ServiceUnavailable(
+					"PAYMENT_CAPACITY_RESERVATION_UNAVAILABLE",
+					"payment capacity reservation is temporarily unavailable; please retry",
+				).WithCause(err)
+			}
 			return nil, fmt.Errorf("reserve payment instance capacity: %w", err)
 		}
 	}

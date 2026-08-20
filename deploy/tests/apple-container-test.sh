@@ -5,6 +5,7 @@ set -euo pipefail
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_DIR="$(cd "${TEST_DIR}/.." && pwd)"
 SCRIPT="${DEPLOY_DIR}/apple-container.sh"
+GUIDE="${DEPLOY_DIR}/APPLE_CONTAINER.md"
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/sub2api-apple-test.XXXXXX")"
 STATE_DIR="${TEST_ROOT}/state"
 ENV_FILE="${TEST_ROOT}/sub2api.env"
@@ -32,6 +33,16 @@ export PATH="${TEST_DIR}/fixtures/bin:${PATH}"
 export SUB2API_ENV_FILE="${ENV_FILE}"
 
 mkdir -p "${STATE_DIR}"
+
+grep -q '^DATA_DIR=/app/storage/data$' "${SCRIPT}" || \
+    fail "Apple container app environment must keep DATA_DIR at /app/storage/data"
+grep -q 'cat /app/storage/data/admin-password' "${GUIDE}" || \
+    fail "Apple container guide must read generated admin credentials from the app DATA_DIR"
+grep -q 'rm -f /app/storage/data/admin-password' "${GUIDE}" || \
+    fail "Apple container guide must remove generated admin credentials from the app DATA_DIR"
+if grep -q '/app/data/admin-password' "${GUIDE}"; then
+    fail "Apple container guide must not use the Docker Compose data path"
+fi
 
 "${SCRIPT}" init
 [[ "$(stat -f '%Lp' "${ENV_FILE}")" == "600" ]] || fail "init did not create a mode-600 env file"

@@ -38,6 +38,11 @@ type InstanceLimits map[string]ChannelLimits
 // but none can accept the requested amount under their configured limits.
 var ErrInstanceLimitsExhausted = errors.New("payment provider instance limits exhausted")
 
+// ErrInstanceCapacityReservationUnavailable indicates that a load balancer
+// cannot provide the transaction-scoped capacity reservation required before
+// creating a payment order.
+var ErrInstanceCapacityReservationUnavailable = errors.New("payment instance capacity reservation unavailable")
+
 // LoadBalancer selects a provider instance for a given payment type.
 type LoadBalancer interface {
 	GetInstanceConfig(ctx context.Context, instanceID int64) (map[string]string, error)

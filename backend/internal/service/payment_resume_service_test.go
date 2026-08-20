@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/url"
 	"strconv"
 	"testing"
@@ -806,6 +807,22 @@ func TestVisibleMethodLoadBalancerForwardsCapacityReservation(t *testing.T) {
 	}
 	if !inner.called {
 		t.Fatal("ReserveInstance did not reach the wrapped load balancer")
+	}
+}
+
+func TestVisibleMethodLoadBalancerFailsClosedWithoutCapacityReservation(t *testing.T) {
+	t.Parallel()
+
+	lb := &visibleMethodLoadBalancer{inner: &captureLoadBalancer{}}
+	err := lb.ReserveInstance(
+		context.Background(),
+		nil,
+		&payment.InstanceSelection{InstanceID: "7", ProviderKey: payment.TypeAlipay},
+		payment.TypeAlipay,
+		12.5,
+	)
+	if !errors.Is(err, payment.ErrInstanceCapacityReservationUnavailable) {
+		t.Fatalf("ReserveInstance error = %v, want %v", err, payment.ErrInstanceCapacityReservationUnavailable)
 	}
 }
 

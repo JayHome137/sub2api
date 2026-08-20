@@ -92,7 +92,7 @@ func (lb *visibleMethodLoadBalancer) ReserveInstance(
 ) error {
 	reserver, ok := lb.inner.(payment.InstanceCapacityReserver)
 	if !ok {
-		return nil
+		return payment.ErrInstanceCapacityReservationUnavailable
 	}
 	return reserver.ReserveInstance(ctx, tx, selection, paymentType, orderAmount)
 }

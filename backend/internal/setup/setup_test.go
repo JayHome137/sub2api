@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -246,5 +247,79 @@ func TestBuildDatabaseConnectionDSNsUsesPostgresForBootstrap(t *testing.T) {
 	}
 	if !strings.Contains(targetDSN, "dbname=sub2api") {
 		t.Fatalf("target DSN = %q, want configured database", targetDSN)
+	}
+}
+
+func TestWriteGeneratedAdminPasswordIsPrivateAndSilent(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("DATA_DIR", dataDir)
+
+	originalStdout := os.Stdout
+	readPipe, writePipe, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() error = %v", err)
+	}
+	os.Stdout = writePipe
+	t.Cleanup(func() {
+		os.Stdout = originalStdout
+		_ = writePipe.Close()
+		_ = readPipe.Close()
+	})
+	path, writeErr := writeGeneratedAdminPassword("generated-secret")
+	closeWriteErr := writePipe.Close()
+	os.Stdout = originalStdout
+	output, readErr := io.ReadAll(readPipe)
+	closeReadErr := readPipe.Close()
+	if closeWriteErr != nil {
+		t.Fatalf("close stdout pipe: %v", closeWriteErr)
+	}
+	if closeReadErr != nil {
+		t.Fatalf("close stdout read pipe: %v", closeReadErr)
+	}
+	if readErr != nil {
+		t.Fatalf("read stdout pipe: %v", readErr)
+	}
+	if writeErr != nil {
+		t.Fatalf("writeGeneratedAdminPassword() error = %v", writeErr)
+	}
+	t.Cleanup(func() { _ = os.Remove(path) })
+	if len(output) != 0 {
+		t.Fatalf("writeGeneratedAdminPassword() wrote to stdout: %q", output)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat(%q) error = %v", path, err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("generated password mode = %o, want 600", got)
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%q) error = %v", path, err)
+	}
+	if string(contents) != "generated-secret\n" {
+		t.Fatalf("generated password contents = %q, want %q", contents, "generated-secret\n")
+	}
+}
+
+func TestWriteGeneratedAdminPasswordDoesNotOverwriteExistingFile(t *testing.T) {
+	t.Setenv("DATA_DIR", t.TempDir())
+
+	path, err := writeGeneratedAdminPassword("first-secret")
+	if err != nil {
+		t.Fatalf("first writeGeneratedAdminPassword() error = %v", err)
+	}
+	t.Cleanup(func() { _ = os.Remove(path) })
+
+	if _, err := writeGeneratedAdminPassword("second-secret"); err == nil {
+		t.Fatal("second writeGeneratedAdminPassword() should reject an existing credential file")
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%q) error = %v", path, err)
+	}
+	if string(contents) != "first-secret\n" {
+		t.Fatalf("existing generated password contents = %q, want original value", contents)
 	}
 }
