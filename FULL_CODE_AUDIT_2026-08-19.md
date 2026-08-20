@@ -42,6 +42,7 @@ API Key 的第二阶段最小收口也已落地：认证缓存失效、配额耗
 | C-08 | group/proxy/redeem/user usage API 返回假统计 | 已确认，暂不修改 | 四个生产路由仍注册，前端只保留 API 封装、未找到页面调用，外部调用方仍可能存在。group/user 可复用部分聚合但周期和成本口径未定义；`usage_logs` 没有 `proxy_id`，proxy 请求数/成功率/延迟无法正确计算；redeem 的状态/类型口径也已超出旧结构。不能删路由、改 501 或继续伪造“正常”数值；需先确定统计周期、成本和状态口径，再实现真实统计或版本化弃用。 |
 | C-09 | 文档/示例含固定凭据；部署下载器曾不 fail-closed；自动管理员密码曾进入 stdout/容器日志 | 已修复并加合同测试 | 示例值改为空值或明确占位说明；`docker-deploy.sh` 使用失败即停与空文件检查；自动管理员密码原子写入数据目录下的 `0600` 文件，数据库创建失败时清理，日志只提示文件路径；相关部署文档不再指导从日志提取密码。 |
 | C-10 | 长的 JWT 配置占位符可能绕过原有长度/重复字符检查 | 已修复并测试 | `isWeakJWTSecret` 拒绝已知长占位符，配置单测覆盖默认示例值。 |
+| C-11 | golangci action 的可选在线 schema 校验会因网络超时阻断 lint | 已修复，待远端复跑 | 首次远端试跑在真正 lint 前因 JSONSchema URL 超时退出。`backend-ci.yml` 关闭 action 的在线 `verify`，仍由同一 golangci 版本读取同一仓库配置并运行全部 analyzer；后端 workflow 合同测试锁定该离线边界。 |
 
 ## 4. 复杂度与供应链结论
 
@@ -86,6 +87,7 @@ API Key 的第二阶段最小收口也已落地：认证缓存失效、配额耗
 | `go vet ./internal/repository ./internal/service` | 通过 |
 | API Key hash/backfill、DeleteUser、Quota 定向单测 | 通过；配额未耗尽时不再执行 hash 元数据查询 |
 | `git diff --check` | 通过；hash 列表遍历在回填前显式关闭 rows，旧库无 hash 列时不执行无效回填 |
+| `sh deploy/backend/workflow-contract-test.sh` | 通过；锁定 golangci 不依赖在线 JSONSchema 校验 |
 
 上述本地结果只证明候选工作树；最终推送后的远端 CI、Security Scan、Frontend validation 和受信任 VM 预检仍需以本轮最终 SHA 重新取得。全程不执行生产部署或重启。
 

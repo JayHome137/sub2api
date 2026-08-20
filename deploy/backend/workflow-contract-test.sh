@@ -6,6 +6,7 @@ ROOT=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd)
 DEPLOY_WORKFLOW=$ROOT/.github/workflows/deploy-backend.yml
 PREPARE_WORKFLOW=$ROOT/.github/workflows/backend-preparation.yml
 PREFLIGHT_WORKFLOW=$ROOT/.github/workflows/preflight.yml
+BACKEND_CI_WORKFLOW=$ROOT/.github/workflows/backend-ci.yml
 SYNC_WORKFLOW=$ROOT/.github/workflows/upstream-sync.yml
 WEB_UPDATE_WORKFLOW=$ROOT/.github/workflows/web-update.yml
 HELPER=$ROOT/deploy/backend/deploy-backend.sh
@@ -34,10 +35,15 @@ reject_text() {
 
 for file in \
   "$DEPLOY_WORKFLOW" "$PREPARE_WORKFLOW" "$PREFLIGHT_WORKFLOW" \
-  "$SYNC_WORKFLOW" "$WEB_UPDATE_WORKFLOW" "$HELPER" "$IMAGE_TEST" \
+  "$BACKEND_CI_WORKFLOW" "$SYNC_WORKFLOW" "$WEB_UPDATE_WORKFLOW" "$HELPER" "$IMAGE_TEST" \
   "$PROJECT_BOUNDARY"; do
   [ -s "$file" ] || fail "required file is missing: $file"
 done
+
+# Lint must not depend on a live JSONSchema host. The golangci binary still
+# parses the repository config and runs the configured analyzers.
+require_text "$BACKEND_CI_WORKFLOW" 'uses: golangci/golangci-lint-action@v9'
+require_text "$BACKEND_CI_WORKFLOW" 'verify: false'
 
 # Preparation owns slow validation and image loading before the button appears.
 require_text "$PREPARE_WORKFLOW" 'workflow_call:'
