@@ -126,11 +126,11 @@ for workflow in \
   "$BACKEND_DEPLOY_WORKFLOW" \
   "$BACKEND_PREPARATION_WORKFLOW" \
   "$WEB_UPDATE_WORKFLOW" \
-  "$FRONTEND_ACTIVATION_WORKFLOW"; do
+  "$FRONTEND_ACTIVATION_WORKFLOW" \
+  "$PREFLIGHT_WORKFLOW"; do
   require_runner_only "$workflow" "$VM_RUNNER"
 done
 for workflow in \
-  "$PREFLIGHT_WORKFLOW" \
   "$DEPLOY_WORKFLOW" \
   "$CLA_WORKFLOW"; do
   require_runner_only "$workflow" "$GITHUB_RUNNER"
@@ -398,6 +398,8 @@ require_text "$PREFLIGHT_WORKFLOW" 'Run read-only VPS preflight'
 require_text "$PREFLIGHT_WORKFLOW" 'environment:'
 require_text "$PREFLIGHT_WORKFLOW" 'name: production'
 require_text "$PREFLIGHT_WORKFLOW" 'sudo -n /usr/local/sbin/deploy-sub2api-frontend preflight'
+require_text "$PREFLIGHT_WORKFLOW" 'git remote set-url official https://github.com/Wei-Shaw/sub2api.git'
+require_text "$PREFLIGHT_WORKFLOW" 'git remote get-url official >/dev/null 2>&1'
 reject_text "$PREFLIGHT_WORKFLOW" 'bash --noprofile --norc -s'
 reject_text "$PREFLIGHT_WORKFLOW" '< deploy/frontend/'
 reject_text "$PREFLIGHT_WORKFLOW" 'scp '
