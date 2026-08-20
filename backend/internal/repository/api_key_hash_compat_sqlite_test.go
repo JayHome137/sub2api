@@ -27,7 +27,9 @@ func TestAPIKeyRepositoryHashLookupAndLegacyBackfillSQLite(t *testing.T) {
 	require.NoError(t, repo.Create(ctx, key))
 
 	var storedHash string
-	require.NoError(t, repo.sql.(*sql.DB).QueryRowContext(ctx, "SELECT key_hash FROM api_keys WHERE id = $1", key.ID).Scan(&storedHash))
+	row := repo.sql.(*sql.DB).QueryRowContext(ctx, "SELECT key_hash FROM api_keys WHERE id = $1", key.ID)
+	err = row.Scan(&storedHash)
+	require.NoError(t, err)
 	require.Equal(t, apiKeyCredentialHash(key.Key), storedHash)
 
 	// Simulate an old row that has not been lazily backfilled yet.
@@ -36,6 +38,8 @@ func TestAPIKeyRepositoryHashLookupAndLegacyBackfillSQLite(t *testing.T) {
 	got, err := repo.GetByKeyForAuth(ctx, key.Key)
 	require.NoError(t, err)
 	require.Equal(t, key.ID, got.ID)
-	require.NoError(t, repo.sql.(*sql.DB).QueryRowContext(ctx, "SELECT key_hash FROM api_keys WHERE id = $1", key.ID).Scan(&storedHash))
+	row = repo.sql.(*sql.DB).QueryRowContext(ctx, "SELECT key_hash FROM api_keys WHERE id = $1", key.ID)
+	err = row.Scan(&storedHash)
+	require.NoError(t, err)
 	require.Equal(t, apiKeyCredentialHash(key.Key), storedHash)
 }

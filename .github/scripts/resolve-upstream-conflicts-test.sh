@@ -43,6 +43,7 @@ printf '%s\n' 'vite=base' > "$TEST_ROOT/frontend/vite.config.ts"
 printf '%s\n' 'tsconfig=base' > "$TEST_ROOT/frontend/tsconfig.json"
 printf '%s\n' 'future=base' > "$TEST_ROOT/frontend/future-tool.config.ts"
 printf '%s\n' 'deployment=base' > "$TEST_ROOT/deploy/docker-deploy.sh"
+printf '%s\n' 'credential_delivery=base' > "$TEST_ROOT/deploy/APPLE_CONTAINER.md"
 git -C "$TEST_ROOT" add .
 git -C "$TEST_ROOT" commit -qm base
 
@@ -70,6 +71,7 @@ printf '%s\n' 'vite=ours' > "$TEST_ROOT/frontend/vite.config.ts"
 printf '%s\n' 'tsconfig=ours' > "$TEST_ROOT/frontend/tsconfig.json"
 printf '%s\n' 'future=ours' > "$TEST_ROOT/frontend/future-tool.config.ts"
 printf '%s\n' 'deployment=ours' > "$TEST_ROOT/deploy/docker-deploy.sh"
+printf '%s\n' 'credential_delivery=ours' > "$TEST_ROOT/deploy/APPLE_CONTAINER.md"
 git -C "$TEST_ROOT" add .
 git -C "$TEST_ROOT" commit -qm ours
 
@@ -97,6 +99,7 @@ printf '%s\n' 'vite=theirs' > "$TEST_ROOT/frontend/vite.config.ts"
 printf '%s\n' 'tsconfig=theirs' > "$TEST_ROOT/frontend/tsconfig.json"
 printf '%s\n' 'future=theirs' > "$TEST_ROOT/frontend/future-tool.config.ts"
 printf '%s\n' 'deployment=theirs' > "$TEST_ROOT/deploy/docker-deploy.sh"
+printf '%s\n' 'credential_delivery=theirs' > "$TEST_ROOT/deploy/APPLE_CONTAINER.md"
 git -C "$TEST_ROOT" add .
 git -C "$TEST_ROOT" commit -qm theirs
 
@@ -142,6 +145,8 @@ grep -Fxq 'future=ours' "$TEST_ROOT/frontend/future-tool.config.ts" \
   || fail 'future frontend root configuration was not protected'
 grep -Fxq 'deployment=ours' "$TEST_ROOT/deploy/docker-deploy.sh" \
   || fail 'deployment security contract was not protected'
+grep -Fxq 'credential_delivery=ours' "$TEST_ROOT/deploy/APPLE_CONTAINER.md" \
+  || fail 'Apple container credential-delivery contract was not protected'
 if (cd "$TEST_ROOT" && .github/scripts/resolve-upstream-conflicts.sh >/dev/null 2>&1); then
   fail 'resolver accepted a non-merge state and faked success'
 fi
