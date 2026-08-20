@@ -18,7 +18,10 @@ concurrency:
 
 jobs:
   frontend-preflight:
-    runs-on: ubuntu-latest
+    # Keep read-only production checks on the repository's trusted VM runner.
+    # The VM already carries the network and tool contract used by CI and
+    # avoids making VPS preflight depend on hosted-runner billing capacity.
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
     timeout-minutes: 10
     environment:
       name: production
@@ -85,7 +88,8 @@ jobs:
           fi
 
   backend-preflight:
-    runs-on: ubuntu-latest
+    # Use the same trusted VM runner as the rest of the delivery pipeline.
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
     timeout-minutes: 10
     environment:
       name: production
