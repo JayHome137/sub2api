@@ -66,7 +66,7 @@ func TestCreateOrderInTx_WritesProviderSnapshot(t *testing.T) {
 		Save(ctx)
 	require.NoError(t, err)
 
-	svc := &PaymentService{entClient: client}
+	svc := &PaymentService{entClient: client, loadBalancer: &capacityCaptureLoadBalancer{}}
 	order, err := svc.createOrderInTx(
 		ctx,
 		CreateOrderRequest{
