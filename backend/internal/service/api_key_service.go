@@ -951,6 +951,13 @@ func (s *APIKeyService) Delete(ctx context.Context, id int64, userID int64) erro
 	)
 	if hashRepo, ok := s.apiKeyRepo.(APIKeyHashRepository); ok {
 		ownerID, keyHash, err = hashRepo.GetOwnerIDAndKeyHash(ctx, id)
+		if err != nil {
+			// A transient/mixed-version hash projection failure must not stop
+			// deletion. Fall back to the legacy owner+key projection; the
+			// fallback is intentionally limited to this exceptional path.
+			key, ownerID, err = s.apiKeyRepo.GetKeyAndOwnerID(ctx, id)
+			keyHash = ""
+		}
 	} else {
 		key, ownerID, err = s.apiKeyRepo.GetKeyAndOwnerID(ctx, id)
 	}

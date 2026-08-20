@@ -417,14 +417,15 @@ func (s *adminServiceImpl) listUserAPIKeysForDeletion(ctx context.Context, userI
 	}
 	if idRepo, ok := s.apiKeyRepo.(APIKeyIDRepository); ok {
 		ids, err := idRepo.ListAPIKeyIDsByUserID(ctx, userID)
-		if err != nil {
-			return nil, fmt.Errorf("list user api key ids: %w", err)
+		if err == nil {
+			keys := make([]APIKey, len(ids))
+			for i, id := range ids {
+				keys[i] = APIKey{ID: id, UserID: userID}
+			}
+			return keys, nil
 		}
-		keys := make([]APIKey, len(ids))
-		for i, id := range ids {
-			keys[i] = APIKey{ID: id, UserID: userID}
-		}
-		return keys, nil
+		// Keep the pre-hash paginated projection as a compatibility fallback
+		// if an older/misconfigured database cannot serve the ID-only query.
 	}
 
 	const pageSize = 1000
