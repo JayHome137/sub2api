@@ -296,6 +296,7 @@ jobs:
           issue_title="[Upstream $tag] AIFoo frontend compatibility"
 
           ensure_labels() {
+            local attempt delay label color
             for label in upstream-release candidate-testing ui-review-required sync-failed ready-for-vps vps-preloaded vps-preload-failed backend-deploy-required backend-deployed backend-prepared backend-prepare-failed backend-production-state web-update-running web-update-failed; do
               case "$label" in
                 upstream-release) color=0969DA ;;
@@ -313,7 +314,18 @@ jobs:
                 web-update-running) color=1D76DB ;;
                 web-update-failed) color=B60205 ;;
               esac
-              gh label create "$label" --color "$color" --force >/dev/null
+              for attempt in 1 2 3 4 5; do
+                if gh label create "$label" --color "$color" --force >/dev/null; then
+                  break
+                fi
+                if [ "$attempt" -eq 5 ]; then
+                  echo "Unable to synchronize GitHub label $label after $attempt attempts" >&2
+                  return 1
+                fi
+                delay=$((attempt * 3))
+                echo "GitHub label synchronization failed for $label (attempt $attempt/5); retrying in ${delay}s" >&2
+                sleep "$delay"
+              done
             done
           }
 
