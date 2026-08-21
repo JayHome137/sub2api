@@ -82,6 +82,10 @@ require_text "$SYNC_WORKFLOW" 'newly added upstream surfaces retain their offici
 require_text "$SYNC_WORKFLOW" "retry_final"
 require_text "$SYNC_WORKFLOW" 'current_base=$(gh api'
 require_text "$SYNC_WORKFLOW" 'git merge-base --is-ancestor "$release_commit" "$candidate_sha"'
+require_text "$SYNC_WORKFLOW" 'git merge-base --is-ancestor "$production_sha" "$existing_candidate_sha"'
+require_text "$SYNC_WORKFLOW" 'if [ "$candidate_in_current_base" != "true" ] || [ "$retry_failed" = "true" ]; then'
+require_text "$SYNC_WORKFLOW" 'git push --force-with-lease origin "$branch"'
+require_text "$SYNC_WORKFLOW" 'Refreshing automated candidate $branch from current production $production_sha.'
 require_text "$SYNC_WORKFLOW" '.github/scripts/resolve-upstream-conflicts.sh'
 require_text "$SYNC_WORKFLOW" 'resolver_copy="$RUNNER_TEMP/resolve-upstream-conflicts.sh"'
 require_text "$SYNC_WORKFLOW" 'chmod +x "$resolver_copy"'

@@ -481,21 +481,64 @@ jobs:
 
           branch="upgrade/$tag"
           echo "candidate_branch=$branch" >> "$GITHUB_OUTPUT"
+          resolver_copy="$RUNNER_TEMP/resolve-upstream-conflicts.sh"
+          cp .github/scripts/resolve-upstream-conflicts.sh "$resolver_copy"
+          chmod +x "$resolver_copy"
           if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
-            if [ "$RETRY_EXISTING" != "true" ]; then
+            git fetch origin "refs/heads/$branch:refs/remotes/origin/$branch"
+            existing_candidate_sha=$(git rev-parse "origin/$branch")
+            issue_labels=$(gh issue view "$issue_number" --json labels --jq '.labels[].name')
+            candidate_in_current_base=false
+            if git merge-base --is-ancestor "$production_sha" "$existing_candidate_sha"; then
+              candidate_in_current_base=true
+            fi
+            retry_failed=false
+            if printf '%s\n' "$issue_labels" | grep -Fxq sync-failed; then
+              retry_failed=true
+            fi
+            refresh_existing=false
+            if [ "$candidate_in_current_base" != "true" ] || [ "$retry_failed" = "true" ]; then
+              refresh_existing=true
+            fi
+            if [ "$refresh_existing" != "true" ] && [ "$RETRY_EXISTING" != "true" ]; then
               echo "Existing candidate $branch is awaiting review; scheduled validation will not repeat."
               echo "release_detected=false" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            git fetch origin "refs/heads/$branch:refs/remotes/origin/$branch"
-            git checkout -B "$branch" "origin/$branch"
+            if [ "$refresh_existing" = "true" ]; then
+              echo "Refreshing automated candidate $branch from current production $production_sha."
+              git checkout -B "$branch" origin/production
+              if ! git merge --no-edit "$tag"; then
+                conflict_log="$RUNNER_TEMP/upstream-conflict-resolution.txt"
+                if ! "$resolver_copy" > "$conflict_log" 2>&1; then
+                  cat "$conflict_log" >&2 || true
+                  gh issue edit "$issue_number" --add-label sync-failed >/dev/null
+                  comment_file=$(mktemp)
+                  {
+                    echo "The official $tag release still has an unresolved merge conflict after refreshing the existing candidate. No candidate was published and no deployment was attempted."
+                    echo
+                    echo 'Resolver output:'
+                    cat "$conflict_log"
+                  } > "$comment_file"
+                  gh issue comment "$issue_number" --body-file "$comment_file"
+                  echo "blocked=true" >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
+                cat "$conflict_log"
+                comment_file=$(mktemp)
+                {
+                  echo "The existing $tag candidate was refreshed from current production. The deterministic resolver preserved AIFoo UI/API boundaries and retained upstream non-conflicting changes. Candidate validation will continue."
+                  echo
+                  echo 'Resolver decisions:'
+                  cat "$conflict_log"
+                } > "$comment_file"
+                gh issue comment "$issue_number" --body-file "$comment_file"
+              fi
+              git push --force-with-lease origin "$branch"
+            else
+              git checkout -B "$branch" "origin/$branch"
+            fi
           else
-            # Keep the fork resolver executable outside the merge worktree. If
-            # upstream also edits the resolver, conflict markers must not make
-            # the recovery step itself unavailable.
-            resolver_copy="$RUNNER_TEMP/resolve-upstream-conflicts.sh"
-            cp .github/scripts/resolve-upstream-conflicts.sh "$resolver_copy"
-            chmod +x "$resolver_copy"
             git checkout -b "$branch" origin/production
             if ! git merge --no-edit "$tag"; then
               conflict_log="$RUNNER_TEMP/upstream-conflict-resolution.txt"
