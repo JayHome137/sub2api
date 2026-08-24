@@ -272,6 +272,11 @@ require_text "$VALIDATE_WORKFLOW" "Run deployment backup and restore integration
 require_text "$VALIDATE_WORKFLOW" "Record exact production validation"
 require_text "$VALIDATE_WORKFLOW" "aifoo/frontend-validation"
 require_text "$VALIDATE_WORKFLOW" "statuses: write"
+upgrade_pr_skip_count=$(grep -Fc \
+  "(github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/'))" \
+  "$VALIDATE_WORKFLOW")
+[ "$upgrade_pr_skip_count" -eq 2 ] \
+  || fail "upgrade PR frontend and image jobs must defer to release-sync validation"
 if grep -Fq "file: Dockerfile" "$VALIDATE_WORKFLOW"; then
   fail "AIFoo validation must not build the full backend image"
 fi

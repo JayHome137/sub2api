@@ -133,6 +133,7 @@ jobs:
     needs: frontend
     if: >-
       always() &&
+      (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/')) &&
       (needs.frontend.result == 'success' || needs.frontend.result == 'skipped')
     runs-on: [self-hosted, linux, x64, aifoo-vm]
     timeout-minutes: 30
