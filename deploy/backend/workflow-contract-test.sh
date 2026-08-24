@@ -7,6 +7,7 @@ DEPLOY_WORKFLOW=$ROOT/.github/workflows/deploy-backend.yml
 PREPARE_WORKFLOW=$ROOT/.github/workflows/backend-preparation.yml
 PREFLIGHT_WORKFLOW=$ROOT/.github/workflows/preflight.yml
 BACKEND_CI_WORKFLOW=$ROOT/.github/workflows/backend-ci.yml
+SECURITY_WORKFLOW=$ROOT/.github/workflows/security-scan.yml
 SYNC_WORKFLOW=$ROOT/.github/workflows/upstream-sync.yml
 WEB_UPDATE_WORKFLOW=$ROOT/.github/workflows/web-update.yml
 HELPER=$ROOT/deploy/backend/deploy-backend.sh
@@ -33,9 +34,26 @@ reject_text() {
   fi
 }
 
+require_dynamic_go_version_checks() {
+  file=$1
+  verify_count=$(grep -Fc 'name: Verify Go version' "$file" || true)
+  dynamic_count=$(grep -Fc 'expected_go_version="go$(awk' "$file" || true)
+  comparison_count=$(grep -Fc 'test "$(go env GOVERSION)" = "$expected_go_version"' "$file" || true)
+
+  [ "$verify_count" -gt 0 ] || fail "missing Go version verification in $(basename "$file")"
+  [ "$verify_count" -eq "$dynamic_count" ] \
+    || fail "every Go version verification must read backend/go.mod in $(basename "$file")"
+  [ "$verify_count" -eq "$comparison_count" ] \
+    || fail "every Go version verification must compare go env GOVERSION in $(basename "$file")"
+  if grep -Eq 'go1\.[0-9]+\.[0-9]+' "$file"; then
+    fail "hard-coded Go version verification in $(basename "$file")"
+  fi
+}
+
 for file in \
   "$DEPLOY_WORKFLOW" "$PREPARE_WORKFLOW" "$PREFLIGHT_WORKFLOW" \
-  "$BACKEND_CI_WORKFLOW" "$SYNC_WORKFLOW" "$WEB_UPDATE_WORKFLOW" "$HELPER" "$IMAGE_TEST" \
+  "$BACKEND_CI_WORKFLOW" "$SECURITY_WORKFLOW" "$SYNC_WORKFLOW" "$WEB_UPDATE_WORKFLOW" \
+  "$HELPER" "$IMAGE_TEST" \
   "$PROJECT_BOUNDARY"; do
   [ -s "$file" ] || fail "required file is missing: $file"
 done
@@ -44,6 +62,8 @@ done
 # parses the repository config and runs the configured analyzers.
 require_text "$BACKEND_CI_WORKFLOW" 'uses: golangci/golangci-lint-action@v9'
 require_text "$BACKEND_CI_WORKFLOW" 'verify: false'
+require_dynamic_go_version_checks "$BACKEND_CI_WORKFLOW"
+require_dynamic_go_version_checks "$SECURITY_WORKFLOW"
 
 # Preparation owns slow validation and image loading before the button appears.
 require_text "$PREPARE_WORKFLOW" 'workflow_call:'
