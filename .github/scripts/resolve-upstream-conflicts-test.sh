@@ -22,6 +22,7 @@ git -C "$TEST_ROOT" config user.email 'aifoo-conflict-resolver@example.invalid'
 mkdir -p "$TEST_ROOT/.github/workflows" "$TEST_ROOT/backend/internal/ordinary" "$TEST_ROOT/frontend/src" "$TEST_ROOT/deploy"
 
 printf '%s\n' 'shared=base' > "$TEST_ROOT/.github/workflows/policy.yml"
+printf '%s\n' 'owner=base' > "$TEST_ROOT/.github/audit-exceptions.yml"
 printf '%s\n' 'shared=base' > "$TEST_ROOT/backend/internal/ordinary/policy.go"
 printf '%s\n' 'delete=base' > "$TEST_ROOT/frontend/src/delete-modify.ts"
 printf '%s\n' 'delete=base' > "$TEST_ROOT/backend/internal/ordinary/modify-delete.go"
@@ -49,6 +50,7 @@ git -C "$TEST_ROOT" commit -qm base
 
 git -C "$TEST_ROOT" checkout -qb ours
 printf '%s\n' 'ui=ours' > "$TEST_ROOT/.github/workflows/policy.yml"
+printf '%s\n' 'owner=ours' > "$TEST_ROOT/.github/audit-exceptions.yml"
 printf '%s\n' 'fork=ours' > "$TEST_ROOT/backend/internal/ordinary/policy.go"
 git -C "$TEST_ROOT" rm -q frontend/src/delete-modify.ts
 printf '%s\n' 'modify=ours' > "$TEST_ROOT/backend/internal/ordinary/modify-delete.go"
@@ -77,6 +79,7 @@ git -C "$TEST_ROOT" commit -qm ours
 
 git -C "$TEST_ROOT" checkout -qb theirs HEAD~1
 printf '%s\n' 'ui=theirs' > "$TEST_ROOT/.github/workflows/policy.yml"
+printf '%s\n' 'owner=theirs' > "$TEST_ROOT/.github/audit-exceptions.yml"
 printf '%s\n' 'upstream=theirs' > "$TEST_ROOT/backend/internal/ordinary/policy.go"
 printf '%s\n' 'delete=theirs' > "$TEST_ROOT/frontend/src/delete-modify.ts"
 git -C "$TEST_ROOT" rm -q backend/internal/ordinary/modify-delete.go
@@ -116,6 +119,8 @@ chmod +x "$TEST_ROOT/.github/scripts/resolve-upstream-conflicts.sh"
   || fail 'unresolved merge stages remain'
 grep -Fxq 'ui=ours' "$TEST_ROOT/.github/workflows/policy.yml" \
   || fail 'fork delivery policy was not preserved'
+grep -Fxq 'owner=ours' "$TEST_ROOT/.github/audit-exceptions.yml" \
+  || fail 'fork audit exception ownership was not preserved'
 grep -Fxq 'upstream=theirs' "$TEST_ROOT/backend/internal/ordinary/policy.go" \
   || fail 'ordinary upstream content was not selected'
 grep -Fxq 'conflict=ours' "$TEST_ROOT/frontend/src/normal-text.ts" \
