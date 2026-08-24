@@ -61,6 +61,11 @@ done
 # Lint must not depend on a live JSONSchema host. The golangci binary still
 # parses the repository config and runs the configured analyzers.
 require_text "$BACKEND_CI_WORKFLOW" 'uses: golangci/golangci-lint-action@v9'
+require_text "$BACKEND_CI_WORKFLOW" '1.26.*) golangci_version=v2.9 ;;'
+require_text "$BACKEND_CI_WORKFLOW" '1.27.*) golangci_version=v2.13 ;;'
+require_text "$BACKEND_CI_WORKFLOW" 'version: ${{ steps.lint_version.outputs.version }}'
+reject_text "$BACKEND_CI_WORKFLOW" 'version: v2.9'
+reject_text "$BACKEND_CI_WORKFLOW" 'version: v2.13'
 require_text "$BACKEND_CI_WORKFLOW" 'verify: false'
 require_dynamic_go_version_checks "$BACKEND_CI_WORKFLOW"
 require_dynamic_go_version_checks "$SECURITY_WORKFLOW"
