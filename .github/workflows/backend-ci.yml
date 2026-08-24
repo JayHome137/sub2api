@@ -71,7 +71,8 @@ jobs:
           cache: false
       - name: Verify Go version
         run: |
-          go version | grep -q 'go1.26.6'
+          expected_go_version="go$(awk '$1 == "go" { print $2; exit }' backend/go.mod)"
+          test "$(go env GOVERSION)" = "$expected_go_version"
       - name: Unit tests
         working-directory: backend
         run: make test-unit
@@ -94,7 +95,8 @@ jobs:
           cache: false
       - name: Verify Go version
         run: |
-          go version | grep -q 'go1.26.6'
+          expected_go_version="go$(awk '$1 == "go" { print $2; exit }' backend/go.mod)"
+          test "$(go env GOVERSION)" = "$expected_go_version"
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
