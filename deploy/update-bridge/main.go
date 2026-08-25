@@ -81,6 +81,12 @@ type versionInfo struct {
 	HasUpdate      bool   `json:"has_update"`
 }
 
+type versionInfoResponse struct {
+	Code    int         `json:"code"`
+	Message string      `json:"message"`
+	Data    versionInfo `json:"data"`
+}
+
 type rollbackRequest struct {
 	Version string `json:"version"`
 }
@@ -242,11 +248,17 @@ func (s *bridgeServer) checkUpdates(r *http.Request) (versionInfo, error) {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 		return versionInfo{}, fmt.Errorf("update check returned %d", resp.StatusCode)
 	}
-	var info versionInfo
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&info); err != nil {
+	var payload versionInfoResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&payload); err != nil {
 		return versionInfo{}, err
 	}
-	return info, nil
+	if payload.Code != 0 {
+		return versionInfo{}, fmt.Errorf("update check returned API code %d", payload.Code)
+	}
+	if strings.TrimSpace(payload.Data.CurrentVersion) == "" || strings.TrimSpace(payload.Data.LatestVersion) == "" {
+		return versionInfo{}, errors.New("update check returned incomplete version data")
+	}
+	return payload.Data, nil
 }
 
 func (s *bridgeServer) handleRollback(w http.ResponseWriter, r *http.Request) {

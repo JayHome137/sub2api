@@ -37,10 +37,14 @@ func newTestServer(t *testing.T, helper *fakeHelper, hasUpdate bool) (*bridgeSer
 		case "/version":
 			_ = json.NewEncoder(w).Encode(map[string]string{"version": "0.1.182"})
 		case "/check-updates":
-			_ = json.NewEncoder(w).Encode(versionInfo{
-				CurrentVersion: "0.1.182",
-				LatestVersion:  "0.1.183",
-				HasUpdate:      hasUpdate,
+			_ = json.NewEncoder(w).Encode(versionInfoResponse{
+				Code:    0,
+				Message: "success",
+				Data: versionInfo{
+					CurrentVersion: "0.1.182",
+					LatestVersion:  "0.1.183",
+					HasUpdate:      hasUpdate,
+				},
 			})
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -48,6 +52,40 @@ func newTestServer(t *testing.T, helper *fakeHelper, hasUpdate bool) (*bridgeSer
 	}))
 	server := newBridgeServer(config{adminBaseURL: admin.URL, helperPath: "/unused"}, helper)
 	return server, admin.Close
+}
+
+func TestUpdateRejectsMissingVersionEnvelopeData(t *testing.T) {
+	helper := &fakeHelper{}
+	admin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != testAuthorization {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case "/version":
+			_ = json.NewEncoder(w).Encode(map[string]string{"version": "0.1.182"})
+		case "/check-updates":
+			// This is the shape that previously decoded to zero values and was
+			// incorrectly reported as "already up to date".
+			_ = json.NewEncoder(w).Encode(versionInfo{
+				CurrentVersion: "0.1.182",
+				LatestVersion:  "0.1.183",
+				HasUpdate:      true,
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer admin.Close()
+	server := newBridgeServer(config{adminBaseURL: admin.URL, helperPath: "/unused"}, helper)
+
+	response := request(t, server, http.MethodPost, "/update", "", true)
+	if response.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if len(helper.calls) != 0 {
+		t.Fatalf("helper calls = %#v", helper.calls)
+	}
 }
 
 func request(t *testing.T, server *bridgeServer, method, path, body string, authorized bool) *httptest.ResponseRecorder {
