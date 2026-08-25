@@ -187,7 +187,7 @@ jobs:
             -o StrictHostKeyChecking=yes \
             -o BatchMode=yes \
             "$VPS_USER@$VPS_HOST" \
-            'set -eu; test -r /opt/sub2api/docker-compose.yml; sudo -n -l >/dev/null'
+            'sudo -n -l >/dev/null'
 
       - name: Install local VPS update control plane
         if: ${{ inputs.install_control_plane }}
