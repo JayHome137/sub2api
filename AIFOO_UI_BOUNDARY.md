@@ -15,12 +15,14 @@ exists in the official upstream flow or the user explicitly requests it.
 The only approved fork-specific update-flow differences are:
 
 - Merge each official stable release into the source-integrated AIFoo UI.
+- Keep GitHub Actions workflows fork-owned during automated release merges;
+  record upstream workflow differences for separate review.
 - Complete the requested validation and image preparation before showing the
   update prompt.
 - Show the update state in the existing web UI and dispatch the approved
   production switch from that button.
 
-These three differences are mandatory because they are the reason this fork
+These four differences are mandatory because they are the reason this fork
 exists. Upstream alignment must not remove or bypass them.
 
 Successful validation evidence may be reused across a replacement PR when the
@@ -85,14 +87,16 @@ an existing UI contract working.
 
 1. Detect an official stable upstream release.
 2. Merge the exact upstream release commit into a candidate branch.
-3. Resolve every merge conflict deterministically: keep the fork-owned UI and
-   delivery contract, take official upstream hunks elsewhere, and continue to
-   validation. Only an unresolved conflict or a failed validation check stops
-   the candidate.
-4. Run focused frontend validation and build the private frontend image.
-5. Record the result and expose the web update only after preparation; do not
+3. Preserve the complete fork-owned `.github/workflows` tree and record any
+   official workflow additions, changes, or deletions for separate review.
+4. Resolve every remaining merge conflict deterministically: keep the
+   fork-owned UI and delivery contract, take official upstream hunks elsewhere,
+   and continue to validation. Only an unresolved conflict or a failed
+   validation check stops the candidate.
+5. Run focused frontend validation and build the private frontend image.
+6. Record the result and expose the web update only after preparation; do not
    switch production automatically.
-6. Activate the prepared update on the VPS only after explicit approval.
+7. Activate the prepared update on the VPS only after explicit approval.
 
 This boundary is the default for future work. Requirements that exceed it
 must be called out before code or infrastructure changes begin.
