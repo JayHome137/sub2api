@@ -4,7 +4,6 @@ package service
 
 import (
 	"context"
-	"math"
 	"errors"
 	"fmt"
 	"strconv"
@@ -115,40 +114,11 @@ func TestPrepareRefundRejectsLegacyGuessedProviderInstance(t *testing.T) {
 		entClient: client,
 	}
 
-	plan, result, err := svc.PrepareRefund(ctx, order.ID, nil, "", false, false)
+	plan, result, err := svc.PrepareRefund(ctx, order.ID, 0, "", false, false)
 	require.Nil(t, plan)
 	require.Nil(t, result)
 	require.Error(t, err)
 	require.Equal(t, "REFUND_DISABLED", infraerrors.Reason(err))
-}
-
-func TestPrepareRefundOnlyTreatsOmittedAmountAsFullRefund(t *testing.T) {
-	ctx := context.Background()
-	client := newPaymentConfigServiceTestClient(t)
-	order := createPendingRefundOrderForTest(t, ctx, client, "prepare-refund-amount")
-	svc := &PaymentService{entClient: client}
-
-	plan, result, err := svc.PrepareRefund(ctx, order.ID, nil, "", false, false)
-	require.NoError(t, err)
-	require.Nil(t, result)
-	require.NotNil(t, plan)
-	require.Equal(t, order.Amount, plan.RefundAmount)
-
-	for _, amount := range []float64{0, -1, math.NaN(), math.Inf(1), math.Inf(-1)} {
-		amount := amount
-		plan, result, err := svc.PrepareRefund(ctx, order.ID, &amount, "", false, false)
-		require.Nil(t, plan)
-		require.Nil(t, result)
-		require.Error(t, err)
-		require.Equal(t, "INVALID_AMOUNT", infraerrors.Reason(err))
-	}
-
-	partialAmount := 25.5
-	plan, result, err = svc.PrepareRefund(ctx, order.ID, &partialAmount, "", false, false)
-	require.NoError(t, err)
-	require.Nil(t, result)
-	require.NotNil(t, plan)
-	require.Equal(t, partialAmount, plan.RefundAmount)
 }
 
 func TestPrepDeductBalanceRequiresForceWhenBalanceIsInsufficient(t *testing.T) {

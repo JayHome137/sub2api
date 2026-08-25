@@ -136,43 +136,6 @@ func TestNewAlipay(t *testing.T) {
 	}
 }
 
-func TestAlipayRefundUsesStableOutRequestNo(t *testing.T) {
-	original := alipayTradeRefund
-	t.Cleanup(func() { alipayTradeRefund = original })
-
-	var requests []alipay.TradeRefund
-	alipayTradeRefund = func(_ context.Context, _ *alipay.Client, request alipay.TradeRefund) (*alipay.TradeRefundRsp, error) {
-		requests = append(requests, request)
-		return &alipay.TradeRefundRsp{TradeNo: "trade-1", FundChange: alipayFundChangeYes}, nil
-	}
-
-	provider := &Alipay{client: &alipay.Client{}}
-	request := payment.RefundRequest{
-		TradeNo: "trade-1",
-		OrderID: "order-1",
-		Amount:  "10.00",
-		Reason:  "requested by customer",
-	}
-	for range 2 {
-		response, err := provider.Refund(context.Background(), request)
-		if err != nil {
-			t.Fatalf("Refund() error = %v", err)
-		}
-		if response.Status != payment.ProviderStatusSuccess {
-			t.Fatalf("Refund() status = %q, want success", response.Status)
-		}
-	}
-
-	if len(requests) != 2 {
-		t.Fatalf("refund requests = %d, want 2", len(requests))
-	}
-	for _, got := range requests {
-		if got.OutRequestNo != "order-1-refund" {
-			t.Fatalf("OutRequestNo = %q, want stable order-1-refund", got.OutRequestNo)
-		}
-	}
-}
-
 func TestCreateTradeUsesPagePayForDesktop(t *testing.T) {
 	origPreCreate := alipayTradePreCreate
 	origPagePay := alipayTradePagePay

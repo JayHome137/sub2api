@@ -67,16 +67,3 @@ func TestAdminService_UpdateUser_NoInvalidateWhenRPMLimitUnchanged(t *testing.T)
 	require.NoError(t, err)
 	require.Empty(t, invalidator.userIDs, "只改 username 不应触发认证缓存失效")
 }
-
-func TestAdminService_UpdateUser_RejectsShortPassword(t *testing.T) {
-	base := &userRepoStub{user: &User{ID: 42, Email: "u@example.com", Status: StatusActive}}
-	repo := &rpmUserRepoStub{userRepoStub: base}
-	svc := &adminServiceImpl{
-		userRepo:       repo,
-		redeemCodeRepo: &redeemRepoStub{},
-	}
-
-	_, err := svc.UpdateUser(context.Background(), 42, &UpdateUserInput{Password: "1234567"})
-	require.ErrorIs(t, err, ErrPasswordTooShort)
-	require.Nil(t, repo.lastUpdated)
-}

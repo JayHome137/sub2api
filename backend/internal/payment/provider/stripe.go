@@ -220,10 +220,18 @@ func parseStripePaymentIntent(event *stripe.Event, status string, rawBody string
 func (s *Stripe) Refund(ctx context.Context, req payment.RefundRequest) (*payment.RefundResponse, error) {
 	s.ensureInit()
 
-	params, err := newStripeRefundParams(ctx, req, s.currency())
+	amountInMinorUnit, err := payment.AmountToMinorUnit(req.Amount, s.currency())
 	if err != nil {
 		return nil, fmt.Errorf("stripe refund: %w", err)
 	}
+
+	params := &stripe.RefundCreateParams{
+		PaymentIntent: stripe.String(req.TradeNo),
+		Amount:        stripe.Int64(amountInMinorUnit),
+		Reason:        stripe.String(string(stripe.RefundReasonRequestedByCustomer)),
+	}
+	params.SetIdempotencyKey(fmt.Sprintf("re-%s-%d", req.OrderID, amountInMinorUnit))
+	params.Context = ctx
 
 	r, err := s.sc.V1Refunds.Create(ctx, params)
 	if err != nil {
@@ -239,28 +247,6 @@ func (s *Stripe) Refund(ctx context.Context, req payment.RefundRequest) (*paymen
 		RefundID: r.ID,
 		Status:   refundStatus,
 	}, nil
-}
-
-func newStripeRefundParams(ctx context.Context, req payment.RefundRequest, currency string) (*stripe.RefundCreateParams, error) {
-	orderID := strings.TrimSpace(req.OrderID)
-	if orderID == "" {
-		return nil, fmt.Errorf("missing order id")
-	}
-	amountInMinorUnit, err := payment.AmountToMinorUnit(req.Amount, currency)
-	if err != nil {
-		return nil, err
-	}
-	params := &stripe.RefundCreateParams{
-		PaymentIntent: stripe.String(req.TradeNo),
-		Amount:        stripe.Int64(amountInMinorUnit),
-		Reason:        stripe.String(string(stripe.RefundReasonRequestedByCustomer)),
-	}
-	// Scope the key to both the order and the requested amount. This keeps
-	// retries for the same refund idempotent without conflating distinct
-	// partial-refund amounts for one order.
-	params.SetIdempotencyKey(fmt.Sprintf("re-%s-%d", orderID, amountInMinorUnit))
-	params.Context = ctx
-	return params, nil
 }
 
 // QueryRefund retrieves a Stripe refund by refund ID when available, otherwise

@@ -130,7 +130,6 @@ func TestGroupUsageRollupTriggerSerializesInsertTransactionAcrossMidnight(t *tes
 	schema := createGroupUsageRollupTriggerTestSchema(t, ctx, false)
 	seedTx := beginGroupUsageRollupTriggerTestTx(t, ctx, schema)
 	_, err := seedTx.ExecContext(ctx, `
-		SET LOCAL TIME ZONE 'Asia/Shanghai';
 		INSERT INTO groups (id) VALUES (10);
 		INSERT INTO users (id) VALUES (1);
 		UPDATE usage_group_rollup_state
@@ -142,8 +141,6 @@ func TestGroupUsageRollupTriggerSerializesInsertTransactionAcrossMidnight(t *tes
 
 	syncTx := beginGroupUsageRollupTriggerTestTx(t, ctx, schema)
 	defer func() { _ = syncTx.Rollback() }()
-	_, err = syncTx.ExecContext(ctx, `SET LOCAL TIME ZONE 'Asia/Shanghai'`)
-	require.NoError(t, err)
 	var stateID int16
 	require.NoError(t, syncTx.QueryRowContext(ctx, `
 		SELECT id
@@ -212,7 +209,6 @@ func TestGroupUsageRollupTriggerKeepsWatermarkForTodayInsert(t *testing.T) {
 	defer func() { _ = tx.Rollback() }()
 	require.NoError(t, setGroupUsageRollupTriggerTimeZone(ctx, tx, "Asia/Shanghai"))
 	_, err := tx.ExecContext(ctx, `
-		SET LOCAL TIME ZONE 'Asia/Shanghai';
 		INSERT INTO groups (id) VALUES (10);
 		INSERT INTO users (id) VALUES (1);
 		UPDATE usage_group_rollup_state

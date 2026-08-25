@@ -69,7 +69,7 @@ chmod +x docker-deploy.sh
 - Automatically generates secure secrets (JWT_SECRET, TOTP_ENCRYPTION_KEY, POSTGRES_PASSWORD)
 - Creates `.env` file with generated secrets
 - Creates necessary data directories (data/, postgres_data/, redis_data/)
-- **Reports that generated credentials were written to `.env`** (mode `600`)
+- **Displays generated credentials** (POSTGRES_PASSWORD, JWT_SECRET, etc.)
 
 **After running the script:**
 ```bash
@@ -79,11 +79,8 @@ docker compose -f docker-compose.local.yml up -d
 # View logs
 docker compose -f docker-compose.local.yml logs -f sub2api
 
-# If ADMIN_PASSWORD was empty, read the generated credential from its protected file:
-docker compose -f docker-compose.local.yml exec -T sub2api cat /app/data/admin-password
-
-# After changing the admin password, remove the credential file:
-docker compose -f docker-compose.local.yml exec -T sub2api rm -f /app/data/admin-password
+# If admin password was auto-generated, find it in logs:
+docker compose -f docker-compose.local.yml logs sub2api | grep "admin password"
 
 # Access Web UI
 # http://localhost:8080
@@ -115,7 +112,7 @@ mkdir -p data postgres_data redis_data
 # Start all services using local directory version
 docker compose -f docker-compose.local.yml up -d
 
-# View logs
+# View logs (check for auto-generated admin password)
 docker compose -f docker-compose.local.yml logs -f sub2api
 
 # Access Web UI
@@ -139,15 +136,14 @@ When using Docker Compose with `AUTO_SETUP=true`:
    - Connects to PostgreSQL and Redis
    - Applies database migrations (SQL files in `backend/migrations/*.sql`) and records them in `schema_migrations`
    - Generates JWT secret (if not provided)
-   - Creates admin account (if the password is auto-generated, it is stored in `/app/data/admin-password` with mode `0600`)
+   - Creates admin account (password auto-generated if not provided)
    - Writes config.yaml
 
 2. No manual Setup Wizard needed - just configure `.env` and start
 
-3. If `ADMIN_PASSWORD` is not set, read the generated password from the protected file, then remove it after changing the password:
+3. If `ADMIN_PASSWORD` is not set, check logs for the generated password:
    ```bash
-   docker compose exec -T sub2api cat /app/data/admin-password
-   docker compose exec -T sub2api rm -f /app/data/admin-password
+   docker compose logs sub2api | grep "admin password"
    ```
 
 ### Database Migration Notes (PostgreSQL)
@@ -237,10 +233,10 @@ docker compose down -v
 |----------|----------|---------|-------------|
 | `POSTGRES_PASSWORD` | **Yes** | - | PostgreSQL password |
 | `JWT_SECRET` | **Recommended** | *(auto-generated)* | JWT secret (fixed for persistent sessions) |
-| `TOTP_ENCRYPTION_KEY` | **Recommended** | *(new random key per startup if empty)* | Set a fixed key to preserve existing 2FA across restarts |
+| `TOTP_ENCRYPTION_KEY` | **Recommended** | *(auto-generated)* | TOTP encryption key (fixed for persistent 2FA) |
 | `SERVER_PORT` | No | `8080` | Server port |
 | `ADMIN_EMAIL` | No | `admin@sub2api.local` | Admin email |
-| `ADMIN_PASSWORD` | No | *(auto-generated)* | Initial password is stored in `/app/data/admin-password` (mode `0600`) |
+| `ADMIN_PASSWORD` | No | *(auto-generated)* | Admin password |
 | `TZ` | No | `Asia/Shanghai` | Timezone |
 | `UPDATE_GITHUB_TOKEN` | No | *(empty)* | Token for `api.github.com` release checks only; asset downloads remain anonymous. |
 | `GEMINI_OAUTH_CLIENT_ID` | No | *(builtin)* | Google OAuth client ID (Gemini OAuth). Leave empty to use the built-in Gemini CLI client. |
@@ -251,7 +247,6 @@ docker compose down -v
 See `.env.example` for all available options.
 
 > **Note:** The `docker-deploy.sh` script automatically generates `JWT_SECRET`, `TOTP_ENCRYPTION_KEY`, and `POSTGRES_PASSWORD` for you.
-> If you configure the stack manually, do not leave `TOTP_ENCRYPTION_KEY` empty in production: a new key on each restart invalidates existing TOTP configurations.
 
 ### Easy Migration (Local Directory Version)
 

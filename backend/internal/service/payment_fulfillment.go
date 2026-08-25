@@ -149,21 +149,6 @@ func expectedNotificationProviderKey(registry *payment.Registry, orderPaymentTyp
 
 func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, tradeNo string, paid float64, pk string) error {
 	previousStatus := o.Status
-	// EasyPay-compatible callbacks do not expose one portable timestamp field.
-	// Once an upstream trade number has already been persisted, do not let the
-	// exact same signed callback reopen an order that was later cancelled or
-	// expired.  This closes the durable replay path without rejecting providers
-	// that omit a timestamp or use a non-standard notify-time field.
-	if isRecordedEasyPayReplay(o, tradeNo, pk) {
-		if !s.hasAuditLog(ctx, o.ID, "PAYMENT_WEBHOOK_REPLAY_IGNORED") {
-			s.writeAuditLog(ctx, o.ID, "PAYMENT_WEBHOOK_REPLAY_IGNORED", pk, map[string]any{
-				"status":  previousStatus,
-				"tradeNo": strings.TrimSpace(tradeNo),
-				"reason":  "same recorded EasyPay trade number cannot recover a cancelled or expired order",
-			})
-		}
-		return nil
-	}
 	now := time.Now()
 	grace := now.Add(-paymentGraceMinutes * time.Minute)
 	c, err := s.entClient.PaymentOrder.Update().Where(
@@ -199,18 +184,6 @@ func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, trad
 	}
 	s.writeAuditLog(ctx, o.ID, "ORDER_PAID", pk, map[string]any{"tradeNo": tradeNo, "paidAmount": paid})
 	return s.executeFulfillment(ctx, o.ID)
-}
-
-func isRecordedEasyPayReplay(o *dbent.PaymentOrder, tradeNo, providerKey string) bool {
-	if o == nil || payment.GetBasePaymentType(providerKey) != payment.TypeEasyPay {
-		return false
-	}
-	if o.Status != OrderStatusCancelled && o.Status != OrderStatusExpired {
-		return false
-	}
-	recorded := strings.TrimSpace(o.PaymentTradeNo)
-	incoming := strings.TrimSpace(tradeNo)
-	return recorded != "" && incoming != "" && strings.EqualFold(recorded, incoming)
 }
 
 func (s *PaymentService) alreadyProcessed(ctx context.Context, o *dbent.PaymentOrder) error {

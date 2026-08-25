@@ -43,18 +43,6 @@ func TestAdminService_CreateUser_Success(t *testing.T) {
 	require.Equal(t, user, repo.created[0])
 }
 
-func TestAdminService_CreateUser_RejectsShortPassword(t *testing.T) {
-	repo := &userRepoStub{}
-	svc := &adminServiceImpl{userRepo: repo}
-
-	_, err := svc.CreateUser(context.Background(), &CreateUserInput{
-		Email:    "user@test.com",
-		Password: "1234567",
-	})
-	require.ErrorIs(t, err, ErrPasswordTooShort)
-	require.Empty(t, repo.created)
-}
-
 func TestAdminService_CreateUser_UsesDefaultBalanceWhenBalanceOmitted(t *testing.T) {
 	repo := &userRepoStub{nextID: 11}
 	cfg := &config.Config{

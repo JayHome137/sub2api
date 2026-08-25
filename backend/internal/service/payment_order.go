@@ -161,34 +161,6 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 	if err := s.checkDailyLimit(ctx, tx, req.UserID, limitAmount, cfg.DailyLimit); err != nil {
 		return nil, err
 	}
-	// SelectInstance is intentionally read-only for fast candidate picking.
-	// Before inserting the pending order, production load balancers must lock
-	// and re-check the selected provider instance in this same transaction so
-	// concurrent requests cannot both consume the remaining daily capacity.
-	reserver, ok := s.loadBalancer.(payment.InstanceCapacityReserver)
-	if !ok {
-		// A selected provider instance must always be serialized with the
-		// pending-order insert.  Silently accepting a LoadBalancer that only
-		// implements the read-only picker would reopen the daily-limit TOCTOU
-		// window for a custom wrapper or a partially rolled-out binary.
-		err := payment.ErrInstanceCapacityReservationUnavailable
-		return nil, infraerrors.ServiceUnavailable(
-			"PAYMENT_CAPACITY_RESERVATION_UNAVAILABLE",
-			"payment capacity reservation is temporarily unavailable; please retry",
-		).WithCause(err)
-	}
-	if err := reserver.ReserveInstance(ctx, tx, sel, req.PaymentType, payAmount); err != nil {
-		if errors.Is(err, payment.ErrInstanceLimitsExhausted) {
-			return nil, infraerrors.TooManyRequests("NO_AVAILABLE_INSTANCE", "no_available_instance")
-		}
-		if errors.Is(err, payment.ErrInstanceCapacityReservationUnavailable) {
-			return nil, infraerrors.ServiceUnavailable(
-				"PAYMENT_CAPACITY_RESERVATION_UNAVAILABLE",
-				"payment capacity reservation is temporarily unavailable; please retry",
-			).WithCause(err)
-		}
-		return nil, fmt.Errorf("reserve payment instance capacity: %w", err)
-	}
 	tm := cfg.OrderTimeoutMin
 	if tm <= 0 {
 		tm = defaultOrderTimeoutMin
@@ -381,16 +353,8 @@ func (s *PaymentService) selectCreateOrderInstance(ctx context.Context, req Crea
 	}
 	sel, err := s.loadBalancer.SelectInstance(selectCtx, "", req.PaymentType, payment.Strategy(cfg.LoadBalanceStrategy), payAmount)
 	if err != nil {
-		if errors.Is(err, payment.ErrInstanceLimitsExhausted) {
-			return nil, infraerrors.TooManyRequests("NO_AVAILABLE_INSTANCE", "no_available_instance")
-		}
-		slog.Error("[PaymentService] SelectInstance failed",
-			"payment_type", req.PaymentType,
-			"error", err,
-		)
 		return nil, infraerrors.ServiceUnavailable("PAYMENT_GATEWAY_ERROR", "method_not_configured").
-			WithMetadata(map[string]string{"payment_type": req.PaymentType}).
-			WithCause(err)
+			WithMetadata(map[string]string{"payment_type": req.PaymentType})
 	}
 	if sel == nil {
 		return nil, infraerrors.TooManyRequests("NO_AVAILABLE_INSTANCE", "no_available_instance")

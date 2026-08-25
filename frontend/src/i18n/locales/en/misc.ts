@@ -56,30 +56,7 @@ export default {
     deployScript: 'Script',
     deployDocker: 'Docker',
     dockerEditCompose: 'Edit the image tag in docker-compose.yml',
-    dockerRecreate: 'Recreate the container',
-    statusUnavailable: 'Upgrade status is unavailable',
-    statusUnavailableHint: 'The remote status could not be confirmed. Refresh and try again later.',
-    bridgeUnavailable: 'Update is temporarily unavailable',
-    bridgeUnavailableHint: 'A new official release was found. Refresh and try again later.',
-    retryUpdate: 'Retry Update',
-    deploymentStarted: 'The update has started.',
-    deploymentStartFailed: 'The update could not be started. Try again later.',
-    state: {
-      preparing: 'Preparing the release',
-      ui_review_required: 'Adapting the new release',
-      failed: 'Update is temporarily unavailable',
-      ready: 'A new version is available!',
-      deploying: 'Updating...',
-      deployed: 'Update complete'
-    },
-    stateHint: {
-      preparing: '{version} is being prepared. One-click update will appear when ready.',
-      ui_review_required: '{version} is being adapted to the current interface.',
-      failed: '{version} is temporarily unavailable. Try again later.',
-      ready: '{version} is ready.',
-      deploying: '{version} is installing. The page will refresh when complete.',
-      deployed: '{version} has been updated.'
-    }
+    dockerRecreate: 'Recreate the container'
   },
 
   // Recharge / Subscription Page

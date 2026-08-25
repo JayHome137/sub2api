@@ -12,7 +12,13 @@ vi.mock('../client', () => ({
   },
 }))
 
-import { getRollbackVersions, rollback, type RollbackVersionInfo } from '@/api/admin/system'
+import {
+  getRollbackVersions,
+  performUpdate,
+  restartService,
+  rollback,
+  type RollbackVersionInfo
+} from '@/api/admin/system'
 
 describe('admin system rollback API', () => {
   beforeEach(() => {
@@ -41,21 +47,28 @@ describe('admin system rollback API', () => {
 
     const result = await rollback('0.1.146')
     expect(post).toHaveBeenCalledWith(
-      '/admin/system/rollback',
+      '/aifoo-upgrade/rollback',
       { version: '0.1.146' },
       { timeout: 900000 },
     )
     expect(result.need_restart).toBe(true)
   })
 
-  it('rollback without a version posts no body (legacy backup rollback)', async () => {
-    post.mockResolvedValue({ data: { message: 'ok', need_restart: true } })
+  it('prepares an official update through the local bridge', async () => {
+    post.mockResolvedValue({ data: { message: 'ready', need_restart: true } })
 
-    await rollback()
-    expect(post).toHaveBeenCalledWith(
-      '/admin/system/rollback',
-      undefined,
-      { timeout: 900000 },
-    )
+    await performUpdate()
+    expect(post).toHaveBeenCalledWith('/aifoo-upgrade/update', undefined, {
+      timeout: 900000
+    })
+  })
+
+  it('activates the prepared image through the local bridge', async () => {
+    post.mockResolvedValue({ data: { message: 'active' } })
+
+    await restartService()
+    expect(post).toHaveBeenCalledWith('/aifoo-upgrade/restart', undefined, {
+      timeout: 900000
+    })
   })
 })

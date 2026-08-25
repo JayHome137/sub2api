@@ -61,12 +61,8 @@ export async function getRollbackVersions(): Promise<{ versions: RollbackVersion
   return data
 }
 
-/**
- * In-place update/rollback downloads a full release binary from GitHub, which
- * can take several minutes on slow links. The global 30s axios timeout would
- * abort the request mid-download (#4504), so these calls wait as long as the
- * backend allows (15 minutes server-side).
- */
+// The local bridge pulls an immutable official image before the user confirms
+// the restart. Slow registry links must not inherit the global 30s timeout.
 const UPDATE_REQUEST_TIMEOUT_MS = 15 * 60 * 1000
 
 /**
@@ -74,7 +70,7 @@ const UPDATE_REQUEST_TIMEOUT_MS = 15 * 60 * 1000
  * Downloads and applies the latest version
  */
 export async function performUpdate(): Promise<UpdateResult> {
-  const { data } = await apiClient.post<UpdateResult>('/admin/system/update', undefined, {
+  const { data } = await apiClient.post<UpdateResult>('/aifoo-upgrade/update', undefined, {
     timeout: UPDATE_REQUEST_TIMEOUT_MS
   })
   return data
@@ -82,12 +78,12 @@ export async function performUpdate(): Promise<UpdateResult> {
 
 /**
  * Rollback to a previous version
- * @param version - Target version (e.g. "0.1.146"); omit to restore the local backup binary
+ * @param version - Target version (e.g. "0.1.146")
  */
-export async function rollback(version?: string): Promise<UpdateResult> {
+export async function rollback(version: string): Promise<UpdateResult> {
   const { data } = await apiClient.post<UpdateResult>(
-    '/admin/system/rollback',
-    version ? { version } : undefined,
+    '/aifoo-upgrade/rollback',
+    { version },
     { timeout: UPDATE_REQUEST_TIMEOUT_MS }
   )
   return data
@@ -97,7 +93,9 @@ export async function rollback(version?: string): Promise<UpdateResult> {
  * Restart the service
  */
 export async function restartService(): Promise<{ message: string }> {
-  const { data } = await apiClient.post<{ message: string }>('/admin/system/restart')
+  const { data } = await apiClient.post<{ message: string }>('/aifoo-upgrade/restart', undefined, {
+    timeout: UPDATE_REQUEST_TIMEOUT_MS
+  })
   return data
 }
 

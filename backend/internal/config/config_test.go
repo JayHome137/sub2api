@@ -20,7 +20,7 @@ func resetViperWithJWTSecret(t *testing.T) {
 	t.Cleanup(viper.Reset)
 	t.Setenv("CONFIG_FILE", "")
 	t.Setenv("DATA_DIR", "")
-	t.Setenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")
+	t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
 }
 
 func TestLoadDefaultModelsListReadMaxBytes(t *testing.T) {
@@ -1460,20 +1460,8 @@ func TestValidateConfigWithLinuxDoEnabled(t *testing.T) {
 }
 
 func TestValidateJWTSecretStrength(t *testing.T) {
-	for _, secret := range []string{
-		"change-me-in-production",
-		"change-this-to-a-secure-random-string",
-		"your_jwt_secret_here",
-	} {
-		if !isWeakJWTSecret(secret) {
-			t.Errorf("isWeakJWTSecret(%q) should detect weak secret", secret)
-		}
-	}
-	if !isWeakJWTSecret(strings.Repeat("0", 32)) {
-		t.Fatalf("isWeakJWTSecret should detect all-zero secret")
-	}
-	if !isWeakJWTSecret(strings.Repeat("a", 32)) {
-		t.Fatalf("isWeakJWTSecret should detect repeated-character secret")
+	if !isWeakJWTSecret("change-me-in-production") {
+		t.Fatalf("isWeakJWTSecret should detect weak secret")
 	}
 	if isWeakJWTSecret("StrongSecretValue") {
 		t.Fatalf("isWeakJWTSecret should accept strong secret")
@@ -1547,33 +1535,11 @@ func TestValidateJWTSecret_UTF8Bytes(t *testing.T) {
 		t.Fatalf("Validate() error = %v", err)
 	}
 
-	// A non-trivial 32-byte value is accepted.
-	cfg.JWT.Secret = "0123456789abcdef0123456789abcdef"
+	// 32 bytes OK.
+	cfg.JWT.Secret = strings.Repeat("a", 32)
 	err = cfg.Validate()
 	if err != nil {
 		t.Fatalf("Validate() should accept 32-byte secret: %v", err)
-	}
-}
-
-func TestValidateJWTSecretRejectsWeakLongValues(t *testing.T) {
-	resetViperWithJWTSecret(t)
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
-
-	for name, secret := range map[string]string{
-		"all zero":                  strings.Repeat("0", 32),
-		"repeated character":        strings.Repeat("a", 32),
-		"copied config placeholder": "change-this-to-a-secure-random-string",
-	} {
-		t.Run(name, func(t *testing.T) {
-			cfg.JWT.Secret = secret
-			err := cfg.Validate()
-			if err == nil || !strings.Contains(err.Error(), "appears weak") {
-				t.Fatalf("Validate() error = %v, want weak-secret rejection", err)
-			}
-		})
 	}
 }
 

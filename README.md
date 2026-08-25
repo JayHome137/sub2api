@@ -4,7 +4,7 @@
 
 # Sub2API
 
-[![Go](https://img.shields.io/badge/Go-1.26.6-00ADD8.svg)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.27.0-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.4+-4FC08D.svg)](https://vuejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7+-DC382D.svg)](https://redis.io/)
@@ -199,7 +199,7 @@ Community projects that extend or integrate with Sub2API:
 
 | Component | Technology |
 |-----------|------------|
-| Backend | Go 1.26.6, Gin, Ent |
+| Backend | Go 1.27.0, Gin, Ent |
 | Frontend | Vue 3.4+, Vite 5+, TailwindCSS |
 | Database | PostgreSQL 15+ |
 | Cache/Queue | Redis 7+ |
@@ -321,7 +321,7 @@ docker compose logs -f sub2api
 - Generates secure credentials (JWT_SECRET, TOTP_ENCRYPTION_KEY, POSTGRES_PASSWORD)
 - Creates `.env` file with auto-generated secrets
 - Creates data directories (uses local directories for easy backup/migration)
-- Reports that generated credentials were written to `.env` (mode `600`)
+- Displays generated credentials for your reference
 
 #### Manual Deployment
 
@@ -344,21 +344,17 @@ nano .env
 
 ```bash
 # PostgreSQL password (REQUIRED)
-# Set a unique random value before starting the stack.
-POSTGRES_PASSWORD=
+POSTGRES_PASSWORD=your_secure_password_here
 
 # JWT Secret (RECOMMENDED - keeps users logged in after restart)
-# Leave empty to auto-generate on first startup, or set a managed random value.
-JWT_SECRET=
+JWT_SECRET=your_jwt_secret_here
 
-# TOTP Encryption Key (RECOMMENDED - set a fixed value to preserve 2FA)
-# Empty is development-only: a new key is generated on every startup and
-# existing TOTP configurations become invalid. Use: openssl rand -hex 32
-TOTP_ENCRYPTION_KEY=
+# TOTP Encryption Key (RECOMMENDED - preserves 2FA after restart)
+TOTP_ENCRYPTION_KEY=your_totp_key_here
 
 # Optional: Admin account
 ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=
+ADMIN_PASSWORD=your_admin_password
 
 # Optional: Custom port
 SERVER_PORT=8080
@@ -407,12 +403,9 @@ docker compose -f docker-compose.local.yml logs -f sub2api
 
 Open `http://YOUR_SERVER_IP:8080` in your browser.
 
-If `ADMIN_PASSWORD` was empty, read the generated credential from `/app/data/admin-password` (mode `0600`):
+If admin password was auto-generated, find it in logs:
 ```bash
-docker compose -f docker-compose.local.yml exec -T sub2api cat /app/data/admin-password
-
-# After changing the admin password, remove the credential file:
-docker compose -f docker-compose.local.yml exec -T sub2api rm -f /app/data/admin-password
+docker compose -f docker-compose.local.yml logs sub2api | grep "admin password"
 ```
 
 #### Upgrade
@@ -530,8 +523,7 @@ database:
   host: "localhost"
   port: 5432
   user: "postgres"
-  # Set a unique random value before starting the service.
-  password: ""
+  password: "your_password"
   dbname: "sub2api"
 
 redis:
@@ -541,8 +533,7 @@ redis:
   password: ""
 
 jwt:
-  # Leave empty to auto-generate on first startup, or set a managed random value.
-  secret: ""
+  secret: "change-this-to-a-secure-random-string"
   expire_hour: 24
 
 default:

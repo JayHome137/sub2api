@@ -27,28 +27,45 @@ func (s *updatingProxyRepoStub) Update(_ context.Context, proxy *Proxy) error {
 	return nil
 }
 
-func TestAdminServiceUpdateProxyUsesRepositoryUpdateBoundary(t *testing.T) {
-	repo := &updatingProxyRepoStub{
-		proxyRepoStub: &proxyRepoStub{},
-		proxy: &Proxy{
-			ID:             9,
-			Protocol:       "http",
-			Host:           "old.example",
-			Port:           8080,
-			Status:         StatusActive,
-			FallbackMode:   FallbackModeNone,
-			ExpiryWarnDays: 7,
-		},
-	}
-	svc := &adminServiceImpl{proxyRepo: repo}
+func TestBothProxyUpdateServicesUseRepositoryUpdateBoundary(t *testing.T) {
+	t.Run("ProxyService", func(t *testing.T) {
+		repo := &updatingProxyRepoStub{
+			proxyRepoStub: &proxyRepoStub{},
+			proxy:         &Proxy{ID: 9, Protocol: "http", Host: "old.example", Port: 8080, Status: StatusActive},
+		}
+		svc := NewProxyService(repo)
+		host := "new.example"
 
-	_, err := svc.UpdateProxy(context.Background(), 9, &UpdateProxyInput{
-		Host:           "new.example",
-		FallbackMode:   FallbackModeNone,
-		ExpiryWarnDays: 7,
+		_, err := svc.Update(context.Background(), 9, UpdateProxyRequest{Host: &host})
+
+		require.NoError(t, err)
+		require.Equal(t, 1, repo.updateCalls)
+		require.Equal(t, host, repo.proxy.Host)
 	})
 
-	require.NoError(t, err)
-	require.Equal(t, 1, repo.updateCalls)
-	require.Equal(t, "new.example", repo.proxy.Host)
+	t.Run("adminService", func(t *testing.T) {
+		repo := &updatingProxyRepoStub{
+			proxyRepoStub: &proxyRepoStub{},
+			proxy: &Proxy{
+				ID:             9,
+				Protocol:       "http",
+				Host:           "old.example",
+				Port:           8080,
+				Status:         StatusActive,
+				FallbackMode:   FallbackModeNone,
+				ExpiryWarnDays: 7,
+			},
+		}
+		svc := &adminServiceImpl{proxyRepo: repo}
+
+		_, err := svc.UpdateProxy(context.Background(), 9, &UpdateProxyInput{
+			Host:           "new.example",
+			FallbackMode:   FallbackModeNone,
+			ExpiryWarnDays: 7,
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, 1, repo.updateCalls)
+		require.Equal(t, "new.example", repo.proxy.Host)
+	})
 }

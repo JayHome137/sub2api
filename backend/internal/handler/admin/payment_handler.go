@@ -1,9 +1,6 @@
 package admin
 
 import (
-	"bytes"
-	"encoding/json"
-	"errors"
 	"strconv"
 	"time"
 
@@ -222,36 +219,10 @@ func sanitizeAdminPaymentOrderForResponse(order *dbent.PaymentOrder) *AdminPayme
 
 // AdminProcessRefundRequest is the request body for admin refund processing.
 type AdminProcessRefundRequest struct {
-	Amount        optionalRefundAmount `json:"amount"`
-	Reason        string               `json:"reason"`
-	Force         bool                 `json:"force"`
-	DeductBalance bool                 `json:"deduct_balance"`
-}
-
-type optionalRefundAmount struct {
-	value float64
-	set   bool
-}
-
-func (a *optionalRefundAmount) UnmarshalJSON(data []byte) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
-		return errors.New("amount must be omitted or a number")
-	}
-
-	var value float64
-	if err := json.Unmarshal(data, &value); err != nil {
-		return err
-	}
-	a.value = value
-	a.set = true
-	return nil
-}
-
-func (a optionalRefundAmount) Pointer() *float64 {
-	if !a.set {
-		return nil
-	}
-	return &a.value
+	Amount        float64 `json:"amount"`
+	Reason        string  `json:"reason"`
+	Force         bool    `json:"force"`
+	DeductBalance bool    `json:"deduct_balance"`
 }
 
 // ProcessRefund processes a refund for an order (admin).
@@ -268,7 +239,7 @@ func (h *PaymentHandler) ProcessRefund(c *gin.Context) {
 		return
 	}
 
-	plan, earlyResult, err := h.paymentService.PrepareRefund(c.Request.Context(), orderID, req.Amount.Pointer(), req.Reason, req.Force, req.DeductBalance)
+	plan, earlyResult, err := h.paymentService.PrepareRefund(c.Request.Context(), orderID, req.Amount, req.Reason, req.Force, req.DeductBalance)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

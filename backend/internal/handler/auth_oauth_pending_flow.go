@@ -68,7 +68,7 @@ type bindPendingOAuthLoginRequest struct {
 type createPendingOAuthAccountRequest struct {
 	Email                 string `json:"email" binding:"required,email"`
 	VerifyCode            string `json:"verify_code,omitempty"`
-	Password              string `json:"password" binding:"required,min=8"`
+	Password              string `json:"password" binding:"required,min=6"`
 	TurnstileToken        string `json:"turnstile_token,omitempty"`
 	TencentCaptchaTicket  string `json:"tencent_captcha_ticket,omitempty"`
 	TencentCaptchaRandstr string `json:"tencent_captcha_randstr,omitempty"`

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/spf13/viper"
@@ -87,7 +88,7 @@ func TestValidateWebAuthnConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			viper.Reset()
-			t.Setenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")
+			t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
 			cfg, err := Load()
 			require.NoError(t, err)
 			tt.configure(cfg)

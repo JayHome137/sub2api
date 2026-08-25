@@ -42,16 +42,8 @@ func (r *apiKeyRepository) activeQuery() *dbent.APIKeyQuery {
 	return r.client.APIKey.Query().Where(apikey.DeletedAtIsNil())
 }
 
-func (r *apiKeyRepository) activeQueryForContext(ctx context.Context) *dbent.APIKeyQuery {
-	// Reads in a service transaction must use the transaction client; the hash
-	// compatibility lookup also uses this boundary before falling back to the
-	// legacy key column.
-	return clientFromContext(ctx, r.client).APIKey.Query().Where(apikey.DeletedAtIsNil())
-}
-
 func (r *apiKeyRepository) Create(ctx context.Context, key *service.APIKey) error {
-	client := clientFromContext(ctx, r.client)
-	builder := client.APIKey.Create().
+	builder := r.client.APIKey.Create().
 		SetUserID(key.UserID).
 		SetKey(key.Key).
 		SetName(key.Name).
@@ -78,16 +70,12 @@ func (r *apiKeyRepository) Create(ctx context.Context, key *service.APIKey) erro
 		key.LastUsedAt = created.LastUsedAt
 		key.CreatedAt = created.CreatedAt
 		key.UpdatedAt = created.UpdatedAt
-		// The nullable hash column is introduced by a forward migration.  Keep
-		// this write best-effort so an older instance can finish a rolling
-		// upgrade without making a successful key creation look failed.
-		r.backfillAPIKeyHash(ctx, key.ID, key.Key)
 	}
 	return translatePersistenceError(err, nil, service.ErrAPIKeyExists)
 }
 
 func (r *apiKeyRepository) GetByID(ctx context.Context, id int64) (*service.APIKey, error) {
-	m, err := r.activeQueryForContext(ctx).
+	m, err := r.activeQuery().
 		Where(apikey.IDEQ(id)).
 		WithUser().
 		WithGroup().
@@ -107,7 +95,7 @@ func (r *apiKeyRepository) GetByID(ctx context.Context, id int64) (*service.APIK
 //   - 不加载完整的 API Key 实体及其关联数据（User、Group 等）
 //   - 适用于删除等只需 key 与用户 ID 的场景
 func (r *apiKeyRepository) GetKeyAndOwnerID(ctx context.Context, id int64) (string, int64, error) {
-	m, err := r.activeQueryForContext(ctx).
+	m, err := r.activeQuery().
 		Where(apikey.IDEQ(id)).
 		Select(apikey.FieldKey, apikey.FieldUserID).
 		Only(ctx)
@@ -121,12 +109,8 @@ func (r *apiKeyRepository) GetKeyAndOwnerID(ctx context.Context, id int64) (stri
 }
 
 func (r *apiKeyRepository) GetByKey(ctx context.Context, key string) (*service.APIKey, error) {
-	id, err := r.findAPIKeyIDByKey(ctx, key)
-	if err != nil {
-		return nil, err
-	}
-	m, err := r.activeQueryForContext(ctx).
-		Where(apikey.IDEQ(id)).
+	m, err := r.activeQuery().
+		Where(apikey.KeyEQ(key)).
 		WithUser(func(q *dbent.UserQuery) {
 			q.WithAllowedGroups(func(gq *dbent.GroupQuery) {
 				gq.Select(group.FieldID)
@@ -144,12 +128,8 @@ func (r *apiKeyRepository) GetByKey(ctx context.Context, key string) (*service.A
 }
 
 func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*service.APIKey, error) {
-	id, err := r.findAPIKeyIDByKey(ctx, key)
-	if err != nil {
-		return nil, err
-	}
-	m, err := r.activeQueryForContext(ctx).
-		Where(apikey.IDEQ(id)).
+	m, err := r.activeQuery().
+		Where(apikey.KeyEQ(key)).
 		Select(
 			apikey.FieldID,
 			apikey.FieldUserID,
@@ -630,14 +610,8 @@ func (r *apiKeyRepository) CountByUserID(ctx context.Context, userID int64) (int
 }
 
 func (r *apiKeyRepository) ExistsByKey(ctx context.Context, key string) (bool, error) {
-	_, err := r.findAPIKeyIDByKey(ctx, key)
-	if err == nil {
-		return true, nil
-	}
-	if errors.Is(err, service.ErrAPIKeyNotFound) {
-		return false, nil
-	}
-	return false, err
+	count, err := r.activeQuery().Where(apikey.KeyEQ(key)).Count(ctx)
+	return count > 0, err
 }
 
 func (r *apiKeyRepository) ListByGroupID(ctx context.Context, groupID int64, params pagination.PaginationParams) ([]service.APIKey, *pagination.PaginationResult, error) {
@@ -803,26 +777,15 @@ func (r *apiKeyRepository) IncrementQuotaUsedAndGetState(ctx context.Context, id
 			END,
 			updated_at = NOW()
 		WHERE id = $3 AND deleted_at IS NULL
-		RETURNING quota_used, quota, status
+		RETURNING quota_used, quota, key, status
 	`
 
 	state := &service.APIKeyQuotaUsageState{}
-	if err := scanSingleRow(ctx, r.sql, query, []any{amount, service.StatusAPIKeyQuotaExhausted, id}, &state.QuotaUsed, &state.Quota, &state.Status); err != nil {
+	if err := scanSingleRow(ctx, r.sql, query, []any{amount, service.StatusAPIKeyQuotaExhausted, id}, &state.QuotaUsed, &state.Quota, &state.Key, &state.Status); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, service.ErrAPIKeyNotFound
 		}
 		return nil, err
-	}
-	// Authentication cache invalidation only needs the non-reversible hash when
-	// this update actually exhausted the key. Avoid a metadata query on every
-	// successful billing update; keep the lookup best-effort so a transient read
-	// cannot turn a committed atomic update into a failed request.
-	if state.Status == service.StatusAPIKeyQuotaExhausted {
-		if hash, err := r.keyHashByID(ctx, id); err == nil {
-			state.KeyHash = hash
-		} else if !errors.Is(err, service.ErrAPIKeyNotFound) {
-			slog.Warn("api key hash lookup after quota update failed", "api_key_id", id, "error", err)
-		}
 	}
 	return state, nil
 }

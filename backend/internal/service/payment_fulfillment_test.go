@@ -744,17 +744,6 @@ func TestDuplicatePaymentNotificationDoesNotReprocessCompletedBalanceOrder(t *te
 	require.Empty(t, redeemRepo.useCalls, "a duplicate notification must not redeem the balance code again")
 }
 
-func TestIsRecordedEasyPayReplayOnlyBlocksCancelledOrExpiredSameTrade(t *testing.T) {
-	t.Parallel()
-
-	order := &dbent.PaymentOrder{Status: OrderStatusCancelled, PaymentTradeNo: "trade-1"}
-	assert.True(t, isRecordedEasyPayReplay(order, "trade-1", payment.TypeEasyPay))
-	assert.True(t, isRecordedEasyPayReplay(&dbent.PaymentOrder{Status: OrderStatusExpired, PaymentTradeNo: "trade-1"}, "TRADE-1", payment.TypeEasyPay))
-	assert.False(t, isRecordedEasyPayReplay(&dbent.PaymentOrder{Status: OrderStatusPending, PaymentTradeNo: "trade-1"}, "trade-1", payment.TypeEasyPay))
-	assert.False(t, isRecordedEasyPayReplay(order, "trade-2", payment.TypeEasyPay))
-	assert.False(t, isRecordedEasyPayReplay(order, "trade-1", payment.TypeAlipay))
-}
-
 func TestPaymentNotificationRejectsAmountMismatchBeforeFulfillment(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)

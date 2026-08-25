@@ -165,9 +165,6 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	if s.settingService == nil || !s.settingService.IsRegistrationEnabled(ctx) {
 		return "", nil, ErrRegDisabled
 	}
-	if err := ValidateNewPassword(password); err != nil {
-		return "", nil, err
-	}
 
 	// 防止用户注册 LinuxDo OAuth 合成邮箱，避免第三方登录与本地账号发生碰撞。
 	if isReservedEmail(email) {
@@ -1623,9 +1620,6 @@ func (s *AuthService) ResetPassword(ctx context.Context, email, token, newPasswo
 
 	if s.emailService == nil {
 		return ErrServiceUnavailable
-	}
-	if err := ValidateNewPassword(newPassword); err != nil {
-		return err
 	}
 
 	// Verify and consume the reset token (one-time use)

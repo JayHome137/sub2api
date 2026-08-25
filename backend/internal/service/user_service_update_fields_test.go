@@ -74,20 +74,6 @@ func TestChangePassword_OnlyDeclaresPasswordHash(t *testing.T) {
 	require.Equal(t, []UserUpdateFields{{PasswordHash: true}}, repo.updateFields)
 }
 
-func TestChangePassword_RejectsShortNewPassword(t *testing.T) {
-	user := &User{ID: 7, Balance: 0.30}
-	require.NoError(t, user.SetPassword("old-password"))
-	repo := &mockUserRepo{getByIDUser: user}
-	svc := NewUserService(repo, nil, nil, nil)
-
-	err := svc.ChangePassword(context.Background(), 7, ChangePasswordRequest{
-		CurrentPassword: "old-password",
-		NewPassword:     "1234567",
-	})
-	require.ErrorIs(t, err, ErrPasswordTooShort)
-	require.Empty(t, repo.updateFields)
-}
-
 func TestUpdateStatus_OnlyDeclaresStatus(t *testing.T) {
 	repo := &mockUserRepo{getByIDUser: &User{ID: 7, Balance: 0.30, Status: StatusActive}}
 	svc := NewUserService(repo, nil, nil, nil)

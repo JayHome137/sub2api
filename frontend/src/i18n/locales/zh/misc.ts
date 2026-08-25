@@ -55,30 +55,7 @@ export default {
     deployScript: '脚本部署',
     deployDocker: 'Docker',
     dockerEditCompose: '修改 docker-compose.yml 中的镜像版本',
-    dockerRecreate: '重新创建容器',
-    statusUnavailable: '升级状态暂时不可用',
-    statusUnavailableHint: '无法确认远端状态，请稍后刷新重试。',
-    bridgeUnavailable: '更新暂时不可用',
-    bridgeUnavailableHint: '已发现官方新版，请稍后刷新重试。',
-    retryUpdate: '重试更新',
-    deploymentStarted: '已开始更新。',
-    deploymentStartFailed: '无法启动更新，请稍后重试。',
-    state: {
-      preparing: '正在准备新版',
-      ui_review_required: '新版适配中',
-      failed: '更新暂时不可用',
-      ready: '有新版本可用！',
-      deploying: '正在更新...',
-      deployed: '更新完成'
-    },
-    stateHint: {
-      preparing: '{version} 正在准备，完成后即可一键更新。',
-      ui_review_required: '{version} 正在适配当前界面。',
-      failed: '{version} 暂时无法更新，请稍后重试。',
-      ready: '{version} 已准备完成。',
-      deploying: '{version} 正在安装，完成后页面会自动刷新。',
-      deployed: '{version} 已更新完成。'
-    }
+    dockerRecreate: '重新创建容器'
   },
 
   // Recharge / Subscription Page

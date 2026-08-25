@@ -1,121 +1,26 @@
-# AIFoo UI Project Boundary
+# AIFoo UI Boundary
 
-## Purpose
+This private repository has one maintained fork boundary: the AIFoo frontend.
 
-This fork exists to embed the AIFoo interface directly into the Sub2API
-frontend source. The result must build and load as one frontend application;
-it must not depend on a runtime overlay or a second UI layer.
+## Runtime ownership
 
-## Upstream Alignment Rule
+- The production backend runs the official `weishaw/sub2api` image at an immutable digest.
+- Backend releases are not merged, rebuilt, or republished by this repository.
+- The checked-in backend and standard deployment files remain an unmodified snapshot of the official stable release for reference.
+- AIFoo owns `frontend/`, `deploy/frontend/`, the local update bridge, the restricted deploy helper, and the single manual UI workflow.
 
-The official upstream update behavior is the default contract. Do not add an
-update, backup, migration, rollback, deployment, or safety step unless it
-exists in the official upstream flow or the user explicitly requests it.
+## Backend updates
 
-The only approved fork-specific update-flow differences are:
+The official version panel still checks releases and lists rollback versions through the official backend API. Its three Docker mutations are routed to the VPS-local bridge:
 
-- Merge each official stable release into the source-integrated AIFoo UI.
-- Keep GitHub Actions workflows fork-owned during automated release merges;
-  record upstream workflow differences for separate review.
-  Keep the reviewed `.github/audit-exceptions.yml` security policy fork-owned.
-- Complete the requested validation and image preparation before showing the
-  update prompt.
-- Show the update state in the existing web UI and dispatch the approved
-  production switch from that button.
+1. Update or rollback pulls the selected official image and records its exact digest.
+2. The official restart confirmation activates only the prepared `sub2api` image.
+3. Health and binary-version checks must pass; otherwise the previous Compose file and image are restored.
 
-These four differences are mandatory because they are the reason this fork
-exists. Upstream alignment must not remove or bypass them.
+This path does not use GitHub Actions, the self-hosted VM, private-repository Issues, pull requests, labels, or artifacts.
 
-Successful validation evidence may be reused across a replacement PR when the
-relevant code, inputs, conditions, environment, base, workflow contract, and
-candidate content are unchanged. Re-run only failed, skipped, not-yet-run, or
-downstream checks affected by the fix; a new PR number alone is not a reason to
-repeat a successful check.
+## UI updates
 
-For presentation UI paths under `frontend/src/views`,
-`frontend/src/components`, `frontend/src/styles`, `frontend/public`, and
-`frontend/src/main.ts`, compare both sides with their latest shared upstream
-base. If the fork and the official release changed the same file, keep the
-complete fork version before validation. This avoids textually clean merges
-that leave Vue state, imports, or templates semantically incomplete. Official
-changes to UI files untouched by the fork still enter normally.
+The AIFoo UI stays fixed until it is intentionally changed. A new upstream backend release alone is not a UI rebuild trigger. When upstream adds a user-visible route, API contract, or page that AIFoo needs, compatibility is handled manually and the `AIFoo UI` workflow is dispatched once for VM validation, image publication, and optional frontend-only deployment.
 
-This complete-file rule does not apply to `frontend/src/api`,
-`frontend/src/stores`, `frontend/src/types`, `frontend/package.json`, or
-`frontend/pnpm-lock.yaml`; those compatibility surfaces continue to merge from
-upstream and must pass lint, type checks, tests, browser checks, and image
-validation. A real validation failure blocks the unsafe candidate, but a repair
-commit resumes the same candidate from the affected stage instead of abandoning
-the release flow.
-
-These differences must not introduce database dumps, backup identifiers,
-backup-only gates, database restore automation, or repeated validation after
-the update button is clicked. If an older rule conflicts with this section,
-this section wins and the smallest conforming change must be used.
-
-## In Scope
-
-- AIFoo UI source under `frontend/src` and its frontend assets.
-- Merging official stable Sub2API releases into the fork.
-- Resolving upstream conflicts that affect the embedded UI or its API contract.
-- Frontend lint, type checks, build, focused browser checks, and the private
-  frontend image.
-- Separate, manually approved activation of the prepared update.
-
-## Out Of Scope By Default
-
-- Runtime UI overrides, iframe-based replacement, DOM overlays, or duplicate
-  logo injection.
-- Independent backend features, billing changes, provider behavior, account
-  management, or database changes unrelated to an upstream UI contract.
-- A second frontend/backend version synchronization system.
-- Editing `backend/cmd/server/VERSION` or `frontend/package.json` only to make
-  a release number look aligned.
-- Deploying to the VPS from a scheduled upstream check.
-- Repeating broad builds or full workflows when a focused check proves the
-  changed surface.
-
-## Version Rule
-
-The backend release and its source version files remain upstream-owned. The
-visible UI version comes from the running backend APIs:
-
-- `/api/v1/settings/public`
-- `/admin/system/check-updates`
-
-Never change a version file solely to match a tag. A release is accepted only
-when the official release commit and official immutable image are verified.
-
-## Change Gate
-
-Before accepting a change, answer these questions:
-
-1. Does it directly support the source-integrated AIFoo UI?
-2. Does it touch only the frontend, the frontend image, or an upstream API
-   contract that the UI actually consumes?
-3. Can a focused frontend check prove the behavior?
-
-If the answer to the first question is no, the change needs an explicit
-explanation and approval before implementation. A backend change is included
-only when it comes from the official upstream release or is required to keep
-an existing UI contract working.
-
-## Release Flow
-
-1. Detect an official stable upstream release.
-2. Merge the exact upstream release commit into a candidate branch.
-3. Preserve the complete fork-owned `.github/workflows` tree and
-   `.github/audit-exceptions.yml`; record official workflow additions, changes,
-   or deletions for separate review.
-4. Resolve every remaining merge conflict deterministically, then normalize
-   protected UI files changed by both sides to the complete fork version. Take
-   official upstream hunks elsewhere and continue to validation. Only an
-   unresolved policy error or a failed validation check blocks the candidate;
-   the next repair run resumes the same release.
-5. Run focused frontend validation and build the private frontend image.
-6. Record the result and expose the web update only after preparation; do not
-   switch production automatically.
-7. Activate the prepared update on the VPS only after explicit approval.
-
-This boundary is the default for future work. Requirements that exceed it
-must be called out before code or infrastructure changes begin.
+There are no scheduled, push, pull-request, release, or Issue workflows. The VM remains available only for deliberate AIFoo UI work.

@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -28,7 +27,6 @@ import (
 const (
 	ConfigFileName             = "config.yaml"
 	InstallLockFile            = ".installed"
-	generatedAdminPasswordFile = "admin-password"
 	defaultUserConcurrency     = 5
 	simpleModeAdminConcurrency = 30
 	defaultMigrationTimeout    = 60 * time.Second
@@ -418,14 +416,14 @@ func createAdminUser(cfg *SetupConfig) (bool, string, error) {
 		return false, decision.reason, nil
 	}
 
-	generatedPassword := false
 	if strings.TrimSpace(cfg.Admin.Password) == "" {
 		password, genErr := generateSecret(16)
 		if genErr != nil {
 			return false, "", fmt.Errorf("failed to generate admin password: %w", genErr)
 		}
 		cfg.Admin.Password = password
-		generatedPassword = true
+		fmt.Printf("Generated admin password (one-time): %s\n", cfg.Admin.Password)
+		fmt.Println("IMPORTANT: Save this password! It will not be shown again.")
 	}
 
 	admin := &service.User{
@@ -440,23 +438,6 @@ func createAdminUser(cfg *SetupConfig) (bool, string, error) {
 
 	if err := admin.SetPassword(cfg.Admin.Password); err != nil {
 		return false, "", err
-	}
-
-	generatedPasswordPath := ""
-	keepGeneratedPasswordFile := false
-	if generatedPassword {
-		generatedPasswordPath, err = writeGeneratedAdminPassword(cfg.Admin.Password)
-		if err != nil {
-			return false, "", fmt.Errorf("failed to store generated admin password: %w", err)
-		}
-		defer func() {
-			if keepGeneratedPasswordFile {
-				return
-			}
-			if removeErr := os.Remove(generatedPasswordPath); removeErr != nil && !os.IsNotExist(removeErr) {
-				logger.LegacyPrintf("setup", "failed to remove generated admin password file %s after admin creation failure: %v", generatedPasswordPath, removeErr)
-			}
-		}()
 	}
 
 	_, err = db.ExecContext(
@@ -475,55 +456,7 @@ func createAdminUser(cfg *SetupConfig) (bool, string, error) {
 	if err != nil {
 		return false, "", err
 	}
-	keepGeneratedPasswordFile = true
-	if generatedPasswordPath != "" {
-		logger.LegacyPrintf("setup", "Admin password auto-generated; read the protected file %s and remove it after changing the password.", generatedPasswordPath)
-	}
 	return true, decision.reason, nil
-}
-
-// writeGeneratedAdminPassword stores an auto-generated admin password in a
-// private data file without exposing the value through process output. O_EXCL
-// atomically reserves the final path so an existing credential is never
-// overwritten; the file is owner-readable only from the moment it is created.
-func writeGeneratedAdminPassword(password string) (string, error) {
-	password = strings.TrimSpace(password)
-	if password == "" {
-		return "", fmt.Errorf("generated admin password is empty")
-	}
-
-	dataDir := GetDataDir()
-	if err := os.MkdirAll(dataDir, 0700); err != nil {
-		return "", fmt.Errorf("create data directory: %w", err)
-	}
-	path := filepath.Join(dataDir, generatedAdminPasswordFile)
-
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if err != nil {
-		return "", err
-	}
-	keepFile := false
-	defer func() {
-		if !keepFile {
-			_ = file.Close()
-			_ = os.Remove(path)
-		}
-	}()
-
-	if err := file.Chmod(0600); err != nil {
-		return "", err
-	}
-	if _, err := file.WriteString(password + "\n"); err != nil {
-		return "", err
-	}
-	if err := file.Sync(); err != nil {
-		return "", err
-	}
-	if err := file.Close(); err != nil {
-		return "", err
-	}
-	keepFile = true
-	return path, nil
 }
 
 func writeConfigFile(cfg *SetupConfig) error {

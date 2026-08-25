@@ -15,10 +15,6 @@ docker run -d \
 
 ## Docker Compose
 
-The following compose file is a local-development example. Set a unique
-`POSTGRES_PASSWORD` in a local `.env` file before starting it, and do not
-expose the database directly to the internet.
-
 ```yaml
 version: '3.8'
 
@@ -28,7 +24,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - DATABASE_URL=postgres://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/sub2api?sslmode=disable
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/sub2api?sslmode=disable
       - REDIS_URL=redis://redis:6379
     depends_on:
       - db
@@ -38,7 +34,7 @@ services:
     image: postgres:15-alpine
     environment:
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=sub2api
     volumes:
       - postgres_data:/var/lib/postgresql/data

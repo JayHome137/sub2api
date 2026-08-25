@@ -358,21 +358,6 @@ func (s *adminServiceImpl) DeleteUser(ctx context.Context, id int64) error {
 		return errors.New("cannot delete admin user")
 	}
 
-	var (
-		apiKeyHashes []string
-		useHashKeys  bool
-	)
-	if s.authCacheInvalidator != nil {
-		if _, hashInvalidatorAvailable := s.authCacheInvalidator.(APIKeyHashCacheInvalidator); hashInvalidatorAvailable {
-			if hashRepo, ok := s.apiKeyRepo.(APIKeyHashRepository); ok {
-				if hashes, hashErr := hashRepo.ListKeyHashesByUserID(ctx, id); hashErr == nil {
-					apiKeyHashes = hashes
-					useHashKeys = true
-				}
-			}
-		}
-	}
-
 	apiKeys, err := s.listUserAPIKeysForDeletion(ctx, id)
 	if err != nil {
 		return err
@@ -399,11 +384,9 @@ func (s *adminServiceImpl) DeleteUser(ctx context.Context, id int64) error {
 	}
 
 	if s.authCacheInvalidator != nil {
-		if !useHashKeys || !invalidateAuthCacheByHashes(ctx, s.authCacheInvalidator, apiKeyHashes) {
-			for _, key := range apiKeys {
-				if keyValue := strings.TrimSpace(key.Key); keyValue != "" {
-					s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, keyValue)
-				}
+		for _, key := range apiKeys {
+			if keyValue := strings.TrimSpace(key.Key); keyValue != "" {
+				s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, keyValue)
 			}
 		}
 		s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, id)
@@ -414,18 +397,6 @@ func (s *adminServiceImpl) DeleteUser(ctx context.Context, id int64) error {
 func (s *adminServiceImpl) listUserAPIKeysForDeletion(ctx context.Context, userID int64) ([]APIKey, error) {
 	if s.apiKeyRepo == nil {
 		return nil, nil
-	}
-	if idRepo, ok := s.apiKeyRepo.(APIKeyIDRepository); ok {
-		ids, err := idRepo.ListAPIKeyIDsByUserID(ctx, userID)
-		if err == nil {
-			keys := make([]APIKey, len(ids))
-			for i, id := range ids {
-				keys[i] = APIKey{ID: id, UserID: userID}
-			}
-			return keys, nil
-		}
-		// Keep the pre-hash paginated projection as a compatibility fallback
-		// if an older/misconfigured database cannot serve the ID-only query.
 	}
 
 	const pageSize = 1000

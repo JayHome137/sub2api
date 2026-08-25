@@ -1,48 +1,33 @@
-# AIFoo 网页更新桥接服务
+# AIFoo 本地更新控制面
 
-该服务只把管理员在网页上的明确点击转换为私有仓库 `web-update.yml` 的一次 `workflow_dispatch`。上游同步工作流会先完成合并、UI 审查、测试、构建，并把精确前端镜像预加载到 VPS；若官方后端运行时变化，也会预先验证、隔离测试并准备镜像和旧版本元数据。网页点击只执行必要的快速切换与健康检查，不创建数据库备份。
+网页版本面板继续使用官方 Sub2API 的检查、回滚版本列表和交互。三个 Docker mutation 改由同源本地桥处理：
 
-## 安全边界
+- `POST /api/v1/aifoo-upgrade/update`：查询官方最新版本，拉取 `weishaw/sub2api:<version>`，解析并锁定精确 digest。
+- `POST /api/v1/aifoo-upgrade/rollback`：拉取管理员选择的官方旧版本并锁定 digest。
+- `POST /api/v1/aifoo-upgrade/restart`：只重建 Compose 的 `sub2api` 服务，验证容器健康和二进制版本；失败时恢复原 Compose 和原后端。
 
-- 仅监听 `127.0.0.1:8091`，公网只能通过同源 Nginx 精确路径访问。
-- 每个状态或触发请求都必须携带现有管理员 Bearer Token，并回查到官方 `/api/v1/admin/system/version`；不接受 Cookie 代替。
-- GitHub Fine-grained PAT 只从 `/etc/aifoo-update-bridge/github-token` 读取，不进入浏览器、前端镜像、仓库变量或 Actions Secret。
-- 只允许触发 `production` 分支的固定 `web-update.yml`，Release 参数必须是 `vX.Y.Z`。
-- 只有 Issue 同时带 `ready-for-vps`、`vps-preloaded`，且需要后端时还有 `backend-prepared`，并且没有失败/UI 阻断标签时才允许触发；两分钟内重复点击只产生一次调度。
-
-PAT 仅授权此私有仓库，最小权限为 `Metadata: Read`、`Actions: Read and write`、`Issues: Read`。
+日常后端更新不访问私有 GitHub 仓库，不触发 Actions，不构建后端，也不使用 VM。桥只监听 `127.0.0.1:8091`，每个 mutation 都把浏览器现有的 Bearer Token 回查官方管理员 API。它不读取 GitHub PAT。
 
 ## 构建与安装
 
-先在可信环境构建 Linux 静态二进制：
+在可信的 Linux amd64 环境构建两个静态二进制：
 
 ```bash
-cd deploy/update-bridge
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o aifoo-update-bridge .
+(cd deploy/update-bridge && CGO_ENABLED=0 go build -trimpath -o aifoo-update-bridge .)
+(cd deploy/deploy-helper && CGO_ENABLED=0 go build -trimpath -o aifoo-deploy-helper .)
+sudo deploy/update-bridge/install.sh \
+  deploy/update-bridge/aifoo-update-bridge \
+  deploy/deploy-helper/aifoo-deploy-helper \
+  deploy-user
 ```
 
-把二进制和本目录传入 VPS 后执行：
+将 `nginx-location.conf` 安装到现有 TLS server 已 include 的 snippet 路径，执行 `nginx -t` 后 reload。安装器只重启 bridge，不重启 Sub2API、数据库、Redis 或前端。
+
+受保护状态保存在 `/var/lib/aifoo-deploy-helper`；安装时只保留一份控制面二进制和 systemd unit 的 `.previous` 回退副本。
+
+## 验证
 
 ```bash
-sudo ./install.sh ./aifoo-update-bridge
-read -rsp 'GitHub Fine-grained PAT: ' AIFOO_BRIDGE_TOKEN
-printf '%s' "$AIFOO_BRIDGE_TOKEN" | sudo install -o root -g aifoo-update-bridge -m 0640 /dev/stdin /etc/aifoo-update-bridge/github-token
-unset AIFOO_BRIDGE_TOKEN
-sudo install -o root -g root -m 0644 nginx-location.conf /etc/nginx/snippets/aifoo-update-bridge.conf
-```
-
-在生产 TLS `server` 块中加入 `include /etc/nginx/snippets/aifoo-update-bridge.conf;`，先运行 `sudo nginx -t`，再 reload Nginx 并启动服务：
-
-```bash
-sudo systemctl enable --now aifoo-update-bridge
-curl --fail http://127.0.0.1:8091/health
-```
-
-这些命令会修改生产环境，必须在现有配置备份和回滚方案准备完成后另行执行；本次仓库实施不自动运行它们。
-
-## 本地验证
-
-```bash
-go test ./...
-go vet ./...
+(cd deploy/update-bridge && go test ./... && go vet ./...)
+(cd deploy/deploy-helper && go test ./... && go vet ./...)
 ```

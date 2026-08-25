@@ -4,7 +4,7 @@
 
 # Sub2API
 
-[![Go](https://img.shields.io/badge/Go-1.26.6-00ADD8.svg)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.27.0-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.4+-4FC08D.svg)](https://vuejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7+-DC382D.svg)](https://redis.io/)
@@ -201,7 +201,7 @@ Sub2API 是一个 AI API 网关平台，用于分发和管理 AI 产品订阅的
 
 | 组件 | 技术 |
 |------|------|
-| 后端 | Go 1.26.6, Gin, Ent |
+| 后端 | Go 1.27.0, Gin, Ent |
 | 前端 | Vue 3.4+, Vite 5+, TailwindCSS |
 | 数据库 | PostgreSQL 15+ |
 | 缓存/队列 | Redis 7+ |
@@ -323,7 +323,7 @@ docker compose logs -f sub2api
 - 自动生成安全凭证（JWT_SECRET、TOTP_ENCRYPTION_KEY、POSTGRES_PASSWORD）
 - 创建 `.env` 文件并填充自动生成的密钥
 - 创建数据目录（使用本地目录，便于备份和迁移）
-- 提示生成的凭证已写入 `.env`（权限为 `600`）
+- 显示生成的凭证供你记录
 
 #### 手动部署
 
@@ -346,21 +346,17 @@ nano .env
 
 ```bash
 # PostgreSQL 密码（必需）
-# 启动服务前请设置唯一的随机值。
-POSTGRES_PASSWORD=
+POSTGRES_PASSWORD=your_secure_password_here
 
 # JWT 密钥（推荐 - 重启后保持用户登录状态）
-# 留空可在首次启动时自动生成，也可填入托管的随机值。
-JWT_SECRET=
+JWT_SECRET=your_jwt_secret_here
 
-# TOTP 加密密钥（推荐 - 设置固定值以保留双因素认证）
-# 留空仅适合开发环境：每次启动都会生成新密钥，现有 TOTP 配置将失效。
-# 生成命令：openssl rand -hex 32
-TOTP_ENCRYPTION_KEY=
+# TOTP 加密密钥（推荐 - 重启后保留双因素认证）
+TOTP_ENCRYPTION_KEY=your_totp_key_here
 
 # 可选：管理员账号
 ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=
+ADMIN_PASSWORD=your_admin_password
 
 # 可选：自定义端口
 SERVER_PORT=8080
@@ -421,12 +417,9 @@ docker compose -f docker-compose.local.yml logs -f sub2api
 
 在浏览器中打开 `http://你的服务器IP:8080`
 
-如果 `ADMIN_PASSWORD` 留空，生成的管理员密码会写入 `/app/data/admin-password`（权限 `0600`）：
+如果管理员密码是自动生成的，在日志中查找：
 ```bash
-docker compose -f docker-compose.local.yml exec -T sub2api cat /app/data/admin-password
-
-# 修改管理员密码后，删除凭据文件：
-docker compose -f docker-compose.local.yml exec -T sub2api rm -f /app/data/admin-password
+docker compose -f docker-compose.local.yml logs sub2api | grep "admin password"
 ```
 
 #### 升级
@@ -544,8 +537,7 @@ database:
   host: "localhost"
   port: 5432
   user: "postgres"
-  # 启动服务前请设置唯一的随机值。
-  password: ""
+  password: "your_password"
   dbname: "sub2api"
 
 redis:
@@ -554,8 +546,7 @@ redis:
   password: ""
 
 jwt:
-  # 留空可在首次启动时自动生成，也可填入托管的随机值。
-  secret: ""
+  secret: "change-this-to-a-secure-random-string"
   expire_hour: 24
 
 default:
@@ -564,33 +555,6 @@ default:
   api_key_prefix: "sk-"
   rate_multiplier: 1.0
 ```
-
-### Sora 功能状态（暂不可用）
-
-> ⚠️ 当前 Sora 相关功能因上游接入与媒体链路存在技术问题，暂时不可用。
-> 现阶段请勿在生产环境依赖 Sora 能力。
-> 文档中的 `gateway.sora_*` 配置仅作预留，待技术问题修复后再恢复可用。
-
-### Sora 媒体签名 URL（功能恢复后可选）
-
-当配置 `gateway.sora_media_signing_key` 且 `gateway.sora_media_signed_url_ttl_seconds > 0` 时，网关会将 Sora 输出的媒体地址改写为临时签名 URL（`/sora/media-signed/...`）。这样无需 API Key 即可在浏览器中直接访问，且具备过期控制与防篡改能力（签名包含 path + query）。
-
-```yaml
-gateway:
-  # /sora/media 是否强制要求 API Key（默认 false）
-  sora_media_require_api_key: false
-  # 媒体临时签名密钥（为空则禁用签名）
-  sora_media_signing_key: ""
-  # 临时签名 URL 有效期（秒）
-  sora_media_signed_url_ttl_seconds: 900
-```
-
-> 若未配置签名密钥，`/sora/media-signed` 将返回 503。  
-> 如需更严格的访问控制，可将 `sora_media_require_api_key` 设为 true，仅允许携带 API Key 的 `/sora/media` 访问。
-
-访问策略说明：
-- `/sora/media`：内部调用或客户端携带 API Key 才能下载
-- `/sora/media-signed`：外部可访问，但有签名 + 过期控制
 
 `config.yaml` 还支持以下安全相关配置：
 

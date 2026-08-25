@@ -60,9 +60,6 @@ func TestMigrationsRunner_IsIdempotent_AndSchemaIsUpToDate(t *testing.T) {
 
 	// api_keys: key length should be 128
 	requireColumn(t, tx, "api_keys", "key", "character varying", 128, false)
-	// API key hash compatibility migration: nullable during rolling backfill.
-	requireColumn(t, tx, "api_keys", "key_hash", "character varying", 64, true)
-	requireIndex(t, tx, "api_keys", "idx_api_keys_key_hash_unique")
 
 	// redeem_codes: subscription fields
 	requireColumn(t, tx, "redeem_codes", "group_id", "bigint", 0, true)

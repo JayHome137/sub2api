@@ -1,23 +1,27 @@
 [Unit]
-Description=AIFoo web update bridge
-After=network-online.target
-Wants=network-online.target
+Description=AIFoo local backend update bridge
+After=network-online.target docker.service
+Wants=network-online.target docker.service
 
 [Service]
 Type=simple
-User=aifoo-update-bridge
-Group=aifoo-update-bridge
+User=root
+Group=root
 ExecStart=/usr/local/libexec/aifoo-update-bridge
 Restart=on-failure
 RestartSec=5s
+UMask=0077
+Environment=DOCKER_CONFIG=/var/lib/aifoo-deploy-helper/docker-config
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
+ReadWritePaths=/opt/sub2api /var/lib/aifoo-deploy-helper /run/lock
 ProtectKernelTunables=true
 ProtectKernelModules=true
+ProtectKernelLogs=true
 ProtectControlGroups=true
-RestrictAddressFamilies=AF_INET AF_INET6
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 RestrictSUIDSGID=true
 LockPersonality=true
 MemoryDenyWriteExecute=true

@@ -175,24 +175,6 @@ func TestAPIKeyService_UpdateQuotaUsed_UsesAtomicStatePath(t *testing.T) {
 	require.Equal(t, []string{svc.authCacheKey("sk-test-quota")}, cache.deleteAuthKeys)
 }
 
-func TestAPIKeyService_UpdateQuotaUsed_PrefersHashForInvalidation(t *testing.T) {
-	keyHash := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	repo := &quotaStateRepoStub{
-		state: &APIKeyQuotaUsageState{
-			QuotaUsed: 12,
-			Quota:     10,
-			KeyHash:   keyHash,
-			Key:       "must-not-be-used",
-			Status:    StatusAPIKeyQuotaExhausted,
-		},
-	}
-	cache := &quotaStateCacheStub{}
-	svc := &APIKeyService{apiKeyRepo: repo, cache: cache}
-
-	require.NoError(t, svc.UpdateQuotaUsed(context.Background(), 101, 2))
-	require.Equal(t, []string{keyHash}, cache.deleteAuthKeys)
-}
-
 func TestAPIKeyService_Update_ReactivatesQuotaExhaustedWhenQuotaUnlimited(t *testing.T) {
 	repo := &apiKeyRepoStub{
 		apiKey: &APIKey{

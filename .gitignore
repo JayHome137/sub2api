@@ -124,8 +124,6 @@ CLAUDE.md
 scripts
 !backend/scripts/
 !backend/scripts/resolve-version.sh
-!/.github/scripts/
-!/.github/scripts/resolve-upstream-conflicts.sh
 .code-review-state
 #openspec/
 code-reviews/

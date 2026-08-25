@@ -1,87 +1,93 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 )
 
 const (
-	defaultListenAddr = "127.0.0.1:8091"
-	defaultRepository = "JayHome137/sub2api"
-	defaultWorkflow   = "web-update.yml"
-	defaultAdminURL   = "http://127.0.0.1:8080/api/v1/admin/system/version"
-	defaultGitHubURL  = "https://api.github.com"
-	maxResponseBytes  = 2 << 20
+	defaultListenAddr   = "127.0.0.1:8091"
+	defaultAdminBaseURL = "http://127.0.0.1:8080/api/v1/admin/system"
+	defaultHelperPath   = "/usr/local/libexec/aifoo-deploy-helper"
+	maxResponseBytes    = 1 << 20
+	operationTimeout    = 15 * time.Minute
 )
 
 var (
-	releasePattern       = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
-	repositoryPattern    = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
-	workflowPattern      = regexp.MustCompile(`^[A-Za-z0-9_.-]+\.ya?ml$`)
+	versionPattern       = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+$`)
 	errAdminUnauthorized = errors.New("administrator authentication rejected")
 )
 
 type config struct {
-	listenAddr string
-	repository string
-	workflow   string
-	adminURL   string
-	githubURL  string
-	token      string
+	listenAddr   string
+	adminBaseURL string
+	helperPath   string
+}
+
+type helperResult struct {
+	Message       string `json:"message"`
+	TargetVersion string `json:"target_version,omitempty"`
+}
+
+type helperRunner interface {
+	Run(context.Context, ...string) (helperResult, error)
+}
+
+type commandRunner struct {
+	path string
+}
+
+func (r commandRunner) Run(ctx context.Context, args ...string) (helperResult, error) {
+	cmd := exec.CommandContext(ctx, r.path, args...)
+	output, err := cmd.CombinedOutput()
+	if len(output) > 16*1024 {
+		output = output[:16*1024]
+	}
+	if err != nil {
+		return helperResult{}, fmt.Errorf("helper failed: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	var result helperResult
+	if err := json.Unmarshal(output, &result); err != nil {
+		return helperResult{}, fmt.Errorf("decode helper response: %w", err)
+	}
+	if strings.TrimSpace(result.Message) == "" {
+		return helperResult{}, errors.New("helper returned an empty message")
+	}
+	return result, nil
 }
 
 type bridgeServer struct {
-	cfg        config
-	adminHTTP  *http.Client
-	githubHTTP *http.Client
-	mu         sync.Mutex
-	pending    map[string]time.Time
+	cfg       config
+	adminHTTP *http.Client
+	helper    helperRunner
 }
 
-type upgradeStatus struct {
-	ReleaseTag      string `json:"release_tag"`
-	State           string `json:"state"`
-	CanDispatch     bool   `json:"can_dispatch"`
-	BackendRequired bool   `json:"backend_required"`
-	IssueURL        string `json:"issue_url,omitempty"`
-	RunURL          string `json:"run_url,omitempty"`
+type versionInfo struct {
+	CurrentVersion string `json:"current_version"`
+	LatestVersion  string `json:"latest_version"`
+	HasUpdate      bool   `json:"has_update"`
 }
 
-type dispatchRequest struct {
-	ReleaseTag string `json:"release_tag"`
+type rollbackRequest struct {
+	Version string `json:"version"`
 }
 
-type githubIssue struct {
-	Number  int    `json:"number"`
-	Title   string `json:"title"`
-	Body    string `json:"body"`
-	HTMLURL string `json:"html_url"`
-	Labels  []struct {
-		Name string `json:"name"`
-	} `json:"labels"`
-	PullRequest json.RawMessage `json:"pull_request"`
-}
-
-type workflowRuns struct {
-	Runs []struct {
-		DisplayTitle string `json:"display_title"`
-		Status       string `json:"status"`
-		Conclusion   string `json:"conclusion"`
-		HTMLURL      string `json:"html_url"`
-		CreatedAt    string `json:"created_at"`
-	} `json:"workflow_runs"`
+type updateResult struct {
+	Message     string `json:"message"`
+	NeedRestart bool   `json:"need_restart"`
 }
 
 func main() {
@@ -89,14 +95,13 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	server := newBridgeServer(cfg)
+	server := newBridgeServer(cfg, commandRunner{path: cfg.helperPath})
 	httpServer := &http.Server{
 		Addr:              cfg.listenAddr,
 		Handler:           server.routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      20 * time.Second,
+		WriteTimeout:      operationTimeout + time.Minute,
 		IdleTimeout:       60 * time.Second,
 	}
 	log.Printf("aifoo update bridge listening on %s", cfg.listenAddr)
@@ -104,35 +109,17 @@ func main() {
 }
 
 func loadConfig() (config, error) {
-	tokenFile := envOr("AIFOO_UPGRADE_GITHUB_TOKEN_FILE", "/etc/aifoo-update-bridge/github-token")
-	tokenBytes, err := os.ReadFile(tokenFile)
-	if err != nil {
-		return config{}, fmt.Errorf("read GitHub token file: %w", err)
-	}
-	token := strings.TrimSpace(string(tokenBytes))
-	if token == "" {
-		return config{}, errors.New("GitHub token file is empty")
-	}
-
 	cfg := config{
-		listenAddr: envOr("AIFOO_UPGRADE_LISTEN_ADDR", defaultListenAddr),
-		repository: envOr("AIFOO_UPGRADE_GITHUB_REPOSITORY", defaultRepository),
-		workflow:   envOr("AIFOO_UPGRADE_GITHUB_WORKFLOW", defaultWorkflow),
-		adminURL:   envOr("AIFOO_UPGRADE_ADMIN_CHECK_URL", defaultAdminURL),
-		githubURL:  strings.TrimRight(envOr("AIFOO_UPGRADE_GITHUB_API", defaultGitHubURL), "/"),
-		token:      token,
+		listenAddr:   envOr("AIFOO_UPGRADE_LISTEN_ADDR", defaultListenAddr),
+		adminBaseURL: strings.TrimRight(envOr("AIFOO_UPGRADE_ADMIN_BASE_URL", defaultAdminBaseURL), "/"),
+		helperPath:   envOr("AIFOO_UPGRADE_HELPER", defaultHelperPath),
 	}
-	if !repositoryPattern.MatchString(cfg.repository) {
-		return config{}, errors.New("invalid GitHub repository")
+	parsed, err := url.ParseRequestURI(cfg.adminBaseURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || !isLoopback(parsed.Hostname()) {
+		return config{}, errors.New("administrator API must be an HTTP URL on loopback")
 	}
-	if !workflowPattern.MatchString(cfg.workflow) {
-		return config{}, errors.New("invalid GitHub workflow name")
-	}
-	if _, err := url.ParseRequestURI(cfg.adminURL); err != nil {
-		return config{}, fmt.Errorf("invalid admin check URL: %w", err)
-	}
-	if _, err := url.ParseRequestURI(cfg.githubURL); err != nil {
-		return config{}, fmt.Errorf("invalid GitHub API URL: %w", err)
+	if !filepath.IsAbs(cfg.helperPath) || filepath.Clean(cfg.helperPath) != cfg.helperPath {
+		return config{}, errors.New("helper path must be an absolute clean path")
 	}
 	return cfg, nil
 }
@@ -144,20 +131,28 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-func newBridgeServer(cfg config) *bridgeServer {
+func isLoopback(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func newBridgeServer(cfg config, helper helperRunner) *bridgeServer {
 	return &bridgeServer{
-		cfg:        cfg,
-		adminHTTP:  &http.Client{Timeout: 8 * time.Second},
-		githubHTTP: &http.Client{Timeout: 15 * time.Second},
-		pending:    make(map[string]time.Time),
+		cfg:       cfg,
+		adminHTTP: &http.Client{Timeout: 10 * time.Second},
+		helper:    helper,
 	}
 }
 
 func (s *bridgeServer) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
-	mux.HandleFunc("/status", s.withAdmin(s.handleStatus))
-	mux.HandleFunc("/dispatch", s.withAdmin(s.handleDispatch))
+	mux.HandleFunc("/update", s.withAdmin(s.handleUpdate))
+	mux.HandleFunc("/rollback", s.withAdmin(s.handleRollback))
+	mux.HandleFunc("/restart", s.withAdmin(s.handleRestart))
 	return mux
 }
 
@@ -189,7 +184,7 @@ func (s *bridgeServer) verifyAdmin(r *http.Request) error {
 	if !strings.HasPrefix(authorization, "Bearer ") || len(strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))) < 16 {
 		return errAdminUnauthorized
 	}
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, s.cfg.adminURL, nil)
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, s.cfg.adminBaseURL+"/version", nil)
 	if err != nil {
 		return err
 	}
@@ -209,258 +204,113 @@ func (s *bridgeServer) verifyAdmin(r *http.Request) error {
 	return nil
 }
 
-func (s *bridgeServer) handleStatus(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+func (s *bridgeServer) handleUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	tag := strings.TrimSpace(r.URL.Query().Get("release"))
-	if !releasePattern.MatchString(tag) {
-		writeError(w, http.StatusBadRequest, "release must be vX.Y.Z")
-		return
-	}
-	status, err := s.readStatus(r.Context(), tag)
+	info, err := s.checkUpdates(r)
 	if err != nil {
-		log.Printf("read upgrade status failed: %v", err)
-		writeError(w, http.StatusBadGateway, "upgrade status unavailable")
+		log.Printf("official update check failed: %v", err)
+		writeError(w, http.StatusBadGateway, "official update check unavailable")
 		return
 	}
-	writeJSON(w, http.StatusOK, status)
+	if !info.HasUpdate {
+		writeError(w, http.StatusConflict, "the official backend is already up to date")
+		return
+	}
+	target, err := normalizeVersion(info.LatestVersion)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "official update check returned an invalid version")
+		return
+	}
+	s.runPreparation(w, r, target)
 }
 
-func (s *bridgeServer) handleDispatch(w http.ResponseWriter, r *http.Request) {
+func (s *bridgeServer) checkUpdates(r *http.Request) (versionInfo, error) {
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, s.cfg.adminBaseURL+"/check-updates?force=true", nil)
+	if err != nil {
+		return versionInfo{}, err
+	}
+	req.Header.Set("Authorization", r.Header.Get("Authorization"))
+	resp, err := s.adminHTTP.Do(req)
+	if err != nil {
+		return versionInfo{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		return versionInfo{}, fmt.Errorf("update check returned %d", resp.StatusCode)
+	}
+	var info versionInfo
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&info); err != nil {
+		return versionInfo{}, err
+	}
+	return info, nil
+}
+
+func (s *bridgeServer) handleRollback(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	defer r.Body.Close()
+	var input rollbackRequest
 	decoder := json.NewDecoder(io.LimitReader(r.Body, 4096))
 	decoder.DisallowUnknownFields()
-	var input dispatchRequest
-	if err := decoder.Decode(&input); err != nil || !releasePattern.MatchString(input.ReleaseTag) {
-		writeError(w, http.StatusBadRequest, "release_tag must be vX.Y.Z")
+	if err := decoder.Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "rollback version is required")
 		return
 	}
-
-	status, err := s.readStatus(r.Context(), input.ReleaseTag)
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "rollback request must contain one JSON object")
+		return
+	}
+	target, err := normalizeVersion(input.Version)
 	if err != nil {
-		log.Printf("pre-dispatch status failed: %v", err)
-		writeError(w, http.StatusBadGateway, "upgrade status unavailable")
+		writeError(w, http.StatusBadRequest, "rollback version must be X.Y.Z")
 		return
 	}
-	if status.State == "deploying" {
-		writeJSON(w, http.StatusOK, status)
-		return
-	}
-	if !status.CanDispatch {
-		writeError(w, http.StatusConflict, "release is not ready for deployment")
-		return
-	}
-	if !s.claimDispatch(input.ReleaseTag) {
-		status.State = "deploying"
-		status.CanDispatch = false
-		writeJSON(w, http.StatusOK, status)
-		return
-	}
-
-	payload, _ := json.Marshal(map[string]any{
-		"ref": "production",
-		"inputs": map[string]string{
-			"release_tag": input.ReleaseTag,
-		},
-	})
-	path := fmt.Sprintf("/repos/%s/actions/workflows/%s/dispatches", s.cfg.repository, s.cfg.workflow)
-	if err := s.githubRequest(r.Context(), http.MethodPost, path, bytes.NewReader(payload), nil); err != nil {
-		s.clearPending(input.ReleaseTag)
-		log.Printf("dispatch upgrade workflow failed: %v", err)
-		writeError(w, http.StatusBadGateway, "unable to start deployment")
-		return
-	}
-	status.State = "deploying"
-	status.CanDispatch = false
-	writeJSON(w, http.StatusAccepted, status)
+	s.runPreparation(w, r, target)
 }
 
-func (s *bridgeServer) claimDispatch(tag string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if started, ok := s.pending[tag]; ok && time.Since(started) <= 2*time.Minute {
-		return false
-	}
-	s.pending[tag] = time.Now()
-	return true
-}
-
-func (s *bridgeServer) clearPending(tag string) {
-	s.mu.Lock()
-	delete(s.pending, tag)
-	s.mu.Unlock()
-}
-
-func (s *bridgeServer) readStatus(ctx context.Context, tag string) (upgradeStatus, error) {
-	result := upgradeStatus{ReleaseTag: tag, State: "preparing"}
-	issue, err := s.findIssue(ctx, tag)
+func (s *bridgeServer) runPreparation(w http.ResponseWriter, r *http.Request, target string) {
+	ctx, cancel := context.WithTimeout(r.Context(), operationTimeout)
+	defer cancel()
+	result, err := s.helper.Run(ctx, "backend-prepare", target)
 	if err != nil {
-		return result, err
+		log.Printf("backend preparation failed: %v", err)
+		writeError(w, http.StatusBadGateway, "unable to prepare the official backend image")
+		return
 	}
-	if issue == nil {
-		if s.isPending(tag) {
-			result.State = "deploying"
-		}
-		return result, nil
-	}
-	result.IssueURL = issue.HTMLURL
-	labels := make(map[string]bool, len(issue.Labels))
-	for _, label := range issue.Labels {
-		labels[label.Name] = true
-	}
-	result.BackendRequired = labels["backend-deploy-required"] && !labels["backend-deployed"]
+	writeJSON(w, http.StatusOK, updateResult{Message: result.Message, NeedRestart: true})
+}
 
-	run, err := s.latestRun(ctx, tag)
+func (s *bridgeServer) handleRestart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), operationTimeout)
+	defer cancel()
+	result, err := s.helper.Run(ctx, "backend-activate")
 	if err != nil {
-		return result, err
+		log.Printf("backend activation failed: %v", err)
+		writeError(w, http.StatusBadGateway, "backend activation failed; the previous image remains active or was restored")
+		return
 	}
-	if run != nil {
-		result.RunURL = run.HTMLURL
-		if run.Status == "queued" || run.Status == "in_progress" || run.Status == "waiting" {
-			if labels["web-update-running"] || s.isPending(tag) {
-				result.State = "deploying"
-				return result, nil
-			}
-		}
-		if run.Status == "completed" && run.Conclusion == "success" && labels["vps-deployed"] {
-			result.State = "deployed"
-			return result, nil
-		}
-	}
-	if s.isPending(tag) {
-		result.State = "deploying"
-		return result, nil
-	}
-	if labels["vps-deployed"] {
-		result.State = "deployed"
-		return result, nil
-	}
-	if labels["vps-preload-failed"] || labels["backend-prepare-failed"] {
-		result.State = "failed"
-		return result, nil
-	}
-	if labels["ui-review-required"] {
-		result.State = "ui_review_required"
-		return result, nil
-	}
-	if labels["sync-failed"] {
-		result.State = "failed"
-		return result, nil
-	}
-	if labels["ready-for-vps"] {
-		if !labels["vps-preloaded"] {
-			// All CI and UI work can be complete while the immutable image is
-			// still being cached on the VPS. Do not expose the click action yet.
-			return result, nil
-		}
-		if result.BackendRequired && !labels["backend-prepared"] {
-			// A release that changes the backend is clickable only after the
-			// exact official image and local rollback state are prepared.
-			return result, nil
-		}
-		result.State = "ready"
-		result.CanDispatch = true
-		if run != nil && run.Status == "completed" && run.Conclusion != "success" && labels["web-update-failed"] {
-			result.State = "failed"
-		}
-	}
-	return result, nil
+	writeJSON(w, http.StatusOK, map[string]string{"message": result.Message})
 }
 
-func (s *bridgeServer) isPending(tag string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	started, ok := s.pending[tag]
-	if !ok {
-		return false
+func normalizeVersion(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if !versionPattern.MatchString(value) {
+		return "", errors.New("invalid version")
 	}
-	if time.Since(started) > 2*time.Minute {
-		delete(s.pending, tag)
-		return false
+	if value[0] != 'v' {
+		value = "v" + value
 	}
-	return true
-}
-
-func (s *bridgeServer) findIssue(ctx context.Context, tag string) (*githubIssue, error) {
-	query := url.Values{
-		"state":     {"all"},
-		"labels":    {"upstream-release"},
-		"sort":      {"created"},
-		"direction": {"desc"},
-		"per_page":  {"100"},
-	}
-	path := fmt.Sprintf("/repos/%s/issues?%s", s.cfg.repository, query.Encode())
-	var issues []githubIssue
-	if err := s.githubRequest(ctx, http.MethodGet, path, nil, &issues); err != nil {
-		return nil, err
-	}
-	title := fmt.Sprintf("[Upstream %s] AIFoo frontend compatibility", tag)
-	for i := range issues {
-		if len(issues[i].PullRequest) == 0 && issues[i].Title == title {
-			return &issues[i], nil
-		}
-	}
-	return nil, nil
-}
-
-func (s *bridgeServer) latestRun(ctx context.Context, tag string) (*struct {
-	DisplayTitle string `json:"display_title"`
-	Status       string `json:"status"`
-	Conclusion   string `json:"conclusion"`
-	HTMLURL      string `json:"html_url"`
-	CreatedAt    string `json:"created_at"`
-}, error) {
-	query := url.Values{
-		"branch":   {"production"},
-		"event":    {"workflow_dispatch"},
-		"per_page": {"30"},
-	}
-	path := fmt.Sprintf("/repos/%s/actions/workflows/%s/runs?%s", s.cfg.repository, s.cfg.workflow, query.Encode())
-	var runs workflowRuns
-	if err := s.githubRequest(ctx, http.MethodGet, path, nil, &runs); err != nil {
-		return nil, err
-	}
-	title := "AIFoo web update " + tag
-	for i := range runs.Runs {
-		if runs.Runs[i].DisplayTitle == title {
-			return &runs.Runs[i], nil
-		}
-	}
-	return nil, nil
-}
-
-func (s *bridgeServer) githubRequest(ctx context.Context, method, path string, body io.Reader, target any) error {
-	req, err := http.NewRequestWithContext(ctx, method, s.cfg.githubURL+path, body)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("Authorization", "Bearer "+s.cfg.token)
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := s.githubHTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	limited := io.LimitReader(resp.Body, maxResponseBytes)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		_, _ = io.Copy(io.Discard, limited)
-		return fmt.Errorf("GitHub API %s %s returned %d", method, path, resp.StatusCode)
-	}
-	if target == nil || resp.StatusCode == http.StatusNoContent {
-		_, _ = io.Copy(io.Discard, limited)
-		return nil
-	}
-	return json.NewDecoder(limited).Decode(target)
+	return value, nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

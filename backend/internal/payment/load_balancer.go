@@ -3,10 +3,8 @@ package payment
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -34,30 +32,10 @@ type ChannelLimits struct {
 // InstanceLimits holds per-channel limits for a provider instance (JSON).
 type InstanceLimits map[string]ChannelLimits
 
-// ErrInstanceLimitsExhausted indicates that enabled provider instances exist,
-// but none can accept the requested amount under their configured limits.
-var ErrInstanceLimitsExhausted = errors.New("payment provider instance limits exhausted")
-
-// ErrInstanceCapacityReservationUnavailable indicates that a load balancer
-// cannot provide the transaction-scoped capacity reservation required before
-// creating a payment order.
-var ErrInstanceCapacityReservationUnavailable = errors.New("payment instance capacity reservation unavailable")
-
 // LoadBalancer selects a provider instance for a given payment type.
 type LoadBalancer interface {
 	GetInstanceConfig(ctx context.Context, instanceID int64) (map[string]string, error)
 	SelectInstance(ctx context.Context, providerKey string, paymentType PaymentType, strategy Strategy, orderAmount float64) (*InstanceSelection, error)
-}
-
-// InstanceCapacityReserver closes the check-then-create window in payment
-// order creation. Implementations must lock and re-check the selected
-// provider instance using the same transaction that inserts the order.
-//
-// It is intentionally a separate interface so lightweight test doubles and
-// non-database load balancers can continue to implement LoadBalancer without
-// taking a dependency on Ent transactions.
-type InstanceCapacityReserver interface {
-	ReserveInstance(ctx context.Context, tx *dbent.Tx, selection *InstanceSelection, paymentType PaymentType, orderAmount float64) error
 }
 
 // DefaultLoadBalancer implements LoadBalancer using database queries.
@@ -105,6 +83,7 @@ type instanceCandidate struct {
 //  2. Batch-query daily usage (PENDING + PAID + COMPLETED + RECHARGING) for all candidates
 //  3. Filter out instances where: single-min/max violated OR daily remaining < orderAmount
 //  4. Pick from survivors using the configured strategy (round-robin / least-amount)
+//  5. If all filtered out, fall back to full list (let the provider itself reject)
 func (lb *DefaultLoadBalancer) SelectInstance(
 	ctx context.Context,
 	providerKey string,
@@ -119,104 +98,20 @@ func (lb *DefaultLoadBalancer) SelectInstance(
 	}
 
 	// Step 2: batch-fetch daily usage for all candidates.
-	candidates, err := lb.attachDailyUsage(ctx, instances)
-	if err != nil {
-		return nil, err
-	}
+	candidates := lb.attachDailyUsage(ctx, instances)
 
 	// Step 3: filter by limits.
 	available := filterByLimits(candidates, paymentType, orderAmount)
 	if len(available) == 0 {
-		return nil, fmt.Errorf("%w: no provider instance satisfies limits for payment type %s", ErrInstanceLimitsExhausted, paymentType)
+		slog.Warn("all instances exceeded limits, using full candidate list",
+			"provider", providerKey, "payment_type", paymentType,
+			"order_amount", orderAmount, "count", len(candidates))
+		available = candidates
 	}
 
 	// Step 4: pick by strategy.
 	selected := lb.pickByStrategy(available, strategy)
 	return lb.buildSelection(selected.inst)
-}
-
-// ReserveInstance locks the selected provider instance and re-checks its
-// limits inside the order creation transaction. SelectInstance intentionally
-// remains a fast, read-only candidate picker; this method is the authoritative
-// final check immediately before the pending order row is inserted.
-//
-// The instance row is used as the serialization point. Every production order
-// creation path calls this method, so concurrent requests for the same
-// instance cannot both pass the daily-limit check before either inserts its
-// pending order. The lock is held only until the caller commits or rolls back.
-func (lb *DefaultLoadBalancer) ReserveInstance(
-	ctx context.Context,
-	tx *dbent.Tx,
-	selection *InstanceSelection,
-	paymentType PaymentType,
-	orderAmount float64,
-) error {
-	if tx == nil || selection == nil {
-		return fmt.Errorf("reserve payment instance: missing transaction or selection")
-	}
-	instanceID, err := strconv.ParseInt(strings.TrimSpace(selection.InstanceID), 10, 64)
-	if err != nil || instanceID <= 0 {
-		return fmt.Errorf("reserve payment instance: invalid instance id")
-	}
-	if orderAmount <= 0 {
-		return fmt.Errorf("reserve payment instance: order amount must be positive")
-	}
-
-	// Lock the instance row before reading orders. The generated Ent query
-	// emits SELECT ... FOR UPDATE on PostgreSQL and keeps the lock until the
-	// surrounding order transaction ends.
-	inst, err := tx.PaymentProviderInstance.Query().
-		Where(paymentproviderinstance.IDEQ(instanceID), paymentproviderinstance.Enabled(true)).
-		ForUpdate().
-		Only(ctx)
-	if err != nil {
-		if dbent.IsNotFound(err) {
-			return fmt.Errorf("%w: selected provider instance is no longer enabled", ErrInstanceLimitsExhausted)
-		}
-		return fmt.Errorf("reserve payment instance: lock instance %d: %w", instanceID, err)
-	}
-
-	// Revalidate the immutable selection attributes after acquiring the lock.
-	// An administrator may have changed the instance between the initial read
-	// and this transaction; silently using a different provider would make the
-	// order snapshot and payment request disagree.
-	if selection.ProviderKey != "" && selection.ProviderKey != inst.ProviderKey {
-		return fmt.Errorf("%w: provider instance changed", ErrInstanceLimitsExhausted)
-	}
-	if paymentType == TypeStripe {
-		if inst.ProviderKey != TypeStripe {
-			return fmt.Errorf("%w: provider instance no longer supports stripe", ErrInstanceLimitsExhausted)
-		}
-	} else if !InstanceSupportsType(inst.SupportedTypes, paymentType) {
-		return fmt.Errorf("%w: provider instance no longer supports %s", ErrInstanceLimitsExhausted, paymentType)
-	}
-
-	limits := getInstanceChannelLimits(inst, paymentType)
-	if limits.SingleMin > 0 && orderAmount < limits.SingleMin {
-		return fmt.Errorf("%w: order below instance single minimum", ErrInstanceLimitsExhausted)
-	}
-	if limits.SingleMax > 0 && orderAmount > limits.SingleMax {
-		return fmt.Errorf("%w: order above instance single maximum", ErrInstanceLimitsExhausted)
-	}
-
-	if limits.DailyLimit > 0 {
-		used, err := lb.dailyUsageForClient(ctx, tx.Client(), instanceID, startOfDay(time.Now()))
-		if err != nil {
-			return fmt.Errorf("reserve payment instance: query daily usage: %w", err)
-		}
-		if used+orderAmount > limits.DailyLimit {
-			return fmt.Errorf("%w: daily limit exhausted", ErrInstanceLimitsExhausted)
-		}
-	}
-
-	// Refresh the decrypted snapshot from the locked row so an admin update
-	// cannot leave the order using stale provider credentials/configuration.
-	fresh, err := lb.buildSelection(inst)
-	if err != nil {
-		return fmt.Errorf("reserve payment instance: refresh selection: %w", err)
-	}
-	*selection = *fresh
-	return nil
 }
 
 // queryEnabledInstances returns enabled instances that support paymentType.
@@ -274,7 +169,7 @@ func (lb *DefaultLoadBalancer) queryEnabledInstances(
 func (lb *DefaultLoadBalancer) attachDailyUsage(
 	ctx context.Context,
 	instances []*dbent.PaymentProviderInstance,
-) ([]instanceCandidate, error) {
+) []instanceCandidate {
 	todayStart := startOfDay(time.Now())
 
 	// Collect instance IDs.
@@ -302,7 +197,7 @@ func (lb *DefaultLoadBalancer) attachDailyUsage(
 		Aggregate(dbent.Sum(paymentorder.FieldPayAmount)).
 		Scan(ctx, &rows)
 	if err != nil {
-		return nil, fmt.Errorf("query provider instance daily usage: %w", err)
+		slog.Warn("batch daily usage query failed, treating all as zero", "error", err)
 	}
 
 	usageMap := make(map[string]float64, len(rows))
@@ -317,38 +212,7 @@ func (lb *DefaultLoadBalancer) attachDailyUsage(
 			dailyUsed: usageMap[fmt.Sprintf("%d", inst.ID)],
 		}
 	}
-	return candidates, nil
-}
-
-// dailyUsageForClient returns the amount counted by the instance daily limit.
-// Keeping this query in one helper ensures the read-only picker and the
-// transaction-held reservation use exactly the same status/time definition.
-func (lb *DefaultLoadBalancer) dailyUsageForClient(
-	ctx context.Context,
-	client *dbent.Client,
-	instanceID int64,
-	todayStart time.Time,
-) (float64, error) {
-	var rows []struct {
-		Sum float64 `json:"sum"`
-	}
-	if err := client.PaymentOrder.Query().
-		Where(
-			paymentorder.ProviderInstanceID(fmt.Sprintf("%d", instanceID)),
-			paymentorder.StatusIn(
-				OrderStatusPending, OrderStatusPaid,
-				OrderStatusCompleted, OrderStatusRecharging,
-			),
-			paymentorder.CreatedAtGTE(todayStart),
-		).
-		Aggregate(dbent.Sum(paymentorder.FieldPayAmount)).
-		Scan(ctx, &rows); err != nil {
-		return 0, err
-	}
-	if len(rows) == 0 {
-		return 0, nil
-	}
-	return rows[0].Sum, nil
+	return candidates
 }
 
 // filterByLimits removes instances that cannot accommodate the order:

@@ -494,8 +494,7 @@ func (s *APIKeyRepoSuite) TestIncrementQuotaUsedAndGetState() {
 	s.Require().Equal(3.5, state.QuotaUsed)
 	s.Require().Equal(3.0, state.Quota)
 	s.Require().Equal(service.StatusAPIKeyQuotaExhausted, state.Status)
-	s.Require().Equal(apiKeyCredentialHash(key.Key), state.KeyHash)
-	s.Require().Empty(state.Key, "quota state must not carry the legacy plaintext key")
+	s.Require().Equal(key.Key, state.Key)
 
 	got, err := s.repo.GetByID(s.ctx, key.ID)
 	s.Require().NoError(err, "GetByID")

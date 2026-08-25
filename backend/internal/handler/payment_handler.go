@@ -119,11 +119,7 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 	}
 
 	// Fetch plans with group info
-	plans, err := h.configService.ListPlansForSale(ctx)
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
+	plans, _ := h.configService.ListPlansForSale(ctx)
 	groupInfo := h.configService.GetGroupInfoMap(ctx, plans)
 	planList := make([]checkoutPlan, 0, len(plans))
 	for _, p := range plans {

@@ -1,0 +1,245 @@
+name: AIFoo UI
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_and_deploy:
+        description: Build, publish, and activate the AIFoo frontend image
+        type: boolean
+        default: true
+      install_control_plane:
+        description: Install or refresh the local VPS update bridge and deploy helper
+        type: boolean
+        default: false
+
+concurrency:
+  group: aifoo-ui-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  ui:
+    name: Validate and optionally deploy AIFoo UI
+    runs-on: [self-hosted, Linux, X64, aifoo-vm]
+    timeout-minutes: 90
+    environment: production
+
+    steps:
+      - name: Checkout production
+        uses: actions/checkout@v4
+        with:
+          ref: production
+          fetch-depth: 1
+
+      - name: Validate the single-workflow boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find .github/workflows -maxdepth 1 -type f | wc -l | tr -d ' ')" -eq 1
+          test -f .github/workflows/aifoo-ui.yml
+          ! rg -n '^\s*(schedule|push|pull_request|issues):' .github/workflows/aifoo-ui.yml
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@10.28.2 --activate
+          pnpm install --frozen-lockfile
+
+      - name: Validate frontend
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm run lint:check
+          pnpm run typecheck
+          pnpm run test:run
+          pnpm exec playwright install chromium
+          pnpm run test:e2e
+          pnpm run build
+
+      - name: Validate local update control plane
+        shell: bash
+        run: |
+          set -euo pipefail
+          for module in deploy/update-bridge deploy/deploy-helper; do
+            (
+              cd "$module"
+              go test ./...
+              go vet ./...
+            )
+          done
+
+      - name: Build Linux control-plane binaries
+        if: ${{ inputs.install_control_plane }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$RUNNER_TEMP/aifoo-control-plane"
+          (
+            cd deploy/update-bridge
+            CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+              -o "$RUNNER_TEMP/aifoo-control-plane/aifoo-update-bridge" .
+          )
+          (
+            cd deploy/deploy-helper
+            CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+              -o "$RUNNER_TEMP/aifoo-control-plane/aifoo-deploy-helper" .
+          )
+
+      - name: Log in to GHCR on the VM
+        if: ${{ inputs.publish_and_deploy }}
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Build and push immutable frontend image
+        if: ${{ inputs.publish_and_deploy }}
+        id: image
+        shell: bash
+        env:
+          IMAGE_REPOSITORY: ghcr.io/jayhome137/sub2api-frontend
+        run: |
+          set -euo pipefail
+          metadata="$RUNNER_TEMP/aifoo-build-metadata.json"
+          docker buildx build \
+            --platform linux/amd64 \
+            --file deploy/frontend/Dockerfile \
+            --build-arg "BUILD_VERSION=$GITHUB_SHA" \
+            --build-arg "VCS_REF=$GITHUB_SHA" \
+            --tag "$IMAGE_REPOSITORY:ui-$GITHUB_SHA" \
+            --tag "$IMAGE_REPOSITORY:latest" \
+            --metadata-file "$metadata" \
+            --push \
+            .
+          digest=$(jq -r '."containerimage.digest"' "$metadata")
+          if ! printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "Build did not return an immutable digest" >&2
+            exit 1
+          fi
+          printf 'image=%s@%s\n' "$IMAGE_REPOSITORY" "$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Configure VPS SSH
+        if: ${{ inputs.publish_and_deploy || inputs.install_control_plane }}
+        shell: bash
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$RUNNER_TEMP/ssh"
+          printf '%s\n' "$VPS_SSH_KEY" > "$RUNNER_TEMP/ssh/id_ed25519"
+          chmod 600 "$RUNNER_TEMP/ssh/id_ed25519"
+          printf '%s\n' "$VPS_HOST_KEY" > "$RUNNER_TEMP/ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/ssh/known_hosts"
+
+      - name: Read-only VPS preflight
+        if: ${{ inputs.publish_and_deploy || inputs.install_control_plane }}
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          ssh \
+            -i "$RUNNER_TEMP/ssh/id_ed25519" \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -o StrictHostKeyChecking=yes \
+            -o BatchMode=yes \
+            "$VPS_USER@$VPS_HOST" \
+            'set -eu; test -r /opt/sub2api/docker-compose.yml; docker inspect sub2api sub2api-frontend >/dev/null; sudo -n -l >/dev/null'
+
+      - name: Install local VPS update control plane
+        if: ${{ inputs.install_control_plane }}
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          remote_dir="/tmp/aifoo-control-plane-$GITHUB_RUN_ID"
+          ssh \
+            -i "$RUNNER_TEMP/ssh/id_ed25519" \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -o StrictHostKeyChecking=yes \
+            -o BatchMode=yes \
+            "$VPS_USER@$VPS_HOST" \
+            "install -d -m 700 '$remote_dir'"
+          scp \
+            -i "$RUNNER_TEMP/ssh/id_ed25519" \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -o StrictHostKeyChecking=yes \
+            -o BatchMode=yes \
+            "$RUNNER_TEMP/aifoo-control-plane/aifoo-update-bridge" \
+            "$RUNNER_TEMP/aifoo-control-plane/aifoo-deploy-helper" \
+            deploy/update-bridge/install.sh \
+            deploy/update-bridge/aifoo-update-bridge.service \
+            deploy/update-bridge/nginx-location.conf \
+            "$VPS_USER@$VPS_HOST:$remote_dir/"
+          ssh \
+            -i "$RUNNER_TEMP/ssh/id_ed25519" \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -o StrictHostKeyChecking=yes \
+            -o BatchMode=yes \
+            "$VPS_USER@$VPS_HOST" \
+            "set -eu
+             chmod 700 '$remote_dir/install.sh' '$remote_dir/aifoo-update-bridge' '$remote_dir/aifoo-deploy-helper'
+             sudo -n '$remote_dir/install.sh' '$remote_dir/aifoo-update-bridge' '$remote_dir/aifoo-deploy-helper' '$VPS_USER'
+             sudo -n install -o root -g root -m 0644 '$remote_dir/nginx-location.conf' /etc/nginx/snippets/aifoo-update-bridge.conf
+             sudo -n nginx -t
+             sudo -n systemctl reload nginx
+             curl --fail --silent --show-error http://127.0.0.1:8091/health >/dev/null
+             find '$remote_dir' -depth -delete"
+
+      - name: Verify local update bridge
+        if: ${{ inputs.publish_and_deploy && !inputs.install_control_plane }}
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          ssh \
+            -i "$RUNNER_TEMP/ssh/id_ed25519" \
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -o StrictHostKeyChecking=yes \
+            -o BatchMode=yes \
+            "$VPS_USER@$VPS_HOST" \
+            'curl --fail --silent --show-error http://127.0.0.1:8091/health >/dev/null'
+
+      - name: Activate frontend on VPS
+        if: ${{ inputs.publish_and_deploy }}
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          set -euo pipefail
+          ssh_base=(
+            -i "$RUNNER_TEMP/ssh/id_ed25519"
+            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts"
+            -o StrictHostKeyChecking=yes
+            -o BatchMode=yes
+          )
+          printf '%s' "$GHCR_TOKEN" | ssh "${ssh_base[@]}" "$VPS_USER@$VPS_HOST" \
+            "sudo -n /usr/local/libexec/aifoo-deploy-helper frontend-login '$GITHUB_ACTOR'"
+          trap 'ssh "${ssh_base[@]}" "$VPS_USER@$VPS_HOST" "sudo -n /usr/local/libexec/aifoo-deploy-helper frontend-logout" >/dev/null 2>&1 || true' EXIT
+          ssh "${ssh_base[@]}" "$VPS_USER@$VPS_HOST" \
+            "sudo -n /usr/local/libexec/aifoo-deploy-helper frontend-activate '$IMAGE'"
+          ssh "${ssh_base[@]}" "$VPS_USER@$VPS_HOST" \
+            'curl --fail --silent --show-error http://127.0.0.1:8080/frontend-health >/dev/null && curl --fail --silent --show-error http://127.0.0.1:8080/health >/dev/null'
+
+      - name: Log out of GHCR on the VM
+        if: ${{ always() && inputs.publish_and_deploy }}
+        shell: bash
+        run: docker logout ghcr.io >/dev/null 2>&1 || true
