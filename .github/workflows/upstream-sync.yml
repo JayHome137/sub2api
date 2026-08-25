@@ -638,6 +638,26 @@ jobs:
               gh issue comment "$issue_number" --body-file "$comment_file"
             fi
 
+            ui_overlap_count=$(sed -n \
+              's/^protected_ui_overlap=//p' "$merge_log" | tail -n 1)
+            if [ "${ui_overlap_count:-0}" -gt 0 ]; then
+              comment_file=$(mktemp)
+              {
+                echo "The fork and official $tag release both changed $ui_overlap_count protected presentation UI file(s). Their complete fork versions were retained before the candidate commit to avoid a textually valid but semantically incomplete Vue merge. Upstream-only UI files and upstream API, store, type, and dependency changes remain eligible for the candidate."
+                echo
+                echo 'Protected UI decisions:'
+                grep 'policy=fork-ui-complete' "$merge_log"
+              } > "$comment_file"
+              gh issue comment "$issue_number" --body-file "$comment_file"
+            fi
+
+            if grep -Fxq \
+              'fork_audit_exceptions_changed=true' "$merge_log"; then
+              workflow_changes_excluded=true
+              gh issue comment "$issue_number" \
+                --body "The official $tag release changed \`.github/audit-exceptions.yml\`. The complete fork-owned security policy was retained; candidate validation will continue with the local reviewed exceptions."
+            fi
+
             if [ -s "$workflow_audit" ]; then
               workflow_changes_excluded=true
               comment_file=$(mktemp)

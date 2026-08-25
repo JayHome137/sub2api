@@ -24,6 +24,7 @@ git -C "$repo" init -q
 git -C "$repo" config user.name 'AIFoo candidate state test'
 git -C "$repo" config user.email 'aifoo-candidate-state@example.invalid'
 printf '%s\n' 'name: fork workflow' > "$repo/.github/workflows/sync.yml"
+printf '%s\n' 'owner=fork' > "$repo/.github/audit-exceptions.yml"
 printf '%s\n' '#!/bin/sh' 'exit 0' > "$repo/.github/scripts/resolve-upstream-conflicts.sh"
 printf '%s\n' 'base' > "$repo/frontend/app.ts"
 git -C "$repo" add .
@@ -67,6 +68,15 @@ resolver_candidate=$(git -C "$repo" rev-parse HEAD)
 reason=$(cd "$repo" && "$HELPER" refresh-reason "$base" "$release" "$resolver_candidate")
 [ "$reason" = resolver-changed ] \
   || fail "resolver drift did not refresh the candidate: $reason"
+
+git -C "$repo" reset -q --hard "$repair_candidate"
+printf '%s\n' 'owner=changed' > "$repo/.github/audit-exceptions.yml"
+git -C "$repo" add .
+git -C "$repo" commit -qm 'change audit exceptions'
+audit_candidate=$(git -C "$repo" rev-parse HEAD)
+reason=$(cd "$repo" && "$HELPER" refresh-reason "$base" "$release" "$audit_candidate")
+[ "$reason" = workflow-contract-changed ] \
+  || fail "audit-exception drift did not refresh the candidate: $reason"
 
 git -C "$repo" reset -q --hard "$repair_candidate"
 printf '%s\n' 'name: changed workflow' > "$repo/.github/workflows/sync.yml"

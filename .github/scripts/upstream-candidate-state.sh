@@ -31,6 +31,7 @@ workflow_contract_sha() {
   require_commit "$1"
   listing=$(git ls-tree -r "$1" -- \
     .github/workflows \
+    .github/audit-exceptions.yml \
     .github/scripts/merge-upstream-release.sh \
     .github/scripts/merge-upstream-release-test.sh \
     .github/scripts/resolve-upstream-conflicts-test.sh \
