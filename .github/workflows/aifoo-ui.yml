@@ -29,7 +29,7 @@ jobs:
 
     steps:
       - name: Checkout production
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: production
           fetch-depth: 1
@@ -47,21 +47,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          corepack enable
-          corepack prepare pnpm@10.28.2 --activate
-          pnpm install --frozen-lockfile
+          corepack pnpm@10.28.2 install --frozen-lockfile
 
       - name: Validate frontend
         working-directory: frontend
         shell: bash
         run: |
           set -euo pipefail
-          pnpm run lint:check
-          pnpm run typecheck
-          pnpm run test:run
-          pnpm exec playwright install chromium
-          pnpm run test:e2e
-          pnpm run build
+          corepack pnpm@10.28.2 run lint:check
+          corepack pnpm@10.28.2 run typecheck
+          corepack pnpm@10.28.2 run test:run
+          corepack pnpm@10.28.2 exec playwright install chromium
+          corepack pnpm@10.28.2 run test:e2e
+          corepack pnpm@10.28.2 run build
 
       - name: Validate local update control plane
         shell: bash
