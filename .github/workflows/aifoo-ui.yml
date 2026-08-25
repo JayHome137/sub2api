@@ -7,10 +7,6 @@ on:
         description: Build, publish, and activate the AIFoo frontend image
         type: boolean
         default: true
-      install_control_plane:
-        description: Install or refresh the local VPS update bridge and deploy helper
-        type: boolean
-        default: false
       existing_image_digest:
         description: Reuse a previously validated sha256 digest after a deployment-only failure
         type: string
@@ -44,7 +40,11 @@ jobs:
           set -euo pipefail
           test "$(find .github/workflows -maxdepth 1 -type f | wc -l | tr -d ' ')" -eq 1
           test -f .github/workflows/aifoo-ui.yml
-          ! rg -n '^\s*(schedule|push|pull_request|issues):' .github/workflows/aifoo-ui.yml
+          if grep -En '^[[:space:]]*(schedule|push|pull_request|issues):' \
+            .github/workflows/aifoo-ui.yml; then
+            echo "AIFoo UI must remain manual-only" >&2
+            exit 1
+          fi
 
       - name: Install frontend dependencies
         if: ${{ inputs.existing_image_digest == '' }}
@@ -66,35 +66,6 @@ jobs:
           corepack pnpm@10.28.2 exec playwright install chromium
           corepack pnpm@10.28.2 run test:e2e
           corepack pnpm@10.28.2 run build
-
-      - name: Validate local update control plane
-        shell: bash
-        run: |
-          set -euo pipefail
-          for module in deploy/update-bridge deploy/deploy-helper; do
-            (
-              cd "$module"
-              go test ./...
-              go vet ./...
-            )
-          done
-
-      - name: Build Linux control-plane binaries
-        if: ${{ inputs.install_control_plane }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          install -d -m 700 "$RUNNER_TEMP/aifoo-control-plane"
-          (
-            cd deploy/update-bridge
-            CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
-              -o "$RUNNER_TEMP/aifoo-control-plane/aifoo-update-bridge" .
-          )
-          (
-            cd deploy/deploy-helper
-            CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
-              -o "$RUNNER_TEMP/aifoo-control-plane/aifoo-deploy-helper" .
-          )
 
       - name: Log in to GHCR on the VM
         if: ${{ inputs.publish_and_deploy && inputs.existing_image_digest == '' }}
@@ -160,7 +131,7 @@ jobs:
           printf 'image=%s\n' "$selected" >> "$GITHUB_OUTPUT"
 
       - name: Configure VPS SSH
-        if: ${{ inputs.publish_and_deploy || inputs.install_control_plane }}
+        if: ${{ inputs.publish_and_deploy }}
         shell: bash
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
@@ -173,66 +144,8 @@ jobs:
           printf '%s\n' "$VPS_HOST_KEY" > "$RUNNER_TEMP/ssh/known_hosts"
           chmod 600 "$RUNNER_TEMP/ssh/known_hosts"
 
-      - name: Read-only VPS preflight
-        if: ${{ inputs.publish_and_deploy || inputs.install_control_plane }}
-        shell: bash
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-        run: |
-          set -euo pipefail
-          ssh \
-            -i "$RUNNER_TEMP/ssh/id_ed25519" \
-            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
-            -o StrictHostKeyChecking=yes \
-            -o BatchMode=yes \
-            "$VPS_USER@$VPS_HOST" \
-            'sudo -n -l'
-
-      - name: Install local VPS update control plane
-        if: ${{ inputs.install_control_plane }}
-        shell: bash
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-        run: |
-          set -euo pipefail
-          remote_dir="/tmp/aifoo-control-plane-$GITHUB_RUN_ID"
-          ssh \
-            -i "$RUNNER_TEMP/ssh/id_ed25519" \
-            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
-            -o StrictHostKeyChecking=yes \
-            -o BatchMode=yes \
-            "$VPS_USER@$VPS_HOST" \
-            "install -d -m 700 '$remote_dir'"
-          scp \
-            -i "$RUNNER_TEMP/ssh/id_ed25519" \
-            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
-            -o StrictHostKeyChecking=yes \
-            -o BatchMode=yes \
-            "$RUNNER_TEMP/aifoo-control-plane/aifoo-update-bridge" \
-            "$RUNNER_TEMP/aifoo-control-plane/aifoo-deploy-helper" \
-            deploy/update-bridge/install.sh \
-            deploy/update-bridge/aifoo-update-bridge.service \
-            deploy/update-bridge/nginx-location.conf \
-            "$VPS_USER@$VPS_HOST:$remote_dir/"
-          ssh \
-            -i "$RUNNER_TEMP/ssh/id_ed25519" \
-            -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
-            -o StrictHostKeyChecking=yes \
-            -o BatchMode=yes \
-            "$VPS_USER@$VPS_HOST" \
-            "set -eu
-             chmod 700 '$remote_dir/install.sh' '$remote_dir/aifoo-update-bridge' '$remote_dir/aifoo-deploy-helper'
-             sudo -n '$remote_dir/install.sh' '$remote_dir/aifoo-update-bridge' '$remote_dir/aifoo-deploy-helper' '$VPS_USER'
-             sudo -n install -o root -g root -m 0644 '$remote_dir/nginx-location.conf' /etc/nginx/snippets/aifoo-update-bridge.conf
-             sudo -n nginx -t
-             sudo -n systemctl reload nginx
-             curl --fail --silent --show-error http://127.0.0.1:8091/health >/dev/null
-             find '$remote_dir' -depth -delete"
-
       - name: Verify local update bridge
-        if: ${{ inputs.publish_and_deploy && !inputs.install_control_plane }}
+        if: ${{ inputs.publish_and_deploy }}
         shell: bash
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
