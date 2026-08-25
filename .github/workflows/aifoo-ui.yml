@@ -144,27 +144,21 @@ jobs:
           printf '%s\n' "$VPS_HOST_KEY" > "$RUNNER_TEMP/ssh/known_hosts"
           chmod 600 "$RUNNER_TEMP/ssh/known_hosts"
 
-      - name: Select deployment control plane
+      - name: Verify local update bridge
         if: ${{ inputs.publish_and_deploy }}
-        id: control_plane
         shell: bash
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
           set -euo pipefail
-          if ssh \
+          ssh \
             -i "$RUNNER_TEMP/ssh/id_ed25519" \
             -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
             -o StrictHostKeyChecking=yes \
             -o BatchMode=yes \
             "$VPS_USER@$VPS_HOST" \
-            'curl --fail --silent http://127.0.0.1:8091/health >/dev/null &&
-             sudo -n -l /usr/local/libexec/aifoo-deploy-helper frontend-logout >/dev/null 2>&1'; then
-            printf 'mode=local\n' >> "$GITHUB_OUTPUT"
-          else
-            printf 'mode=legacy\n' >> "$GITHUB_OUTPUT"
-          fi
+            'curl --fail --silent --show-error http://127.0.0.1:8091/health >/dev/null'
 
       - name: Activate frontend on VPS
         if: ${{ inputs.publish_and_deploy }}
@@ -174,7 +168,6 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
           IMAGE: ${{ steps.selected_image.outputs.image }}
-          CONTROL_PLANE: ${{ steps.control_plane.outputs.mode }}
         run: |
           set -euo pipefail
           ssh_base=(
@@ -183,29 +176,11 @@ jobs:
             -o StrictHostKeyChecking=yes
             -o BatchMode=yes
           )
-          case "$CONTROL_PLANE" in
-            local)
-              printf '%s' "$GHCR_TOKEN" | ssh "${ssh_base[@]}" "$VPS_USER@$VPS_HOST" \
-                "sudo -n /usr/local/libexec/aifoo-deploy-helper frontend-login '$GITHUB_ACTOR'"
-              trap 'ssh "${ssh_base[@]}" "$VPS_USER@$VPS_HOST" "sudo -n /usr/local/libexec/aifoo-deploy-helper frontend-logout" >/dev/null 2>&1 || true' EXIT
-              ssh "${ssh_base[@]}" "$VPS_USER@$VPS_HOST" \
-                "sudo -n /usr/local/libexec/aifoo-deploy-helper frontend-activate '$IMAGE'"
-              ;;
-            legacy)
-              digest=${IMAGE##*@}
-              printf '%s' "$GHCR_TOKEN" | ssh "${ssh_base[@]}" "$VPS_USER@$VPS_HOST" \
-                "sudo -n /usr/local/sbin/deploy-sub2api-frontend login '$GITHUB_ACTOR'"
-              trap 'ssh "${ssh_base[@]}" "$VPS_USER@$VPS_HOST" "sudo -n /usr/local/sbin/deploy-sub2api-frontend logout" >/dev/null 2>&1 || true' EXIT
-              ssh "${ssh_base[@]}" "$VPS_USER@$VPS_HOST" \
-                "sudo -n /usr/local/sbin/deploy-sub2api-frontend preload '$digest'"
-              ssh "${ssh_base[@]}" "$VPS_USER@$VPS_HOST" \
-                "cd /opt/sub2api && sudo -n /usr/local/sbin/deploy-sub2api-frontend activate '$digest'"
-              ;;
-            *)
-              echo "No supported VPS deployment control plane is available" >&2
-              exit 1
-              ;;
-          esac
+          printf '%s' "$GHCR_TOKEN" | ssh "${ssh_base[@]}" "$VPS_USER@$VPS_HOST" \
+            "sudo -n /usr/local/libexec/aifoo-deploy-helper frontend-login '$GITHUB_ACTOR'"
+          trap 'ssh "${ssh_base[@]}" "$VPS_USER@$VPS_HOST" "sudo -n /usr/local/libexec/aifoo-deploy-helper frontend-logout" >/dev/null 2>&1 || true' EXIT
+          ssh "${ssh_base[@]}" "$VPS_USER@$VPS_HOST" \
+            "sudo -n /usr/local/libexec/aifoo-deploy-helper frontend-activate '$IMAGE'"
           ssh "${ssh_base[@]}" "$VPS_USER@$VPS_HOST" \
             'curl --fail --silent --show-error http://127.0.0.1:8080/frontend-health >/dev/null && curl --fail --silent --show-error http://127.0.0.1:8080/health >/dev/null'
 
