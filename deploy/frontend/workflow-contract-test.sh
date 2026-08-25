@@ -6,6 +6,7 @@ set -eu
 
 ROOT=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd)
 SYNC_WORKFLOW=$ROOT/.github/workflows/upstream-sync.yml
+CANDIDATE_PREFLIGHT_WORKFLOW=$ROOT/.github/workflows/candidate-preflight.yml
 VALIDATE_WORKFLOW=$ROOT/.github/workflows/validate.yml
 RELEASE_WORKFLOW=$ROOT/.github/workflows/release.yml
 BACKEND_CI_WORKFLOW=$ROOT/.github/workflows/backend-ci.yml
@@ -20,6 +21,8 @@ CONFLICT_RESOLVER=$ROOT/.github/scripts/resolve-upstream-conflicts.sh
 CONFLICT_RESOLVER_TEST=$ROOT/.github/scripts/resolve-upstream-conflicts-test.sh
 UPSTREAM_MERGER=$ROOT/.github/scripts/merge-upstream-release.sh
 UPSTREAM_MERGER_TEST=$ROOT/.github/scripts/merge-upstream-release-test.sh
+CANDIDATE_STATE=$ROOT/.github/scripts/upstream-candidate-state.sh
+CANDIDATE_STATE_TEST=$ROOT/.github/scripts/upstream-candidate-state-test.sh
 PREFLIGHT_WORKFLOW=$ROOT/.github/workflows/preflight.yml
 CLA_WORKFLOW=$ROOT/.github/workflows/cla.yml
 DEPLOY_HELPER=$ROOT/deploy/frontend/deploy-frontend.sh
@@ -87,13 +90,22 @@ require_text "$SYNC_WORKFLOW" 'delay=$((attempt * 3))'
 require_text "$SYNC_WORKFLOW" 'sleep "$delay"'
 require_text "$SYNC_WORKFLOW" 'Unable to synchronize GitHub label $label after $attempt attempts'
 require_text "$SYNC_WORKFLOW" 'return 1'
-require_text "$SYNC_WORKFLOW" 'current_base=$(gh api'
+require_text "$SYNC_WORKFLOW" 'current_base=$(gh_api'
 require_text "$SYNC_WORKFLOW" 'git merge-base --is-ancestor "$release_commit" "$candidate_sha"'
-require_text "$SYNC_WORKFLOW" 'git merge-base --is-ancestor "$production_sha" "$existing_candidate_sha"'
-require_text "$SYNC_WORKFLOW" 'candidate_preserves_workflows=false'
-require_text "$SYNC_WORKFLOW" '|| [ "$candidate_preserves_workflows" != "true" ]; then'
+require_text "$SYNC_WORKFLOW" 'pull_request:'
+require_text "$SYNC_WORKFLOW" 'synchronize'
+require_text "$SYNC_WORKFLOW" "startsWith(github.head_ref, 'upgrade/v')"
+require_text "$SYNC_WORKFLOW" 'github.event.pull_request.head.repo.full_name == github.repository'
+require_text "$SYNC_WORKFLOW" 'RETRY_EXISTING=true'
+require_text "$SYNC_WORKFLOW" 'refresh_reason=$("$state_helper_copy" refresh-reason'
+require_text "$SYNC_WORKFLOW" '[ "$refresh_reason" != "preserve" ]'
+require_text "$SYNC_WORKFLOW" 'Preserving existing candidate $existing_candidate_sha and resuming only unfinished validation stages.'
+require_text "$SYNC_WORKFLOW" 'A repair commit, explicit retry, or retryable infrastructure failure is required before validation resumes.'
+require_text "$SYNC_WORKFLOW" 'current_candidate_state=$(gh_api --paginate'
+require_text "$SYNC_WORKFLOW" 'missing|pending) resume_existing=true'
+reject_text "$SYNC_WORKFLOW" '[ "$retry_failed" = "true" ]'
 require_text "$SYNC_WORKFLOW" 'git push --force-with-lease origin "$branch"'
-require_text "$SYNC_WORKFLOW" 'Refreshing automated candidate $branch from current production $production_sha.'
+require_text "$SYNC_WORKFLOW" 'Refreshing automated candidate $branch from current production $production_sha because $refresh_reason.'
 require_text "$SYNC_WORKFLOW" '.github/scripts/resolve-upstream-conflicts.sh'
 require_text "$SYNC_WORKFLOW" 'resolver_copy="$RUNNER_TEMP/resolve-upstream-conflicts.sh"'
 require_text "$SYNC_WORKFLOW" 'chmod +x "$resolver_copy"'
@@ -105,8 +117,31 @@ require_text "$SYNC_WORKFLOW" 'merge_candidate new'
 merge_candidate_count=$(grep -Ec 'if ! merge_candidate (refreshed|new); then' "$SYNC_WORKFLOW")
 [ "$merge_candidate_count" -eq 2 ] \
   || fail 'new and refreshed release candidates must use the same merge policy helper'
-require_text "$SYNC_WORKFLOW" 'candidate_preserves_workflows'
 require_text "$SYNC_WORKFLOW" 'git diff --quiet "$base_sha" "$candidate_sha" -- .github/workflows'
+require_text "$SYNC_WORKFLOW" 'candidate_fingerprint=$("$state_helper_copy" fingerprint'
+require_text "$SYNC_WORKFLOW" 'candidate_tree_sha=$("$state_helper_copy" candidate-tree-sha'
+require_text "$SYNC_WORKFLOW" 'workflow_contract_sha=$("$state_helper_copy" workflow-contract-sha'
+require_text "$SYNC_WORKFLOW" 'resolver_sha=$("$state_helper_copy" resolver-sha'
+require_text "$SYNC_WORKFLOW" 'status-reusable'
+require_text "$SYNC_WORKFLOW" 'status-state'
+require_text "$SYNC_WORKFLOW" 'automatic_retry_available'
+require_text "$SYNC_WORKFLOW" 'One automatic retry is allowed for a new fingerprint'
+require_text "$SYNC_WORKFLOW" 'aifoo/candidate-preflight'
+require_text "$SYNC_WORKFLOW" 'aifoo/candidate-ci'
+require_text "$SYNC_WORKFLOW" 'aifoo/candidate-security'
+require_text "$SYNC_WORKFLOW" 'aifoo/candidate-frontend'
+require_text "$SYNC_WORKFLOW" 'aifoo/candidate-state'
+require_text "$SYNC_WORKFLOW" 'infra-retryable'
+require_text "$SYNC_WORKFLOW" 'candidate-repair-required'
+require_text "$SYNC_WORKFLOW" 'policy-blocked'
+require_text "$SYNC_WORKFLOW" 'finalization-retryable'
+require_text "$SYNC_WORKFLOW" 'Automatically resuming retryable final delivery'
+require_text "$SYNC_WORKFLOW" 'uses: ./.github/workflows/candidate-preflight.yml'
+require_text "$SYNC_WORKFLOW" 'needs.prepare.outputs.run_preflight'
+require_text "$SYNC_WORKFLOW" 'needs.prepare.outputs.run_ci'
+require_text "$SYNC_WORKFLOW" 'needs.prepare.outputs.run_security'
+require_text "$SYNC_WORKFLOW" 'needs.prepare.outputs.run_frontend'
+require_text "$SYNC_WORKFLOW" 'skip_static_checks: true'
 require_text "$SYNC_WORKFLOW" 'These fork-owned paths were audited and excluded before the candidate merge commit'
 require_text "$SYNC_WORKFLOW" 'deterministic resolver selected only conflict hunks'
 require_text "$SYNC_WORKFLOW" 'Resolver decisions:'
@@ -149,7 +184,8 @@ for workflow in \
   "$BACKEND_PREPARATION_WORKFLOW" \
   "$WEB_UPDATE_WORKFLOW" \
   "$FRONTEND_ACTIVATION_WORKFLOW" \
-  "$PREFLIGHT_WORKFLOW"; do
+  "$PREFLIGHT_WORKFLOW" \
+  "$CANDIDATE_PREFLIGHT_WORKFLOW"; do
   require_runner_only "$workflow" "$VM_RUNNER"
 done
 for workflow in \
@@ -166,6 +202,8 @@ for file in \
   "$CONFLICT_RESOLVER_TEST" \
   "$UPSTREAM_MERGER" \
   "$UPSTREAM_MERGER_TEST" \
+  "$CANDIDATE_STATE" \
+  "$CANDIDATE_STATE_TEST" \
   "$UPDATE_BRIDGE" \
   "$UPDATE_BRIDGE_SERVICE" \
   "$UPDATE_BRIDGE_INSTALL" \
@@ -187,6 +225,9 @@ sh -n "$CONFLICT_RESOLVER"
 sh -n "$CONFLICT_RESOLVER_TEST"
 sh -n "$UPSTREAM_MERGER"
 sh -n "$UPSTREAM_MERGER_TEST"
+sh -n "$CANDIDATE_STATE"
+sh -n "$CANDIDATE_STATE_TEST"
+sh "$CANDIDATE_STATE_TEST"
 sh "$CONFLICT_RESOLVER_TEST"
 sh "$UPSTREAM_MERGER_TEST"
 
@@ -301,11 +342,24 @@ require_text "$VALIDATE_WORKFLOW" "Run deployment backup and restore integration
 require_text "$VALIDATE_WORKFLOW" "Record exact production validation"
 require_text "$VALIDATE_WORKFLOW" "aifoo/frontend-validation"
 require_text "$VALIDATE_WORKFLOW" "statuses: write"
-upgrade_pr_skip_count=$(grep -Fc \
-  "(github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/'))" \
-  "$VALIDATE_WORKFLOW")
-[ "$upgrade_pr_skip_count" -eq 2 ] \
-  || fail "upgrade PR frontend and image jobs must defer to release-sync validation"
+require_text "$VALIDATE_WORKFLOW" 'skip_static_checks:'
+require_text "$VALIDATE_WORKFLOW" 'if: inputs.skip_static_checks != true'
+validate_checkout_override_count=$(grep -Fc "inputs.checkout_ref != ''" "$VALIDATE_WORKFLOW")
+[ "$validate_checkout_override_count" -eq 2 ] \
+  || fail "called upgrade validation must run frontend and image jobs"
+backend_checkout_override_count=$(grep -Fc "inputs.checkout_ref != ''" "$BACKEND_CI_WORKFLOW")
+[ "$backend_checkout_override_count" -ge 4 ] \
+  || fail "called upgrade validation must run every requested backend job"
+security_checkout_override_count=$(grep -Fc "inputs.checkout_ref != ''" "$SECURITY_WORKFLOW")
+[ "$security_checkout_override_count" -eq 2 ] \
+  || fail "called upgrade validation must run both requested security jobs"
+require_text "$CANDIDATE_PREFLIGHT_WORKFLOW" 'workflow_call:'
+require_text "$CANDIDATE_PREFLIGHT_WORKFLOW" 'Verify candidate merge and workflow invariants'
+require_text "$CANDIDATE_PREFLIGHT_WORKFLOW" 'git diff --check "$BASE_SHA...$CANDIDATE_SHA"'
+require_text "$CANDIDATE_PREFLIGHT_WORKFLOW" "git grep -n -E '^(<<<<<<<|=======|>>>>>>>)"
+require_text "$CANDIDATE_PREFLIGHT_WORKFLOW" 'Verify synchronization contracts'
+require_text "$CANDIDATE_PREFLIGHT_WORKFLOW" 'Install frontend dependencies with bounded retry'
+require_text "$CANDIDATE_PREFLIGHT_WORKFLOW" 'Frontend lint and typecheck'
 if grep -Fq "file: Dockerfile" "$VALIDATE_WORKFLOW"; then
   fail "AIFoo validation must not build the full backend image"
 fi

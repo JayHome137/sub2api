@@ -33,7 +33,10 @@ concurrency:
 
 jobs:
   shell:
-    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/')
+    if: >-
+      inputs.checkout_ref != '' ||
+      github.event_name != 'pull_request' ||
+      !startsWith(github.head_ref, 'upgrade/')
     runs-on: [self-hosted, linux, x64, aifoo-vm]
     steps:
       - uses: actions/checkout@v6
@@ -58,7 +61,10 @@ jobs:
       checkout_ref: ${{ inputs.checkout_ref }}
 
   test:
-    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/')
+    if: >-
+      inputs.checkout_ref != '' ||
+      github.event_name != 'pull_request' ||
+      !startsWith(github.head_ref, 'upgrade/')
     runs-on: [self-hosted, linux, x64, aifoo-vm]
     steps:
       - uses: actions/checkout@v6
@@ -82,7 +88,10 @@ jobs:
         run: make test-integration
 
   golangci-lint:
-    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/')
+    if: >-
+      inputs.checkout_ref != '' ||
+      github.event_name != 'pull_request' ||
+      !startsWith(github.head_ref, 'upgrade/')
     runs-on: [self-hosted, linux, x64, aifoo-vm]
     steps:
       - uses: actions/checkout@v6

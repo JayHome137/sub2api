@@ -45,6 +45,11 @@ on:
         required: false
         type: boolean
         default: false
+      skip_static_checks:
+        description: Reuse lint and typecheck from the candidate preflight
+        required: false
+        type: boolean
+        default: false
       publish_candidate:
         description: Publish an exact open upgrade PR candidate before atomic merge
         required: false
@@ -69,7 +74,9 @@ jobs:
   frontend:
     if: >-
       inputs.fast != true &&
-      (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/'))
+      (inputs.checkout_ref != '' ||
+      github.event_name != 'pull_request' ||
+      !startsWith(github.head_ref, 'upgrade/'))
     runs-on: [self-hosted, linux, x64, aifoo-vm]
     defaults:
       run:
@@ -100,6 +107,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Frontend lint and typecheck
+        if: inputs.skip_static_checks != true
         run: |
           pnpm run lint:check
           pnpm run typecheck
@@ -133,7 +141,9 @@ jobs:
     needs: frontend
     if: >-
       always() &&
-      (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'upgrade/')) &&
+      (inputs.checkout_ref != '' ||
+      github.event_name != 'pull_request' ||
+      !startsWith(github.head_ref, 'upgrade/')) &&
       (needs.frontend.result == 'success' || needs.frontend.result == 'skipped')
     runs-on: [self-hosted, linux, x64, aifoo-vm]
     timeout-minutes: 30
