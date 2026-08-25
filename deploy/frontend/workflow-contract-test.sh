@@ -18,6 +18,8 @@ WEB_UPDATE_WORKFLOW=$ROOT/.github/workflows/web-update.yml
 FRONTEND_ACTIVATION_WORKFLOW=$ROOT/.github/workflows/frontend-activation.yml
 CONFLICT_RESOLVER=$ROOT/.github/scripts/resolve-upstream-conflicts.sh
 CONFLICT_RESOLVER_TEST=$ROOT/.github/scripts/resolve-upstream-conflicts-test.sh
+UPSTREAM_MERGER=$ROOT/.github/scripts/merge-upstream-release.sh
+UPSTREAM_MERGER_TEST=$ROOT/.github/scripts/merge-upstream-release-test.sh
 PREFLIGHT_WORKFLOW=$ROOT/.github/workflows/preflight.yml
 CLA_WORKFLOW=$ROOT/.github/workflows/cla.yml
 DEPLOY_HELPER=$ROOT/deploy/frontend/deploy-frontend.sh
@@ -88,13 +90,24 @@ require_text "$SYNC_WORKFLOW" 'return 1'
 require_text "$SYNC_WORKFLOW" 'current_base=$(gh api'
 require_text "$SYNC_WORKFLOW" 'git merge-base --is-ancestor "$release_commit" "$candidate_sha"'
 require_text "$SYNC_WORKFLOW" 'git merge-base --is-ancestor "$production_sha" "$existing_candidate_sha"'
-require_text "$SYNC_WORKFLOW" 'if [ "$candidate_in_current_base" != "true" ] || [ "$retry_failed" = "true" ]; then'
+require_text "$SYNC_WORKFLOW" 'candidate_preserves_workflows=false'
+require_text "$SYNC_WORKFLOW" '|| [ "$candidate_preserves_workflows" != "true" ]; then'
 require_text "$SYNC_WORKFLOW" 'git push --force-with-lease origin "$branch"'
 require_text "$SYNC_WORKFLOW" 'Refreshing automated candidate $branch from current production $production_sha.'
 require_text "$SYNC_WORKFLOW" '.github/scripts/resolve-upstream-conflicts.sh'
 require_text "$SYNC_WORKFLOW" 'resolver_copy="$RUNNER_TEMP/resolve-upstream-conflicts.sh"'
 require_text "$SYNC_WORKFLOW" 'chmod +x "$resolver_copy"'
-require_text "$SYNC_WORKFLOW" 'if ! "$resolver_copy" > "$conflict_log" 2>&1; then'
+require_text "$SYNC_WORKFLOW" '.github/scripts/merge-upstream-release.sh'
+require_text "$SYNC_WORKFLOW" 'merge_helper_copy="$RUNNER_TEMP/merge-upstream-release.sh"'
+require_text "$SYNC_WORKFLOW" 'if ! "$merge_helper_copy"'
+require_text "$SYNC_WORKFLOW" 'merge_candidate refreshed'
+require_text "$SYNC_WORKFLOW" 'merge_candidate new'
+merge_candidate_count=$(grep -Ec 'if ! merge_candidate (refreshed|new); then' "$SYNC_WORKFLOW")
+[ "$merge_candidate_count" -eq 2 ] \
+  || fail 'new and refreshed release candidates must use the same merge policy helper'
+require_text "$SYNC_WORKFLOW" 'candidate_preserves_workflows'
+require_text "$SYNC_WORKFLOW" 'git diff --quiet "$base_sha" "$candidate_sha" -- .github/workflows'
+require_text "$SYNC_WORKFLOW" 'These fork-owned paths were audited and excluded before the candidate merge commit'
 require_text "$SYNC_WORKFLOW" 'deterministic resolver selected only conflict hunks'
 require_text "$SYNC_WORKFLOW" 'Resolver decisions:'
 require_text "$SYNC_WORKFLOW" '-F force=false'
@@ -151,6 +164,8 @@ for file in \
   "$FRONTEND_ACTIVATION_WORKFLOW" \
   "$CONFLICT_RESOLVER" \
   "$CONFLICT_RESOLVER_TEST" \
+  "$UPSTREAM_MERGER" \
+  "$UPSTREAM_MERGER_TEST" \
   "$UPDATE_BRIDGE" \
   "$UPDATE_BRIDGE_SERVICE" \
   "$UPDATE_BRIDGE_INSTALL" \
@@ -166,10 +181,24 @@ require_text "$CONFLICT_RESOLVER" 'is_binary_conflict'
 require_text "$CONFLICT_RESOLVER" 'action=stage-delete'
 require_text "$CONFLICT_RESOLVER" 'git diff --name-only --diff-filter=U'
 require_text "$CONFLICT_RESOLVER" 'No in-progress merge found; refusing to resolve an unrelated failure'
+require_text "$CONFLICT_RESOLVER" 'AIFOO_RESOLVER_NO_COMMIT'
 reject_text "$CONFLICT_RESOLVER" 'git add -A'
 sh -n "$CONFLICT_RESOLVER"
 sh -n "$CONFLICT_RESOLVER_TEST"
+sh -n "$UPSTREAM_MERGER"
+sh -n "$UPSTREAM_MERGER_TEST"
 sh "$CONFLICT_RESOLVER_TEST"
+sh "$UPSTREAM_MERGER_TEST"
+
+require_text "$UPSTREAM_MERGER" 'git merge --no-commit --no-ff'
+require_text "$UPSTREAM_MERGER" 'Current checkout does not match the requested fork base'
+require_text "$UPSTREAM_MERGER" 'Working tree is not clean before the release merge'
+require_text "$UPSTREAM_MERGER" 'git restore --source="$base_commit" --staged --worktree -- .github/workflows'
+require_text "$UPSTREAM_MERGER" 'git diff --cached --quiet "$base_commit" -- .github/workflows'
+require_text "$UPSTREAM_MERGER" 'git diff --name-status --find-renames'
+require_text "$UPSTREAM_MERGER" 'AIFOO_RESOLVER_NO_COMMIT=true'
+require_text "$UPSTREAM_MERGER" 'Release merge commit does not have the exact expected parents'
+reject_text "$SYNC_WORKFLOW" 'git merge --no-edit "$tag"'
 
 require_text "$DEPLOY_WORKFLOW" 'workflow_call:'
 require_text "$BACKEND_DEPLOY_WORKFLOW" 'workflow_call:'

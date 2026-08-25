@@ -162,4 +162,8 @@ if git grep -n -E '^(<<<<<<<|=======|>>>>>>>)( |$)' -- . >/dev/null 2>&1; then
   exit 1
 fi
 git diff --check
-git commit --no-edit
+if [ "${AIFOO_RESOLVER_NO_COMMIT:-false}" = "true" ]; then
+  echo 'resolver_commit=deferred'
+else
+  git commit --no-edit
+fi
