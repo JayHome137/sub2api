@@ -57,5 +57,15 @@ fi
 systemctl daemon-reload
 systemctl enable --now aifoo-update-bridge.service
 systemctl restart aifoo-update-bridge.service
-curl --fail --silent --show-error http://127.0.0.1:8091/health >/dev/null
+
+attempts=0
+while ! curl --fail --silent http://127.0.0.1:8091/health >/dev/null; do
+  attempts=$((attempts + 1))
+  if [ "$attempts" -ge 30 ]; then
+    echo "Update bridge did not become healthy within 30 seconds" >&2
+    systemctl status aifoo-update-bridge.service --no-pager >&2 || true
+    exit 1
+  fi
+  sleep 1
+done
 printf 'control_plane_installed=true\n'
