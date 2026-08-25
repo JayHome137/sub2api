@@ -11,6 +11,10 @@ on:
         description: Install or refresh the local VPS update bridge and deploy helper
         type: boolean
         default: false
+      existing_image_digest:
+        description: Reuse a previously validated sha256 digest after a deployment-only failure
+        type: string
+        default: ''
 
 concurrency:
   group: aifoo-ui-production
@@ -43,6 +47,7 @@ jobs:
           ! rg -n '^\s*(schedule|push|pull_request|issues):' .github/workflows/aifoo-ui.yml
 
       - name: Install frontend dependencies
+        if: ${{ inputs.existing_image_digest == '' }}
         working-directory: frontend
         shell: bash
         run: |
@@ -50,6 +55,7 @@ jobs:
           corepack pnpm@10.28.2 install --frozen-lockfile
 
       - name: Validate frontend
+        if: ${{ inputs.existing_image_digest == '' }}
         working-directory: frontend
         shell: bash
         run: |
@@ -91,7 +97,7 @@ jobs:
           )
 
       - name: Log in to GHCR on the VM
-        if: ${{ inputs.publish_and_deploy }}
+        if: ${{ inputs.publish_and_deploy && inputs.existing_image_digest == '' }}
         shell: bash
         env:
           GHCR_TOKEN: ${{ github.token }}
@@ -100,7 +106,7 @@ jobs:
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
 
       - name: Build and push immutable frontend image
-        if: ${{ inputs.publish_and_deploy }}
+        if: ${{ inputs.publish_and_deploy && inputs.existing_image_digest == '' }}
         id: image
         shell: bash
         env:
@@ -116,6 +122,8 @@ jobs:
             --tag "$IMAGE_REPOSITORY:ui-$GITHUB_SHA" \
             --tag "$IMAGE_REPOSITORY:latest" \
             --metadata-file "$metadata" \
+            --provenance=false \
+            --sbom=false \
             --push \
             .
           digest=$(jq -r '."containerimage.digest"' "$metadata")
@@ -124,6 +132,32 @@ jobs:
             exit 1
           fi
           printf 'image=%s@%s\n' "$IMAGE_REPOSITORY" "$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Select immutable frontend image
+        if: ${{ inputs.publish_and_deploy }}
+        id: selected_image
+        shell: bash
+        env:
+          BUILT_IMAGE: ${{ steps.image.outputs.image }}
+          EXISTING_DIGEST: ${{ inputs.existing_image_digest }}
+          IMAGE_REPOSITORY: ghcr.io/jayhome137/sub2api-frontend
+        run: |
+          set -euo pipefail
+          if [ -n "$EXISTING_DIGEST" ]; then
+            if ! printf '%s' "$EXISTING_DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+              echo "existing_image_digest must be sha256:<64 lowercase hex>" >&2
+              exit 1
+            fi
+            selected="$IMAGE_REPOSITORY@$EXISTING_DIGEST"
+          else
+            selected="$BUILT_IMAGE"
+          fi
+          if ! printf '%s' "$selected" | grep -Eq \
+            '^ghcr\.io/jayhome137/sub2api-frontend@sha256:[0-9a-f]{64}$'; then
+            echo "No immutable frontend image was selected" >&2
+            exit 1
+          fi
+          printf 'image=%s\n' "$selected" >> "$GITHUB_OUTPUT"
 
       - name: Configure VPS SSH
         if: ${{ inputs.publish_and_deploy || inputs.install_control_plane }}
@@ -153,7 +187,7 @@ jobs:
             -o StrictHostKeyChecking=yes \
             -o BatchMode=yes \
             "$VPS_USER@$VPS_HOST" \
-            'set -eu; test -r /opt/sub2api/docker-compose.yml; docker inspect sub2api sub2api-frontend >/dev/null; sudo -n -l >/dev/null'
+            'set -eu; test -r /opt/sub2api/docker-compose.yml; sudo -n -l >/dev/null'
 
       - name: Install local VPS update control plane
         if: ${{ inputs.install_control_plane }}
@@ -220,7 +254,7 @@ jobs:
           GHCR_TOKEN: ${{ github.token }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
-          IMAGE: ${{ steps.image.outputs.image }}
+          IMAGE: ${{ steps.selected_image.outputs.image }}
         run: |
           set -euo pipefail
           ssh_base=(
@@ -238,6 +272,6 @@ jobs:
             'curl --fail --silent --show-error http://127.0.0.1:8080/frontend-health >/dev/null && curl --fail --silent --show-error http://127.0.0.1:8080/health >/dev/null'
 
       - name: Log out of GHCR on the VM
-        if: ${{ always() && inputs.publish_and_deploy }}
+        if: ${{ always() && inputs.publish_and_deploy && inputs.existing_image_digest == '' }}
         shell: bash
         run: docker logout ghcr.io >/dev/null 2>&1 || true
