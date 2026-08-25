@@ -4,6 +4,11 @@ on:
   schedule:
     # Every 6 hours, offset from busy whole-hour slots (Asia/Shanghai 02:17, 08:17, ...).
     - cron: '17 */6 * * *'
+  pull_request:
+    types:
+      - synchronize
+    branches:
+      - production
   workflow_dispatch:
     inputs:
       release_tag:
@@ -38,6 +43,10 @@ env:
 
 jobs:
   prepare:
+    if: >-
+      github.event_name != 'pull_request' ||
+      (startsWith(github.head_ref, 'upgrade/v') &&
+      github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, linux, x64, aifoo-vm]
     outputs:
       release_detected: ${{ steps.prepare.outputs.release_detected }}
@@ -61,6 +70,15 @@ jobs:
       final_sha: ${{ steps.prepare.outputs.final_sha }}
       frontend_preloaded: ${{ steps.prepare.outputs.frontend_preloaded }}
       backend_prepared: ${{ steps.prepare.outputs.backend_prepared }}
+      candidate_tree_sha: ${{ steps.prepare.outputs.candidate_tree_sha }}
+      resolver_sha: ${{ steps.prepare.outputs.resolver_sha }}
+      workflow_contract_sha: ${{ steps.prepare.outputs.workflow_contract_sha }}
+      candidate_fingerprint: ${{ steps.prepare.outputs.candidate_fingerprint }}
+      run_preflight: ${{ steps.prepare.outputs.run_preflight }}
+      run_ci: ${{ steps.prepare.outputs.run_ci }}
+      run_security: ${{ steps.prepare.outputs.run_security }}
+      run_frontend: ${{ steps.prepare.outputs.run_frontend }}
+      automatic_retry_available: ${{ steps.prepare.outputs.automatic_retry_available }}
     steps:
       - name: Checkout AIFoo production history
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -75,8 +93,58 @@ jobs:
           REQUESTED_TAG: ${{ inputs.release_tag }}
           RETRY_EXISTING: ${{ inputs.retry_existing }}
           RETRY_FINAL: ${{ inputs.retry_final }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REF: ${{ github.head_ref }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
+
+          retry_command() {
+            local attempt delay
+            for attempt in 1 2 3; do
+              if "$@"; then
+                return 0
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                echo "Command failed after $attempt attempts: $1" >&2
+                return 1
+              fi
+              delay=$((attempt * 5))
+              echo "Transient command failure (attempt $attempt/3); retrying in ${delay}s: $1" >&2
+              sleep "$delay"
+            done
+          }
+
+          gh_api() {
+            retry_command gh api "$@"
+          }
+
+          issue_number=
+          failure_class=
+          mark_issue_failure() {
+            local class=$1
+            failure_class=$class
+            [ -n "$issue_number" ] || return 0
+            for other_class in infra-retryable candidate-repair-required policy-blocked finalization-retryable; do
+              [ "$other_class" = "$class" ] \
+                || gh issue edit "$issue_number" --remove-label "$other_class" >/dev/null 2>&1 \
+                || true
+            done
+            gh issue edit "$issue_number" \
+              --add-label sync-failed \
+              --add-label "$class" >/dev/null 2>&1 || true
+            gh issue edit "$issue_number" --remove-label ready-for-vps >/dev/null 2>&1 || true
+          }
+
+          handle_unexpected_failure() {
+            local status=$?
+            trap - ERR
+            if [ -n "$issue_number" ] && [ -z "$failure_class" ]; then
+              mark_issue_failure infra-retryable
+            fi
+            exit "$status"
+          }
+          trap handle_unexpected_failure ERR
 
           echo "release_detected=false" >> "$GITHUB_OUTPUT"
           echo "release_tag=" >> "$GITHUB_OUTPUT"
@@ -99,6 +167,23 @@ jobs:
           echo "final_sha=" >> "$GITHUB_OUTPUT"
           echo "frontend_preloaded=false" >> "$GITHUB_OUTPUT"
           echo "backend_prepared=false" >> "$GITHUB_OUTPUT"
+          echo "candidate_tree_sha=" >> "$GITHUB_OUTPUT"
+          echo "resolver_sha=" >> "$GITHUB_OUTPUT"
+          echo "workflow_contract_sha=" >> "$GITHUB_OUTPUT"
+          echo "candidate_fingerprint=" >> "$GITHUB_OUTPUT"
+          echo "run_preflight=true" >> "$GITHUB_OUTPUT"
+          echo "run_ci=true" >> "$GITHUB_OUTPUT"
+          echo "run_security=true" >> "$GITHUB_OUTPUT"
+          echo "run_frontend=true" >> "$GITHUB_OUTPUT"
+          echo "automatic_retry_available=true" >> "$GITHUB_OUTPUT"
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            case "$HEAD_REF" in
+              upgrade/v*) REQUESTED_TAG=${HEAD_REF#upgrade/} ;;
+              *) echo "Ignoring non-upgrade pull request synchronization"; exit 0 ;;
+            esac
+            RETRY_EXISTING=true
+          fi
 
           if [ "$RETRY_FINAL" = "true" ] \
             && [ "$RETRY_EXISTING" = "true" ]; then
@@ -108,9 +193,9 @@ jobs:
 
           official_repo=Wei-Shaw/sub2api
           if [ -n "$REQUESTED_TAG" ]; then
-            release_json=$(gh api "repos/$official_repo/releases/tags/$REQUESTED_TAG")
+            release_json=$(gh_api "repos/$official_repo/releases/tags/$REQUESTED_TAG")
           else
-            release_json=$(gh api "repos/$official_repo/releases/latest")
+            release_json=$(gh_api "repos/$official_repo/releases/latest")
           fi
 
           tag=$(printf '%s' "$release_json" | jq -r '.tag_name')
@@ -148,12 +233,12 @@ jobs:
           echo "release_tag_object=$release_tag_object" >> "$GITHUB_OUTPUT"
           echo "release_commit=$release_commit" >> "$GITHUB_OUTPUT"
 
-          registry_token=$(curl --fail --silent --show-error --retry 3 \
+          registry_token=$(curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 3 \
             --get \
             --data-urlencode service=registry.docker.io \
             --data-urlencode scope=repository:weishaw/sub2api:pull \
             https://auth.docker.io/token | jq -er '.token')
-          manifest_headers=$(curl --fail --silent --show-error --head --retry 3 \
+          manifest_headers=$(curl --fail --silent --show-error --head --retry 3 --retry-all-errors --retry-delay 3 \
             -H "Authorization: Bearer $registry_token" \
             -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
             "https://registry-1.docker.io/v2/weishaw/sub2api/manifests/${tag#v}")
@@ -179,7 +264,7 @@ jobs:
           # The canonical production state issue may be closed between backend
           # activations; keep pagination compatible with older GitHub CLI versions
           # on the VM while reading the complete state history.
-          state_issues=$(gh api --paginate \
+          state_issues=$(gh_api --paginate \
             "repos/$GITHUB_REPOSITORY/issues?state=all&per_page=100" \
             | jq -s '.')
           state_records=$(jq -c --arg title "$state_title" '
@@ -243,7 +328,7 @@ jobs:
               echo "Production backend state no longer matches the official tag" >&2
               exit 1
             fi
-            baseline_headers=$(curl --fail --silent --show-error --head --retry 3 \
+            baseline_headers=$(curl --fail --silent --show-error --head --retry 3 --retry-all-errors --retry-delay 3 \
               -H "Authorization: Bearer $registry_token" \
               -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
               "https://registry-1.docker.io/v2/weishaw/sub2api/manifests/${backend_baseline_release#v}")
@@ -297,12 +382,16 @@ jobs:
 
           ensure_labels() {
             local attempt delay label color
-            for label in upstream-release candidate-testing ui-review-required sync-failed ready-for-vps vps-preloaded vps-preload-failed backend-deploy-required backend-deployed backend-prepared backend-prepare-failed backend-production-state web-update-running web-update-failed; do
+            for label in upstream-release candidate-testing ui-review-required sync-failed infra-retryable candidate-repair-required policy-blocked finalization-retryable ready-for-vps vps-preloaded vps-preload-failed backend-deploy-required backend-deployed backend-prepared backend-prepare-failed backend-production-state web-update-running web-update-failed; do
               case "$label" in
                 upstream-release) color=0969DA ;;
                 candidate-testing) color=FBCA04 ;;
                 ui-review-required) color=D93F0B ;;
                 sync-failed) color=B60205 ;;
+                infra-retryable) color=FBCA04 ;;
+                candidate-repair-required) color=D93F0B ;;
+                policy-blocked) color=B60205 ;;
+                finalization-retryable) color=FBCA04 ;;
                 ready-for-vps) color=0E8A16 ;;
                 vps-preloaded) color=0E8A16 ;;
                 vps-preload-failed) color=B60205 ;;
@@ -330,7 +419,7 @@ jobs:
           }
 
           find_issue_number() {
-            gh api --paginate \
+            gh_api --paginate \
               "repos/$GITHUB_REPOSITORY/issues?state=all&labels=upstream-release&per_page=100" \
               --jq ".[] | select(.pull_request == null and .title == \"$issue_title\") | .number" \
               | sed -n '1p'
@@ -340,12 +429,13 @@ jobs:
           production_sha=$(git rev-parse origin/production)
           if git merge-base --is-ancestor "$release_commit" "$production_sha"; then
             issue_number=$(find_issue_number)
+            issue_labels=
             if [ -n "$issue_number" ]; then
               issue_json=$(gh issue view "$issue_number" --json labels,state)
               issue_labels=$(jq -r '.labels[].name' <<< "$issue_json")
               issue_state=$(jq -r '.state' <<< "$issue_json")
               if printf '%s\n' "$issue_labels" | grep -Fxq vps-deployed; then
-                for stale_label in candidate-testing ready-for-vps sync-failed ui-review-required vps-preloaded vps-preload-failed backend-deploy-required backend-prepared backend-prepare-failed web-update-running web-update-failed; do
+                for stale_label in candidate-testing ready-for-vps sync-failed infra-retryable candidate-repair-required policy-blocked finalization-retryable ui-review-required vps-preloaded vps-preload-failed backend-deploy-required backend-prepared backend-prepare-failed web-update-running web-update-failed; do
                   if printf '%s\n' "$issue_labels" | grep -Fxq "$stale_label"; then
                     gh issue edit "$issue_number" --remove-label "$stale_label" >/dev/null
                   fi
@@ -392,6 +482,12 @@ jobs:
               fully_prepared=true
             fi
 
+            if [ "$fully_prepared" != "true" ] \
+              && printf '%s\n' "$issue_labels" | grep -Fxq finalization-retryable; then
+              RETRY_FINAL=true
+              echo "Automatically resuming retryable final delivery for $tag."
+            fi
+
             if [ "$RETRY_FINAL" != "true" ] \
               && { [ -z "$issue_number" ] \
                 || [ "$candidate_sha" != "$production_sha" ] \
@@ -414,6 +510,7 @@ jobs:
               exit 1
             fi
             if [ "$candidate_sha" != "$production_sha" ]; then
+              mark_issue_failure policy-blocked
               gh issue comment "$issue_number" \
                 --body "Final delivery retry was blocked because candidate branch \`$branch\` is not the exact current production commit \`$production_sha\`. No image was published or deployed."
               exit 1
@@ -424,7 +521,7 @@ jobs:
             if [ "$frontend_preloaded" != "true" ]; then
               gh issue edit "$issue_number" --add-label candidate-testing >/dev/null
             fi
-            for stale_label in ready-for-vps sync-failed vps-preload-failed backend-prepare-failed backend-deployed web-update-running web-update-failed; do
+            for stale_label in ready-for-vps sync-failed infra-retryable candidate-repair-required policy-blocked finalization-retryable vps-preload-failed backend-prepare-failed backend-deployed web-update-running web-update-failed; do
               gh issue edit "$issue_number" --remove-label "$stale_label" >/dev/null 2>&1 || true
             done
             echo "release_detected=true" >> "$GITHUB_OUTPUT"
@@ -499,6 +596,9 @@ jobs:
           merge_helper_copy="$RUNNER_TEMP/merge-upstream-release.sh"
           cp .github/scripts/merge-upstream-release.sh "$merge_helper_copy"
           chmod +x "$merge_helper_copy"
+          state_helper_copy="$RUNNER_TEMP/upstream-candidate-state.sh"
+          cp .github/scripts/upstream-candidate-state.sh "$state_helper_copy"
+          chmod +x "$state_helper_copy"
           workflow_changes_excluded=false
 
           merge_candidate() {
@@ -509,7 +609,7 @@ jobs:
               "$tag" origin/production "$resolver_copy" "$workflow_audit" \
               > "$merge_log" 2>&1; then
               cat "$merge_log" >&2 || true
-              gh issue edit "$issue_number" --add-label sync-failed >/dev/null
+              mark_issue_failure policy-blocked
               comment_file=$(mktemp)
               {
                 echo "The official $tag release could not satisfy the deterministic candidate merge policy while creating the $merge_context candidate. No candidate was published and no deployment was attempted."
@@ -538,6 +638,26 @@ jobs:
               gh issue comment "$issue_number" --body-file "$comment_file"
             fi
 
+            ui_overlap_count=$(sed -n \
+              's/^protected_ui_overlap=//p' "$merge_log" | tail -n 1)
+            if [ "${ui_overlap_count:-0}" -gt 0 ]; then
+              comment_file=$(mktemp)
+              {
+                echo "The fork and official $tag release both changed $ui_overlap_count protected presentation UI file(s). Their complete fork versions were retained before the candidate commit to avoid a textually valid but semantically incomplete Vue merge. Upstream-only UI files and upstream API, store, type, and dependency changes remain eligible for the candidate."
+                echo
+                echo 'Protected UI decisions:'
+                grep 'policy=fork-ui-complete' "$merge_log"
+              } > "$comment_file"
+              gh issue comment "$issue_number" --body-file "$comment_file"
+            fi
+
+            if grep -Fxq \
+              'fork_audit_exceptions_changed=true' "$merge_log"; then
+              workflow_changes_excluded=true
+              gh issue comment "$issue_number" \
+                --body "The official $tag release changed \`.github/audit-exceptions.yml\`. The complete fork-owned security policy was retained; candidate validation will continue with the local reviewed exceptions."
+            fi
+
             if [ -s "$workflow_audit" ]; then
               workflow_changes_excluded=true
               comment_file=$(mktemp)
@@ -555,37 +675,42 @@ jobs:
             git fetch origin "refs/heads/$branch:refs/remotes/origin/$branch"
             existing_candidate_sha=$(git rev-parse "origin/$branch")
             issue_labels=$(gh issue view "$issue_number" --json labels --jq '.labels[].name')
-            candidate_in_current_base=false
-            if git merge-base --is-ancestor "$production_sha" "$existing_candidate_sha"; then
-              candidate_in_current_base=true
-            fi
-            retry_failed=false
-            if printf '%s\n' "$issue_labels" | grep -Fxq sync-failed; then
-              retry_failed=true
-            fi
-            candidate_preserves_workflows=false
-            if git diff --quiet "$production_sha" "$existing_candidate_sha" -- .github/workflows; then
-              candidate_preserves_workflows=true
-            fi
-            refresh_existing=false
-            if [ "$candidate_in_current_base" != "true" ] \
-              || [ "$retry_failed" = "true" ] \
-              || [ "$candidate_preserves_workflows" != "true" ]; then
-              refresh_existing=true
-            fi
-            if [ "$refresh_existing" != "true" ] && [ "$RETRY_EXISTING" != "true" ]; then
-              echo "Existing candidate $branch is awaiting review; scheduled validation will not repeat."
-              echo "release_detected=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            if [ "$refresh_existing" = "true" ]; then
-              echo "Refreshing automated candidate $branch from current production $production_sha."
+            refresh_reason=$("$state_helper_copy" refresh-reason \
+              "$production_sha" "$release_commit" "$existing_candidate_sha")
+            if [ "$refresh_reason" != "preserve" ]; then
+              echo "Refreshing automated candidate $branch from current production $production_sha because $refresh_reason."
               git checkout -B "$branch" origin/production
               if ! merge_candidate refreshed; then
                 exit 0
               fi
               git push --force-with-lease origin "$branch"
             else
+              resume_existing=$RETRY_EXISTING
+              if printf '%s\n' "$issue_labels" | grep -Fxq infra-retryable; then
+                resume_existing=true
+              fi
+              if [ "$resume_existing" != "true" ] \
+                && printf '%s\n' "$issue_labels" \
+                  | grep -Eq '^(candidate-repair-required|policy-blocked)$'; then
+                current_candidate_state=$(gh_api --paginate \
+                  "repos/$GITHUB_REPOSITORY/commits/$existing_candidate_sha/statuses?per_page=100" \
+                  | jq -sr '
+                    add // []
+                    | map(select(.context == "aifoo/candidate-state"))
+                    | sort_by(.created_at, .id)
+                    | last
+                    | .state // "missing"
+                  ')
+                case "$current_candidate_state" in
+                  missing|pending) resume_existing=true ;;
+                esac
+              fi
+              if [ "$resume_existing" != "true" ]; then
+                echo "Existing candidate $branch is preserved. A repair commit, explicit retry, or retryable infrastructure failure is required before validation resumes."
+                echo "release_detected=false" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              echo "Preserving existing candidate $existing_candidate_sha and resuming only unfinished validation stages."
               git checkout -B "$branch" "origin/$branch"
             fi
           else
@@ -596,33 +721,117 @@ jobs:
             git push origin "$branch"
           fi
 
-          for stale_label in ready-for-vps sync-failed ui-review-required vps-preloaded vps-preload-failed backend-prepared backend-prepare-failed backend-deployed web-update-running web-update-failed; do
+          for stale_label in ready-for-vps ui-review-required vps-preloaded vps-preload-failed backend-prepared backend-prepare-failed backend-deployed web-update-running web-update-failed; do
             gh issue edit "$issue_number" --remove-label "$stale_label" >/dev/null 2>&1 || true
           done
 
           base_sha=$(git rev-parse origin/production)
           candidate_sha=$(git rev-parse HEAD)
           if ! git diff --quiet "$base_sha" "$candidate_sha" -- .github/workflows; then
-            gh issue edit "$issue_number" --add-label sync-failed >/dev/null
+            mark_issue_failure policy-blocked
             gh issue comment "$issue_number" \
               --body "Candidate \`$candidate_sha\` changes fork-owned GitHub Actions workflows relative to production \`$base_sha\`. The candidate will be rebuilt from the official release policy before retrying; nothing was merged or deployed."
             echo "blocked=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if ! git merge-base --is-ancestor "$release_commit" "$candidate_sha"; then
-            gh issue edit "$issue_number" --add-label sync-failed >/dev/null
+            mark_issue_failure policy-blocked
             gh issue comment "$issue_number" \
               --body "Candidate \`$candidate_sha\` no longer contains official release commit \`$release_commit\` for $tag. Restore the exact Release merge before retrying; nothing was merged or deployed."
             echo "blocked=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if ! git merge-base --is-ancestor "$base_sha" "$candidate_sha"; then
-            gh issue edit "$issue_number" --add-label sync-failed >/dev/null
+            mark_issue_failure policy-blocked
             gh issue comment "$issue_number" \
               --body "Candidate \`$candidate_sha\` is not based on current production \`$base_sha\`. Rebase or recreate the candidate before retrying; nothing was merged or deployed."
             echo "blocked=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
+          candidate_tree_sha=$("$state_helper_copy" candidate-tree-sha "$candidate_sha")
+          resolver_sha=$("$state_helper_copy" resolver-sha "$base_sha")
+          candidate_resolver_sha=$("$state_helper_copy" resolver-sha "$candidate_sha")
+          workflow_contract_sha=$("$state_helper_copy" workflow-contract-sha "$base_sha")
+          candidate_workflow_contract_sha=$("$state_helper_copy" workflow-contract-sha "$candidate_sha")
+          if [ "$candidate_resolver_sha" != "$resolver_sha" ]; then
+            mark_issue_failure policy-blocked
+            gh issue comment "$issue_number" \
+              --body "Candidate \`$candidate_sha\` changes the fork-owned conflict resolver. The candidate must be rebuilt from the current production resolver before validation; nothing was merged or deployed."
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$candidate_workflow_contract_sha" != "$workflow_contract_sha" ]; then
+            mark_issue_failure policy-blocked
+            gh issue comment "$issue_number" \
+              --body "Candidate \`$candidate_sha\` changes the fork-owned workflow contract. Workflow differences require a separate review and cannot enter an automatic upstream candidate; nothing was merged or deployed."
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          candidate_fingerprint=$("$state_helper_copy" fingerprint \
+            "$base_sha" "$release_commit" "$candidate_sha" "$candidate_tree_sha" \
+            "$resolver_sha" "$workflow_contract_sha")
+          echo "candidate_tree_sha=$candidate_tree_sha" >> "$GITHUB_OUTPUT"
+          echo "resolver_sha=$resolver_sha" >> "$GITHUB_OUTPUT"
+          echo "workflow_contract_sha=$workflow_contract_sha" >> "$GITHUB_OUTPUT"
+          echo "candidate_fingerprint=$candidate_fingerprint" >> "$GITHUB_OUTPUT"
+
+          statuses_file="$RUNNER_TEMP/candidate-statuses.json"
+          gh_api --paginate \
+            "repos/$GITHUB_REPOSITORY/commits/$candidate_sha/statuses?per_page=100" \
+            | jq -s 'add // []' > "$statuses_file"
+
+          run_preflight=true
+          run_ci=true
+          run_security=true
+          run_frontend=true
+          automatic_retry_available=true
+          for context in candidate-state candidate-preflight candidate-ci candidate-security candidate-frontend; do
+            previous_state=$("$state_helper_copy" status-state \
+              "aifoo/$context" "$candidate_fingerprint" "$statuses_file")
+            case "$previous_state" in
+              error|failure) automatic_retry_available=false ;;
+            esac
+          done
+          if "$state_helper_copy" status-reusable \
+            aifoo/candidate-preflight "$candidate_fingerprint" "$statuses_file"; then
+            run_preflight=false
+          fi
+          if "$state_helper_copy" status-reusable \
+            aifoo/candidate-ci "$candidate_fingerprint" "$statuses_file"; then
+            run_ci=false
+          fi
+          if "$state_helper_copy" status-reusable \
+            aifoo/candidate-security "$candidate_fingerprint" "$statuses_file"; then
+            run_security=false
+          fi
+          if "$state_helper_copy" status-reusable \
+            aifoo/candidate-frontend "$candidate_fingerprint" "$statuses_file"; then
+            run_frontend=false
+          fi
+          echo "run_preflight=$run_preflight" >> "$GITHUB_OUTPUT"
+          echo "run_ci=$run_ci" >> "$GITHUB_OUTPUT"
+          echo "run_security=$run_security" >> "$GITHUB_OUTPUT"
+          echo "run_frontend=$run_frontend" >> "$GITHUB_OUTPUT"
+          echo "automatic_retry_available=$automatic_retry_available" >> "$GITHUB_OUTPUT"
+
+          status_description="fingerprint:$candidate_fingerprint"
+          gh_api --method POST "repos/$GITHUB_REPOSITORY/statuses/$candidate_sha" \
+            -f state=pending \
+            -f context=aifoo/candidate-state \
+            -f description="$status_description" \
+            -f target_url="$RUN_URL" >/dev/null
+          for stage in preflight ci security frontend; do
+            eval "run_stage=\$run_$stage"
+            [ "$run_stage" = "true" ] || continue
+            gh_api --method POST "repos/$GITHUB_REPOSITORY/statuses/$candidate_sha" \
+              -f state=pending \
+              -f context="aifoo/candidate-$stage" \
+              -f description="$status_description" \
+              -f target_url="$RUN_URL" >/dev/null
+          done
+
           changed_paths="$RUNNER_TEMP/upstream-changed-paths.txt"
           git diff --name-only "$base_sha...$candidate_sha" | sort -u > "$changed_paths"
 
@@ -657,6 +866,10 @@ jobs:
               echo "- Fork-owned upstream workflow changes excluded: \`$workflow_changes_excluded\`"
               echo "- $migration_note"
               echo "- Candidate commit: \`$candidate_sha\`"
+              echo "- Candidate tree: \`$candidate_tree_sha\`"
+              echo "- Resolver: \`$resolver_sha\`"
+              echo "- Workflow contract: \`$workflow_contract_sha\`"
+              echo "- Candidate fingerprint: \`$candidate_fingerprint\`"
               echo
               echo "Candidate CI, security, AIFoo browser tests, and image smoke tests run inside the release-sync workflow. UI-related releases auto-merge when the official Release merges cleanly and every deterministic check passes; newly added upstream surfaces retain their official UI by default. Merging, validating, and publishing artifacts do not deploy them to the VPS."
             } > "$pr_body"
@@ -668,7 +881,7 @@ jobs:
             pr_number=${pr_url##*/}
           fi
 
-          gh issue comment "$issue_number" --body "Candidate PR #$pr_number is ready for remote validation. Direct frontend changes: \`$direct_ui\`; potential backend-to-frontend contract changes: \`$backend_contract\`; deterministic UI compatibility checks required: \`$ui_related\`; fork-owned upstream workflow changes excluded: \`$workflow_changes_excluded\`; official backend: \`$backend_image_ref\`; backend deployment required: \`$backend_deploy_required\`."
+          gh issue comment "$issue_number" --body "Candidate PR #$pr_number is ready for resumable remote validation. Fingerprint: \`$candidate_fingerprint\`; preflight: \`$run_preflight\`; CI: \`$run_ci\`; security: \`$run_security\`; frontend/image: \`$run_frontend\`. Direct frontend changes: \`$direct_ui\`; potential backend-to-frontend contract changes: \`$backend_contract\`; deterministic UI compatibility checks required: \`$ui_related\`; fork-owned upstream workflow changes excluded: \`$workflow_changes_excluded\`; official backend: \`$backend_image_ref\`; backend deployment required: \`$backend_deploy_required\`."
 
           echo "candidate_ready=true" >> "$GITHUB_OUTPUT"
           echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
@@ -681,7 +894,16 @@ jobs:
             echo
             echo "- Release: [$tag]($release_url)"
             echo "- Candidate: \`$candidate_sha\`"
+            echo "- Candidate tree: \`$candidate_tree_sha\`"
             echo "- Production base: \`$base_sha\`"
+            echo "- Resolver: \`$resolver_sha\`"
+            echo "- Workflow contract: \`$workflow_contract_sha\`"
+            echo "- Fingerprint: \`$candidate_fingerprint\`"
+            echo "- Run preflight: \`$run_preflight\`"
+            echo "- Run CI: \`$run_ci\`"
+            echo "- Run security: \`$run_security\`"
+            echo "- Run frontend/image: \`$run_frontend\`"
+            echo "- Automatic retry available: \`$automatic_retry_available\`"
             echo "- UI-related paths: \`$ui_related\`"
             echo "- Direct frontend surface: \`$direct_ui\`"
             echo "- Backend-to-frontend contract: \`$backend_contract\`"
@@ -697,32 +919,128 @@ jobs:
             sed -n '1,100p' "$changed_paths" | sed 's/^/- `/' | sed 's/$/`/'
           } >> "$GITHUB_STEP_SUMMARY"
 
-  candidate_ci:
+  candidate_preflight:
     needs: prepare
-    if: needs.prepare.outputs.candidate_ready == 'true'
+    if: >-
+      needs.prepare.outputs.candidate_ready == 'true' &&
+      needs.prepare.outputs.run_preflight == 'true'
+    uses: ./.github/workflows/candidate-preflight.yml
+    with:
+      checkout_ref: ${{ needs.prepare.outputs.candidate_sha }}
+      base_sha: ${{ needs.prepare.outputs.base_sha }}
+      release_commit: ${{ needs.prepare.outputs.release_commit }}
+      workflow_contract_sha: ${{ needs.prepare.outputs.workflow_contract_sha }}
+
+  recover_candidate_frontend:
+    needs: prepare
+    if: >-
+      needs.prepare.outputs.candidate_ready == 'true' &&
+      needs.prepare.outputs.run_frontend != 'true'
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      reusable: ${{ steps.recover.outputs.reusable }}
+      source_sha: ${{ steps.recover.outputs.source_sha }}
+      image_digest: ${{ steps.recover.outputs.image_digest }}
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify reusable candidate image evidence
+        id: recover
+        env:
+          CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          echo "reusable=false" >> "$GITHUB_OUTPUT"
+          tag="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sub2api-frontend:candidate-$CANDIDATE_SHA"
+          pulled=false
+          for attempt in 1 2 3; do
+            if docker pull "$tag" >/dev/null 2>&1; then
+              pulled=true
+              break
+            fi
+            [ "$attempt" -lt 3 ] && sleep $((attempt * 5))
+          done
+          if [ "$pulled" != "true" ]; then
+            echo "The previously validated image is unavailable; frontend/image validation will rerun."
+            exit 0
+          fi
+          revision=$(docker image inspect "$tag" \
+            --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+          source=$(docker image inspect "$tag" \
+            --format '{{index .Config.Labels "org.opencontainers.image.source"}}')
+          digest=$(docker image inspect "$tag" --format '{{range .RepoDigests}}{{println .}}{{end}}' \
+            | sed -n "s|^${tag%:*}@||p" | sed -n '1p')
+          if [ "$revision" != "$CANDIDATE_SHA" ] \
+            || [ "$source" != "https://github.com/$GITHUB_REPOSITORY" ] \
+            || ! printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "The previously validated image evidence is stale; frontend/image validation will rerun."
+            exit 0
+          fi
+          echo "reusable=true" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+          echo "image_digest=$digest" >> "$GITHUB_OUTPUT"
+
+  candidate_ci:
+    needs:
+      - prepare
+      - candidate_preflight
+    if: >-
+      always() &&
+      needs.prepare.outputs.candidate_ready == 'true' &&
+      (needs.prepare.outputs.run_preflight != 'true' ||
+      needs.candidate_preflight.result == 'success') &&
+      needs.prepare.outputs.run_ci == 'true'
     uses: ./.github/workflows/backend-ci.yml
     with:
       checkout_ref: ${{ needs.prepare.outputs.candidate_sha }}
 
   candidate_security:
-    needs: prepare
-    if: needs.prepare.outputs.candidate_ready == 'true'
+    needs:
+      - prepare
+      - candidate_preflight
+    if: >-
+      always() &&
+      needs.prepare.outputs.candidate_ready == 'true' &&
+      (needs.prepare.outputs.run_preflight != 'true' ||
+      needs.candidate_preflight.result == 'success') &&
+      needs.prepare.outputs.run_security == 'true'
     uses: ./.github/workflows/security-scan.yml
     with:
       checkout_ref: ${{ needs.prepare.outputs.candidate_sha }}
 
   candidate_frontend:
-    needs: prepare
-    if: needs.prepare.outputs.candidate_ready == 'true'
+    needs:
+      - prepare
+      - candidate_preflight
+      - recover_candidate_frontend
+    if: >-
+      always() &&
+      needs.prepare.outputs.candidate_ready == 'true' &&
+      (needs.prepare.outputs.run_preflight != 'true' ||
+      needs.candidate_preflight.result == 'success') &&
+      (needs.prepare.outputs.run_frontend == 'true' ||
+      (needs.recover_candidate_frontend.result == 'success' &&
+      needs.recover_candidate_frontend.outputs.reusable != 'true'))
     uses: ./.github/workflows/validate.yml
     with:
       checkout_ref: ${{ needs.prepare.outputs.candidate_sha }}
       publish_image: true
       publish_candidate: true
+      skip_static_checks: true
 
   gate:
     needs:
       - prepare
+      - candidate_preflight
+      - recover_candidate_frontend
       - candidate_ci
       - candidate_security
       - candidate_frontend
@@ -731,84 +1049,220 @@ jobs:
     outputs:
       merged: ${{ steps.gate.outputs.merged }}
       final_sha: ${{ steps.gate.outputs.final_sha }}
+      frontend_source_sha: ${{ steps.gate.outputs.frontend_source_sha }}
+      frontend_image_digest: ${{ steps.gate.outputs.frontend_image_digest }}
     steps:
-      - name: Apply validation and UI gates
+      - name: Apply resumable validation and UI gates
         id: gate
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PREFLIGHT_RESULT: ${{ needs.candidate_preflight.result }}
           CI_RESULT: ${{ needs.candidate_ci.result }}
           SECURITY_RESULT: ${{ needs.candidate_security.result }}
           FRONTEND_RESULT: ${{ needs.candidate_frontend.result }}
+          FRONTEND_SOURCE_SHA: ${{ needs.candidate_frontend.outputs.source_sha }}
+          FRONTEND_IMAGE_DIGEST: ${{ needs.candidate_frontend.outputs.image_digest }}
+          RECOVER_RESULT: ${{ needs.recover_candidate_frontend.result }}
+          RECOVERED: ${{ needs.recover_candidate_frontend.outputs.reusable }}
+          RECOVERED_SOURCE_SHA: ${{ needs.recover_candidate_frontend.outputs.source_sha }}
+          RECOVERED_IMAGE_DIGEST: ${{ needs.recover_candidate_frontend.outputs.image_digest }}
+          RUN_PREFLIGHT: ${{ needs.prepare.outputs.run_preflight }}
+          RUN_CI: ${{ needs.prepare.outputs.run_ci }}
+          RUN_SECURITY: ${{ needs.prepare.outputs.run_security }}
+          RUN_FRONTEND: ${{ needs.prepare.outputs.run_frontend }}
+          AUTOMATIC_RETRY_AVAILABLE: ${{ needs.prepare.outputs.automatic_retry_available }}
+          CANDIDATE_FINGERPRINT: ${{ needs.prepare.outputs.candidate_fingerprint }}
+          CANDIDATE_TREE_SHA: ${{ needs.prepare.outputs.candidate_tree_sha }}
           UI_RELATED: ${{ needs.prepare.outputs.ui_related }}
           ISSUE_NUMBER: ${{ needs.prepare.outputs.issue_number }}
           PR_NUMBER: ${{ needs.prepare.outputs.pr_number }}
           BASE_SHA: ${{ needs.prepare.outputs.base_sha }}
           CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           echo "merged=false" >> "$GITHUB_OUTPUT"
           echo "final_sha=" >> "$GITHUB_OUTPUT"
+          echo "frontend_source_sha=" >> "$GITHUB_OUTPUT"
+          echo "frontend_image_digest=" >> "$GITHUB_OUTPUT"
 
-          if [ "$CI_RESULT" != "success" ] \
-            || [ "$SECURITY_RESULT" != "success" ] \
-            || [ "$FRONTEND_RESULT" != "success" ]; then
-            gh issue edit "$ISSUE_NUMBER" --add-label sync-failed >/dev/null
-            gh issue comment "$ISSUE_NUMBER" \
-              --body "Candidate validation failed. CI: \`$CI_RESULT\`; security: \`$SECURITY_RESULT\`; AIFoo frontend: \`$FRONTEND_RESULT\`. Nothing was merged or deployed."
-            exit 1
+          retry_command() {
+            local attempt
+            for attempt in 1 2 3; do
+              if "$@"; then return 0; fi
+              [ "$attempt" -lt 3 ] || return 1
+              sleep $((attempt * 5))
+            done
+          }
+          gh_api() { retry_command gh api "$@"; }
+          set_status() {
+            local state=$1 context=$2
+            gh_api --method POST "repos/$GITHUB_REPOSITORY/statuses/$CANDIDATE_SHA" \
+              -f state="$state" \
+              -f context="$context" \
+              -f description="fingerprint:$CANDIDATE_FINGERPRINT" \
+              -f target_url="$RUN_URL" >/dev/null
+          }
+          mark_failure() {
+            local class=$1
+            for other_class in infra-retryable candidate-repair-required policy-blocked finalization-retryable; do
+              [ "$other_class" = "$class" ] \
+                || gh issue edit "$ISSUE_NUMBER" --remove-label "$other_class" >/dev/null 2>&1 \
+                || true
+            done
+            gh issue edit "$ISSUE_NUMBER" \
+              --add-label sync-failed \
+              --add-label "$class" \
+              --remove-label ready-for-vps >/dev/null 2>&1 || true
+          }
+          handle_gate_failure() {
+            local status=$?
+            trap - ERR
+            mark_failure infra-retryable
+            exit "$status"
+          }
+          trap handle_gate_failure ERR
+
+          preflight_ok=false
+          ci_ok=false
+          security_ok=false
+          frontend_ok=false
+          if [ "$RUN_PREFLIGHT" != "true" ] || [ "$PREFLIGHT_RESULT" = "success" ]; then
+            preflight_ok=true
+          fi
+          if [ "$RUN_CI" != "true" ] || [ "$CI_RESULT" = "success" ]; then
+            ci_ok=true
+          fi
+          if [ "$RUN_SECURITY" != "true" ] || [ "$SECURITY_RESULT" = "success" ]; then
+            security_ok=true
           fi
 
-          current_base=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
+          if [ "$FRONTEND_RESULT" = "success" ]; then
+            frontend_source_sha=$FRONTEND_SOURCE_SHA
+            frontend_image_digest=$FRONTEND_IMAGE_DIGEST
+            frontend_ok=true
+          elif [ "$RECOVER_RESULT" = "success" ] && [ "$RECOVERED" = "true" ]; then
+            frontend_source_sha=$RECOVERED_SOURCE_SHA
+            frontend_image_digest=$RECOVERED_IMAGE_DIGEST
+            frontend_ok=true
+          else
+            frontend_source_sha=
+            frontend_image_digest=
+          fi
+          if [ "$frontend_source_sha" != "$CANDIDATE_SHA" ] \
+            || ! printf '%s' "$frontend_image_digest" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            frontend_ok=false
+          fi
+
+          if [ "$RUN_PREFLIGHT" = "true" ]; then
+            if [ "$preflight_ok" = "true" ]; then
+              set_status success aifoo/candidate-preflight
+            else
+              set_status failure aifoo/candidate-preflight
+            fi
+          fi
+          if [ "$RUN_CI" = "true" ] && [ "$CI_RESULT" != "skipped" ]; then
+            if [ "$ci_ok" = "true" ]; then
+              set_status success aifoo/candidate-ci
+            else
+              set_status failure aifoo/candidate-ci
+            fi
+          fi
+          if [ "$RUN_SECURITY" = "true" ] && [ "$SECURITY_RESULT" != "skipped" ]; then
+            if [ "$security_ok" = "true" ]; then
+              set_status success aifoo/candidate-security
+            else
+              set_status failure aifoo/candidate-security
+            fi
+          fi
+          if [ "$FRONTEND_RESULT" != "skipped" ]; then
+            if [ "$frontend_ok" = "true" ]; then
+              set_status success aifoo/candidate-frontend
+            else
+              set_status failure aifoo/candidate-frontend
+            fi
+          fi
+
+          if [ "$preflight_ok" != "true" ] \
+            || [ "$ci_ok" != "true" ] \
+            || [ "$security_ok" != "true" ] \
+            || [ "$frontend_ok" != "true" ]; then
+            failure_class=candidate-repair-required
+            if [ "$AUTOMATIC_RETRY_AVAILABLE" = "true" ]; then
+              failure_class=infra-retryable
+            fi
+            mark_failure "$failure_class"
+            set_status failure aifoo/candidate-state
+            gh issue comment "$ISSUE_NUMBER" \
+              --body "Candidate validation stopped as \`$failure_class\`. Preflight: \`$PREFLIGHT_RESULT\`; CI: \`$CI_RESULT\`; security: \`$SECURITY_RESULT\`; AIFoo frontend/image: \`$FRONTEND_RESULT\`; reusable image: \`$RECOVERED\`. Successful stages for fingerprint \`$CANDIDATE_FINGERPRINT\` are retained. One automatic retry is allowed for a new fingerprint; a repeated failure requires a repair commit on PR #$PR_NUMBER, whose synchronize event resumes validation. Nothing was merged or deployed."
+            exit 0
+          fi
+
+          current_base=$(gh_api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
           if [ "$current_base" != "$BASE_SHA" ]; then
-            gh issue edit "$ISSUE_NUMBER" --add-label sync-failed >/dev/null
+            mark_failure policy-blocked
+            set_status failure aifoo/candidate-state
             gh issue comment "$ISSUE_NUMBER" \
-              --body "Production changed from validated base \`$BASE_SHA\` to \`$current_base\` while candidate checks were running. Merge is blocked until the candidate is rebased and the full workflow is rerun."
-            exit 1
+              --body "Production changed from validated base \`$BASE_SHA\` to \`$current_base\` while candidate checks were running. The next resume will rebuild from the new base before merging."
+            exit 0
           fi
 
-          pr_head=$(gh pr view "$PR_NUMBER" --json headRefOid --jq '.headRefOid')
+          pr_head=$(retry_command gh pr view "$PR_NUMBER" --json headRefOid --jq '.headRefOid')
           if [ "$pr_head" != "$CANDIDATE_SHA" ]; then
-            gh issue edit "$ISSUE_NUMBER" --add-label sync-failed >/dev/null
+            mark_failure policy-blocked
+            set_status failure aifoo/candidate-state
             gh issue comment "$ISSUE_NUMBER" \
-              --body "PR #$PR_NUMBER moved from validated candidate \`$CANDIDATE_SHA\` to \`$pr_head\`. Merge is blocked until the exact new head is validated."
-            exit 1
+              --body "PR #$PR_NUMBER moved from validated candidate \`$CANDIDATE_SHA\` to \`$pr_head\`. Its synchronize event will validate the exact new head; no stale result was merged."
+            exit 0
           fi
 
           if [ "$UI_RELATED" = "true" ]; then
             gh issue comment "$ISSUE_NUMBER" \
-              --body "UI-related upstream changes for exact candidate \`$CANDIDATE_SHA\` passed CI, security, AIFoo browser tests, and image smoke tests. The deterministic compatibility policy approved the locked-base merge; newly added upstream surfaces retain their official UI by default."
+              --body "UI-related upstream changes for exact candidate \`$CANDIDATE_SHA\` passed preflight, CI, security, AIFoo browser tests, and image smoke tests. The deterministic compatibility policy approved the locked-base merge; newly added upstream surfaces retain their official UI by default."
           fi
 
-          if ! gh api \
+          if ! gh_api \
             --method PATCH \
             "repos/$GITHUB_REPOSITORY/git/refs/heads/production" \
             -f sha="$CANDIDATE_SHA" \
             -F force=false >/dev/null; then
-            actual_base=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
-            gh issue edit "$ISSUE_NUMBER" --add-label sync-failed >/dev/null
+            actual_base=$(gh_api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
+            if [ "$actual_base" = "$BASE_SHA" ]; then
+              mark_failure infra-retryable
+            else
+              mark_failure policy-blocked
+            fi
+            set_status failure aifoo/candidate-state
             gh issue comment "$ISSUE_NUMBER" \
-              --body "GitHub rejected the atomic fast-forward from \`$BASE_SHA\` to \`$CANDIDATE_SHA\`; production is now \`$actual_base\`. Nothing unvalidated was merged. Rebase and rerun the full workflow."
-            exit 1
+              --body "GitHub rejected the atomic fast-forward from \`$BASE_SHA\` to \`$CANDIDATE_SHA\`; production is now \`$actual_base\`. Nothing unvalidated was merged. Successful stage evidence remains attached to the exact fingerprint."
+            exit 0
           fi
-          final_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
+          final_sha=$(gh_api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
           if [ "$final_sha" != "$CANDIDATE_SHA" ]; then
-            gh issue edit "$ISSUE_NUMBER" --add-label sync-failed >/dev/null
+            mark_failure policy-blocked
+            set_status failure aifoo/candidate-state
             gh issue comment "$ISSUE_NUMBER" \
               --body "Production did not remain at the atomically validated candidate \`$CANDIDATE_SHA\`. Final image publication is blocked."
-            exit 1
+            exit 0
           fi
 
-          candidate_tree=$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$CANDIDATE_SHA" --jq '.tree.sha')
-          final_tree=$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$final_sha" --jq '.tree.sha')
-          if [ "$candidate_tree" != "$final_tree" ]; then
-            gh issue edit "$ISSUE_NUMBER" --add-label sync-failed >/dev/null
+          final_tree=$(gh_api "repos/$GITHUB_REPOSITORY/git/commits/$final_sha" --jq '.tree.sha')
+          if [ "$CANDIDATE_TREE_SHA" != "$final_tree" ]; then
+            mark_failure policy-blocked
+            set_status failure aifoo/candidate-state
             gh issue comment "$ISSUE_NUMBER" \
               --body "The merged production tree does not match the validated candidate tree. Final image publication is blocked."
-            exit 1
+            exit 0
           fi
 
+          set_status success aifoo/candidate-state
+          for label in sync-failed infra-retryable candidate-repair-required policy-blocked finalization-retryable; do
+            gh issue edit "$ISSUE_NUMBER" --remove-label "$label" >/dev/null 2>&1 || true
+          done
           echo "merged=true" >> "$GITHUB_OUTPUT"
           echo "final_sha=$final_sha" >> "$GITHUB_OUTPUT"
+          echo "frontend_source_sha=$frontend_source_sha" >> "$GITHUB_OUTPUT"
+          echo "frontend_image_digest=$frontend_image_digest" >> "$GITHUB_OUTPUT"
           gh issue comment "$ISSUE_NUMBER" \
             --body "Candidate checks passed and PR #$PR_NUMBER was atomically fast-forwarded into production as \`$final_sha\`. The exact validated candidate image is now being finalized without rebuilding." \
             || echo "Unable to post the non-critical post-merge comment" >&2
@@ -842,14 +1296,30 @@ jobs:
         run: |
           set -euo pipefail
           echo "reusable=false" >> "$GITHUB_OUTPUT"
-          production_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
+          gh_api() {
+            local attempt
+            for attempt in 1 2 3; do
+              if gh api "$@"; then return 0; fi
+              [ "$attempt" -lt 3 ] || return 1
+              sleep $((attempt * 5))
+            done
+          }
+          production_sha=$(gh_api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
           if [ "$FINAL_SHA" != "$production_sha" ]; then
             echo "Production moved before final delivery recovery" >&2
             exit 1
           fi
 
           tag="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sub2api-frontend:candidate-$FINAL_SHA"
-          if ! docker pull "$tag" >/dev/null 2>&1; then
+          pulled=false
+          for attempt in 1 2 3; do
+            if docker pull "$tag" >/dev/null 2>&1; then
+              pulled=true
+              break
+            fi
+            [ "$attempt" -lt 3 ] && sleep $((attempt * 5))
+          done
+          if [ "$pulled" != "true" ]; then
             echo "No reusable candidate image exists; a necessary rebuild will run"
             exit 0
           fi
@@ -919,9 +1389,8 @@ jobs:
           FINAL_RETRY: ${{ needs.prepare.outputs.final_retry }}
           EXPECTED_MERGED_SHA: ${{ needs.gate.outputs.final_sha }}
           EXPECTED_RETRY_SHA: ${{ needs.prepare.outputs.final_sha }}
-          CANDIDATE_RESULT: ${{ needs.candidate_frontend.result }}
-          CANDIDATE_SHA: ${{ needs.candidate_frontend.outputs.source_sha }}
-          CANDIDATE_DIGEST: ${{ needs.candidate_frontend.outputs.image_digest }}
+          CANDIDATE_SHA: ${{ needs.gate.outputs.frontend_source_sha }}
+          CANDIDATE_DIGEST: ${{ needs.gate.outputs.frontend_image_digest }}
           RECOVER_RESULT: ${{ needs.recover_final.result }}
           RECOVERED: ${{ needs.recover_final.outputs.reusable }}
           RECOVERED_SHA: ${{ needs.recover_final.outputs.source_sha }}
@@ -932,11 +1401,15 @@ jobs:
           RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
+          gh_api() {
+            local attempt
+            for attempt in 1 2 3; do
+              if gh api "$@"; then return 0; fi
+              [ "$attempt" -lt 3 ] || return 1
+              sleep $((attempt * 5))
+            done
+          }
           if [ "$MERGED" = "true" ]; then
-            if [ "$CANDIDATE_RESULT" != "success" ]; then
-              echo "The merged candidate has no successful validation result" >&2
-              exit 1
-            fi
             expected_sha=$EXPECTED_MERGED_SHA
             source_sha=$CANDIDATE_SHA
             image_digest=$CANDIDATE_DIGEST
@@ -959,14 +1432,22 @@ jobs:
             echo "Final image evidence does not match the approved source" >&2
             exit 1
           fi
-          production_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
+          production_sha=$(gh_api "repos/$GITHUB_REPOSITORY/git/ref/heads/production" --jq '.object.sha')
           if [ "$source_sha" != "$production_sha" ]; then
             echo "Production moved after candidate validation" >&2
             exit 1
           fi
 
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sub2api-frontend@$image_digest"
-          docker pull "$image" >/dev/null
+          pulled=false
+          for attempt in 1 2 3; do
+            if docker pull "$image" >/dev/null; then
+              pulled=true
+              break
+            fi
+            [ "$attempt" -lt 3 ] && sleep $((attempt * 5))
+          done
+          [ "$pulled" = "true" ]
           revision=$(docker image inspect "$image" \
             --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
           source=$(docker image inspect "$image" \
@@ -977,7 +1458,7 @@ jobs:
             exit 1
           fi
 
-          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$source_sha" \
+          gh_api --method POST "repos/$GITHUB_REPOSITORY/statuses/$source_sha" \
             -f state=success \
             -f context=aifoo/frontend-validation \
             -f description='Exact candidate tests, image, and rollback validation passed' \
@@ -1018,6 +1499,19 @@ jobs:
         run: |
           set -euo pipefail
 
+          handle_notify_failure() {
+            local status=$?
+            trap - ERR
+            if [ -n "$ISSUE_NUMBER" ]; then
+              gh issue edit "$ISSUE_NUMBER" \
+                --add-label sync-failed \
+                --add-label finalization-retryable \
+                --remove-label ready-for-vps >/dev/null 2>&1 || true
+            fi
+            exit "$status"
+          }
+          trap handle_notify_failure ERR
+
           if [ -z "$ISSUE_NUMBER" ]; then
             echo "No tracking issue was created; see the prepare job for the failure." >&2
             exit 1
@@ -1030,7 +1524,9 @@ jobs:
           fi
           if [ "$FINAL_RETRY" != "true" ] && [ "$GATE_RESULT" != "success" ]; then
             gh issue edit "$ISSUE_NUMBER" --remove-label ready-for-vps >/dev/null 2>&1 || true
-            gh issue edit "$ISSUE_NUMBER" --add-label sync-failed >/dev/null
+            gh issue edit "$ISSUE_NUMBER" \
+              --add-label sync-failed \
+              --add-label infra-retryable >/dev/null
             exit 1
           fi
           if [ "$FINAL_RETRY" != "true" ] && [ "$MERGED" != "true" ]; then
@@ -1038,13 +1534,15 @@ jobs:
           fi
           if [ "$FINAL_RESULT" != "success" ] || [ -z "$IMAGE_DIGEST" ]; then
             gh issue edit "$ISSUE_NUMBER" --remove-label ready-for-vps >/dev/null 2>&1 || true
-            gh issue edit "$ISSUE_NUMBER" --add-label sync-failed >/dev/null
+            gh issue edit "$ISSUE_NUMBER" \
+              --add-label sync-failed \
+              --add-label finalization-retryable >/dev/null
             gh issue comment "$ISSUE_NUMBER" \
               --body "Production merged, but exact candidate image finalization failed. VPS deployment remains blocked; retry reuses the candidate image when its evidence remains valid and rebuilds only when required."
             exit 1
           fi
 
-          for label in candidate-testing ui-review-required sync-failed vps-preloaded vps-preload-failed backend-prepared backend-prepare-failed; do
+          for label in candidate-testing ui-review-required sync-failed infra-retryable candidate-repair-required policy-blocked finalization-retryable vps-preloaded vps-preload-failed backend-prepared backend-prepare-failed; do
             gh issue edit "$ISSUE_NUMBER" --remove-label "$label" >/dev/null 2>&1 || true
           done
           comment_file=$(mktemp)
@@ -1120,6 +1618,37 @@ jobs:
       issue_number: ${{ needs.prepare.outputs.issue_number }}
     secrets: inherit
 
+  classify_delivery_failure:
+    needs:
+      - prepare
+      - preload_frontend
+      - prepare_backend
+    if: >-
+      always() &&
+      needs.prepare.outputs.release_detected == 'true' &&
+      ((needs.prepare.outputs.frontend_preloaded != 'true' &&
+      (needs.preload_frontend.result == 'failure' || needs.preload_frontend.result == 'cancelled')) ||
+      (needs.prepare.outputs.backend_deploy_required == 'true' &&
+      needs.prepare.outputs.backend_prepared != 'true' &&
+      (needs.prepare_backend.result == 'failure' || needs.prepare_backend.result == 'cancelled')))
+    runs-on: [self-hosted, linux, x64, aifoo-vm]
+    timeout-minutes: 5
+    steps:
+      - name: Record retryable final delivery failure
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ needs.prepare.outputs.issue_number }}
+          PRELOAD_RESULT: ${{ needs.preload_frontend.result }}
+          BACKEND_RESULT: ${{ needs.prepare_backend.result }}
+        run: |
+          set -euo pipefail
+          gh issue edit "$ISSUE_NUMBER" \
+            --add-label sync-failed \
+            --add-label finalization-retryable \
+            --remove-label ready-for-vps >/dev/null
+          gh issue comment "$ISSUE_NUMBER" \
+            --body "Final delivery is retryable. Frontend preload: \`$PRELOAD_RESULT\`; backend preparation: \`$BACKEND_RESULT\`. The next scheduled run will resume exact-image finalization or the unfinished VPS preparation without redeploying production."
+
   ready_for_update:
     needs:
       - prepare
@@ -1144,12 +1673,24 @@ jobs:
           BACKEND_DEPLOY_REQUIRED: ${{ needs.prepare.outputs.backend_deploy_required }}
         run: |
           set -euo pipefail
+
+          handle_ready_failure() {
+            local status=$?
+            trap - ERR
+            gh issue edit "$ISSUE_NUMBER" \
+              --add-label sync-failed \
+              --add-label finalization-retryable \
+              --remove-label ready-for-vps >/dev/null 2>&1 || true
+            exit "$status"
+          }
+          trap handle_ready_failure ERR
+
           labels=$(gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER" --jq '.labels[].name')
           printf '%s\n' "$labels" | grep -Fxq vps-preloaded
           if [ "$BACKEND_DEPLOY_REQUIRED" = "true" ]; then
             printf '%s\n' "$labels" | grep -Fxq backend-prepared
           fi
-          for blocked_label in ui-review-required sync-failed vps-preload-failed backend-prepare-failed; do
+          for blocked_label in ui-review-required sync-failed infra-retryable candidate-repair-required policy-blocked finalization-retryable vps-preload-failed backend-prepare-failed; do
             if printf '%s\n' "$labels" | grep -Fxq "$blocked_label"; then
               echo "The release is still blocked by $blocked_label" >&2
               exit 1

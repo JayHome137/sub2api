@@ -17,6 +17,7 @@ The only approved fork-specific update-flow differences are:
 - Merge each official stable release into the source-integrated AIFoo UI.
 - Keep GitHub Actions workflows fork-owned during automated release merges;
   record upstream workflow differences for separate review.
+  Keep the reviewed `.github/audit-exceptions.yml` security policy fork-owned.
 - Complete the requested validation and image preparation before showing the
   update prompt.
 - Show the update state in the existing web UI and dispatch the approved
@@ -30,6 +31,22 @@ relevant code, inputs, conditions, environment, base, workflow contract, and
 candidate content are unchanged. Re-run only failed, skipped, not-yet-run, or
 downstream checks affected by the fix; a new PR number alone is not a reason to
 repeat a successful check.
+
+For presentation UI paths under `frontend/src/views`,
+`frontend/src/components`, `frontend/src/styles`, `frontend/public`, and
+`frontend/src/main.ts`, compare both sides with their latest shared upstream
+base. If the fork and the official release changed the same file, keep the
+complete fork version before validation. This avoids textually clean merges
+that leave Vue state, imports, or templates semantically incomplete. Official
+changes to UI files untouched by the fork still enter normally.
+
+This complete-file rule does not apply to `frontend/src/api`,
+`frontend/src/stores`, `frontend/src/types`, `frontend/package.json`, or
+`frontend/pnpm-lock.yaml`; those compatibility surfaces continue to merge from
+upstream and must pass lint, type checks, tests, browser checks, and image
+validation. A real validation failure blocks the unsafe candidate, but a repair
+commit resumes the same candidate from the affected stage instead of abandoning
+the release flow.
 
 These differences must not introduce database dumps, backup identifiers,
 backup-only gates, database restore automation, or repeated validation after
@@ -87,12 +104,14 @@ an existing UI contract working.
 
 1. Detect an official stable upstream release.
 2. Merge the exact upstream release commit into a candidate branch.
-3. Preserve the complete fork-owned `.github/workflows` tree and record any
-   official workflow additions, changes, or deletions for separate review.
-4. Resolve every remaining merge conflict deterministically: keep the
-   fork-owned UI and delivery contract, take official upstream hunks elsewhere,
-   and continue to validation. Only an unresolved conflict or a failed
-   validation check stops the candidate.
+3. Preserve the complete fork-owned `.github/workflows` tree and
+   `.github/audit-exceptions.yml`; record official workflow additions, changes,
+   or deletions for separate review.
+4. Resolve every remaining merge conflict deterministically, then normalize
+   protected UI files changed by both sides to the complete fork version. Take
+   official upstream hunks elsewhere and continue to validation. Only an
+   unresolved policy error or a failed validation check blocks the candidate;
+   the next repair run resumes the same release.
 5. Run focused frontend validation and build the private frontend image.
 6. Record the result and expose the web update only after preparation; do not
    switch production automatically.
