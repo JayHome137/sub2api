@@ -187,7 +187,7 @@ jobs:
             -o StrictHostKeyChecking=yes \
             -o BatchMode=yes \
             "$VPS_USER@$VPS_HOST" \
-            'sudo -n -l >/dev/null'
+            'sudo -n -l'
 
       - name: Install local VPS update control plane
         if: ${{ inputs.install_control_plane }}
