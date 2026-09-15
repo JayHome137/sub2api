@@ -634,6 +634,8 @@ export interface AdminGroup extends Group {
   default_mapped_model?: string
   messages_dispatch_model_config?: OpenAIMessagesDispatchModelConfig
   models_list_config?: ModelsListConfig
+  // Official backend 0.2.5 name; the API adapter mirrors this to models_list_config for the AIFoo UI.
+  model_allowlist?: ModelsListConfig
 
   // 分组排序
   sort_order: number
@@ -807,6 +809,7 @@ export interface CreateGroupRequest {
   mcp_xml_inject?: boolean
   supported_model_scopes?: string[]
   models_list_config?: ModelsListConfig
+  model_allowlist?: ModelsListConfig
   allow_messages_dispatch?: boolean
   allow_live?: boolean
   default_mapped_model?: string
@@ -869,6 +872,7 @@ export interface UpdateGroupRequest {
   mcp_xml_inject?: boolean
   supported_model_scopes?: string[]
   models_list_config?: ModelsListConfig
+  model_allowlist?: ModelsListConfig
   allow_messages_dispatch?: boolean
   allow_live?: boolean
   default_mapped_model?: string

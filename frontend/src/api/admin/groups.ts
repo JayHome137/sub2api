@@ -22,6 +22,35 @@ export interface LiveCapability {
 }
 
 /**
+ * Keep the existing AIFoo group editor stable while speaking the official
+ * backend 0.2.5 contract. The official field was renamed from
+ * `models_list_config` to `model_allowlist`; both shapes are identical.
+ */
+function normalizeAdminGroup(group: AdminGroup): AdminGroup {
+  const modelAllowlist = group.model_allowlist ?? group.models_list_config
+  if (!modelAllowlist || group.models_list_config) return group
+  return { ...group, models_list_config: modelAllowlist }
+}
+
+function normalizeAdminGroups(groups: AdminGroup[]): AdminGroup[] {
+  return groups.map(normalizeAdminGroup)
+}
+
+function toOfficialGroupPayload<T extends CreateGroupRequest | UpdateGroupRequest>(
+  input: T,
+): T & { model_allowlist?: T extends { models_list_config?: infer C } ? C : never } {
+  const payload = { ...input } as T & {
+    models_list_config?: T extends { models_list_config?: infer C } ? C : never
+    model_allowlist?: T extends { models_list_config?: infer C } ? C : never
+  }
+  if (payload.models_list_config !== undefined) {
+    payload.model_allowlist = payload.models_list_config
+    delete payload.models_list_config
+  }
+  return payload
+}
+
+/**
  * List all groups with pagination
  * @param page - Page number (default: 1)
  * @param pageSize - Items per page (default: 20)
@@ -51,7 +80,7 @@ export async function list(
     },
     signal: options?.signal
   })
-  return data
+  return { ...data, items: normalizeAdminGroups(data.items) }
 }
 
 /**
@@ -63,7 +92,7 @@ export async function getAll(platform?: GroupPlatform): Promise<AdminGroup[]> {
   const { data } = await apiClient.get<AdminGroup[]>('/admin/groups/all', {
     params: platform ? { platform } : undefined
   })
-  return data
+  return normalizeAdminGroups(data)
 }
 
 /**
@@ -74,7 +103,7 @@ export async function getAllIncludingInactive(): Promise<AdminGroup[]> {
   const { data } = await apiClient.get<AdminGroup[]>('/admin/groups/all', {
     params: { include_inactive: true }
   })
-  return data
+  return normalizeAdminGroups(data)
 }
 
 /**
@@ -99,7 +128,7 @@ export async function getLiveCapability(): Promise<LiveCapability> {
  */
 export async function getById(id: number): Promise<AdminGroup> {
   const { data } = await apiClient.get<AdminGroup>(`/admin/groups/${id}`)
-  return data
+  return normalizeAdminGroup(data)
 }
 
 /**
@@ -111,7 +140,7 @@ export async function getModelsListCandidates(
   platform?: GroupPlatform
 ): Promise<string[]> {
   const { data } = await apiClient.get<{ models: string[] }>(
-    `/admin/groups/${id}/models-list-candidates`,
+    `/admin/groups/${id}/model-allowlist-candidates`,
     {
       params: platform ? { platform } : undefined
     }
@@ -125,8 +154,8 @@ export async function getModelsListCandidates(
  * @returns Created group
  */
 export async function create(groupData: CreateGroupRequest): Promise<AdminGroup> {
-  const { data } = await apiClient.post<AdminGroup>('/admin/groups', groupData)
-  return data
+  const { data } = await apiClient.post<AdminGroup>('/admin/groups', toOfficialGroupPayload(groupData))
+  return normalizeAdminGroup(data)
 }
 
 /**
@@ -206,7 +235,7 @@ export async function duplicate(id: number): Promise<AdminGroup> {
     duplicateOperationKeys.delete(scope.key)
     storeDuplicateOperationKey(scope.key, null)
   }
-  return data
+  return normalizeAdminGroup(data)
 }
 
 /**
@@ -216,8 +245,11 @@ export async function duplicate(id: number): Promise<AdminGroup> {
  * @returns Updated group
  */
 export async function update(id: number, updates: UpdateGroupRequest): Promise<AdminGroup> {
-  const { data } = await apiClient.put<AdminGroup>(`/admin/groups/${id}`, updates)
-  return data
+  const { data } = await apiClient.put<AdminGroup>(
+    `/admin/groups/${id}`,
+    toOfficialGroupPayload(updates),
+  )
+  return normalizeAdminGroup(data)
 }
 
 /**
