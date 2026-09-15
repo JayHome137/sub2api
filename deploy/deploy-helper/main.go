@@ -356,6 +356,9 @@ func (a *app) activateBackend(ctx context.Context) (commandResult, error) {
 	if err := os.Remove(a.preparedPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
 		message += " Prepared-state cleanup needs operator attention."
 	}
+	if err := a.cleanupStaleBackendImages(ctx, state.TargetImage, state.PreviousImage); err != nil {
+		message += " Old backend image cleanup needs operator attention."
+	}
 	return commandResult{
 		Message:       message,
 		TargetVersion: state.TargetVersion,
@@ -582,6 +585,48 @@ func (a *app) runDocker(ctx context.Context, stdin io.Reader, args ...string) ([
 		return nil, fmt.Errorf("Docker command failed: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return output, nil
+}
+
+func (a *app) cleanupStaleBackendImages(ctx context.Context, keepReferences ...string) error {
+	keepIDs := make(map[string]struct{}, len(keepReferences))
+	for _, reference := range keepReferences {
+		output, err := a.runDocker(ctx, nil, "image", "inspect", "--format", "{{.Id}}", reference)
+		if err != nil {
+			return fmt.Errorf("inspect retained backend image: %w", err)
+		}
+		imageID := strings.TrimSpace(string(output))
+		if !digestPattern.MatchString(imageID) {
+			return errors.New("retained backend image has an invalid image ID")
+		}
+		keepIDs[imageID] = struct{}{}
+	}
+
+	output, err := a.runDocker(ctx, nil, "image", "ls", "--no-trunc", "--format", "{{.Repository}}|{{.Tag}}|{{.ID}}", backendRepository)
+	if err != nil {
+		return err
+	}
+	var staleReferences []string
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.Split(line, "|")
+		if len(parts) != 3 || parts[0] != backendRepository || !digestPattern.MatchString(parts[2]) {
+			return errors.New("Docker returned an invalid backend image listing")
+		}
+		if parts[1] == "<none>" {
+			continue
+		}
+		if _, keep := keepIDs[parts[2]]; keep {
+			continue
+		}
+		staleReferences = append(staleReferences, parts[0]+":"+parts[1])
+	}
+	if len(staleReferences) == 0 {
+		return nil
+	}
+	_, err = a.runDocker(ctx, nil, append([]string{"image", "rm"}, staleReferences...)...)
+	return err
 }
 
 func (a *app) preparedPath() string {

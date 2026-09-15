@@ -17,6 +17,9 @@ type fakeRuntime struct {
 	service     string
 	activeImage string
 	versions    map[string]string
+	imageIDs    map[string]string
+	imageList   string
+	removed     []string
 	failImage   string
 }
 
@@ -33,6 +36,25 @@ func (f *fakeRuntime) Run(_ context.Context, name string, args []string, _ io.Re
 		return nil, fmt.Errorf("unexpected command %s %v", name, args)
 	}
 	switch args[0] {
+	case "image":
+		if len(args) < 2 {
+			return nil, errors.New("invalid image command")
+		}
+		switch args[1] {
+		case "inspect":
+			imageID := f.imageIDs[args[len(args)-1]]
+			if imageID == "" {
+				return nil, errors.New("image unavailable")
+			}
+			return []byte(imageID + "\n"), nil
+		case "ls":
+			return []byte(f.imageList), nil
+		case "rm":
+			f.removed = append(f.removed, args[2:]...)
+			return []byte("removed"), nil
+		default:
+			return nil, fmt.Errorf("unexpected Docker image command %v", args)
+		}
 	case "inspect":
 		if len(args) < 3 {
 			return nil, errors.New("invalid inspect")
@@ -141,6 +163,33 @@ func TestBackendActivationUsesPreparedDigest(t *testing.T) {
 	if _, err := os.Stat(application.preparedPath()); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("prepared state still exists: %v", err)
 	}
+	if len(runtime.removed) != 1 || runtime.removed[0] != backendRepository+":0.1.181" {
+		t.Fatalf("removed images = %v", runtime.removed)
+	}
+}
+
+func TestCleanupStaleBackendImagesKeepsEveryTagForCurrentAndPreviousIDs(t *testing.T) {
+	current := backendRepository + "@sha256:" + strings.Repeat("a", 64)
+	previous := backendRepository + "@sha256:" + strings.Repeat("b", 64)
+	currentID := "sha256:" + strings.Repeat("1", 64)
+	previousID := "sha256:" + strings.Repeat("2", 64)
+	runtime := &fakeRuntime{
+		imageIDs: map[string]string{current: currentID, previous: previousID},
+		imageList: strings.Join([]string{
+			backendRepository + "|0.1.183|" + currentID,
+			backendRepository + "|stable|" + currentID,
+			backendRepository + "|0.1.182|" + previousID,
+			backendRepository + "|0.1.181|sha256:" + strings.Repeat("3", 64),
+		}, "\n") + "\n",
+	}
+	application := &app{exec: runtime, docker: "docker"}
+
+	if err := application.cleanupStaleBackendImages(context.Background(), current, previous); err != nil {
+		t.Fatal(err)
+	}
+	if len(runtime.removed) != 1 || runtime.removed[0] != backendRepository+":0.1.181" {
+		t.Fatalf("removed images = %v", runtime.removed)
+	}
 }
 
 func TestBackendActivationRestoresPreviousImageOnHealthFailure(t *testing.T) {
@@ -197,6 +246,13 @@ func newActivationTestApp(t *testing.T) (*app, *fakeRuntime, preparedState, stri
 			previousImage: "v0.1.182",
 			targetImage:   "v0.1.183",
 		},
+		imageIDs: map[string]string{
+			previousImage: "sha256:" + strings.Repeat("1", 64),
+			targetImage:   "sha256:" + strings.Repeat("2", 64),
+		},
+		imageList: backendRepository + "|0.1.183|sha256:" + strings.Repeat("2", 64) + "\n" +
+			backendRepository + "|0.1.182|sha256:" + strings.Repeat("1", 64) + "\n" +
+			backendRepository + "|0.1.181|sha256:" + strings.Repeat("3", 64) + "\n",
 	}
 	application := &app{
 		cfg:     cfg,

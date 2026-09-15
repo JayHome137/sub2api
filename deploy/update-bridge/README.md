@@ -23,7 +23,7 @@ sudo deploy/update-bridge/install.sh \
 
 将 `nginx-location.conf` 安装到现有 TLS server 已 include 的 snippet 路径，执行 `nginx -t` 后 reload。安装器只重启 bridge，不重启 Sub2API、数据库、Redis 或前端。
 
-受保护状态保存在 `/var/lib/aifoo-deploy-helper`；安装时只保留一份控制面二进制和 systemd unit 的 `.previous` 回退副本。
+受保护状态保存在 `/var/lib/aifoo-deploy-helper`；安装时只保留一份控制面二进制和 systemd unit 的 `.previous` 回退副本。后端激活成功后只保留当前镜像和激活前一份后端镜像，并删除同一官方仓库中更旧的带标签镜像；不执行 `docker system prune`，也不处理任何 Docker volume。Compose 回退文件始终只保留一份并在下一次激活时覆盖。
 
 ## 验证
 
