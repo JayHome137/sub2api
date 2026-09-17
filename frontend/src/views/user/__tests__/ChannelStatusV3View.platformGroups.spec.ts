@@ -1,6 +1,6 @@
 import { defineComponent, h } from 'vue'
-import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MonitorMatrixRow, MonitorSnapshot } from '@/api/channelMonitorV2'
 
 const getMatrix = vi.fn()
@@ -31,6 +31,9 @@ vi.mock('vue-i18n', async (importOriginal) => {
 })
 
 import ChannelStatusV3View from '../ChannelStatusV3View.vue'
+
+enableAutoUnmount(afterEach)
+afterEach(() => vi.useRealTimers())
 
 function coverage() {
   return {
@@ -111,6 +114,7 @@ const snapshot: MonitorSnapshot = {
 
 describe('ChannelStatusV3View platform grouping', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     getSnapshot.mockResolvedValue(snapshot)
     getMatrix.mockResolvedValue({
       coverage: coverage(),
@@ -161,6 +165,62 @@ describe('ChannelStatusV3View platform grouping', () => {
       },
     })
   }
+
+  function mockRangeRows() {
+    getMatrix.mockImplementation(async (filter) => ({
+      coverage: coverage(), group_by: 'platform_group',
+      items: [row('openai', 1, filter.range)],
+    }))
+  }
+
+  it('prefetches once and immediately reuses fresh ranges without more requests', async () => {
+    vi.useFakeTimers()
+    mockRangeRows()
+    const wrapper = mountView()
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(501)
+    expect(getMatrix).toHaveBeenCalledTimes(4)
+    for (const range of ['24h', '7d', '30d', '90m']) {
+      await wrapper.findAll('button').find(button => button.text() === `channelMonitorV3.ranges.${range}`)!.trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="card-1"]').text()).toBe(range)
+    }
+    expect(getMatrix).toHaveBeenCalledTimes(4)
+    expect(getSnapshot).toHaveBeenCalledTimes(4)
+  })
+
+  it('refreshes expired range data instead of treating cached values as live forever', async () => {
+    vi.useFakeTimers()
+    mockRangeRows()
+    const wrapper = mountView()
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(501)
+    vi.setSystemTime(Date.now() + 61000)
+    await wrapper.findAll('button').find(button => button.text() === 'channelMonitorV3.ranges.24h')!.trigger('click')
+    await flushPromises()
+    expect(getMatrix).toHaveBeenCalledTimes(5)
+    expect(wrapper.get('[data-testid="card-1"]').text()).toBe('24h')
+  })
+
+  it('deduplicates a pending prefetch and never displays a late response for another range', async () => {
+    vi.useFakeTimers()
+    mockRangeRows()
+    let resolve24!: (value: unknown) => void
+    const normal = getMatrix.getMockImplementation()!
+    getMatrix.mockImplementation((filter, ...args) => filter.range === '24h'
+      ? new Promise(resolve => { resolve24 = resolve }) : normal(filter, ...args))
+    const wrapper = mountView()
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(501)
+    await wrapper.findAll('button').find(button => button.text() === 'channelMonitorV3.ranges.24h')!.trigger('click')
+    expect(getMatrix.mock.calls.filter(([filter]) => filter.range === '24h')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="card-1"]').exists()).toBe(false)
+    await wrapper.findAll('button').find(button => button.text() === 'channelMonitorV3.ranges.7d')!.trigger('click')
+    await flushPromises()
+    resolve24({ coverage: coverage(), items: [row('openai', 1, '24h')] })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="card-1"]').text()).toBe('7d')
+  })
 
   it('packs consecutive single-group platforms onto one row with their own headings', async () => {
     getMatrix.mockResolvedValue({

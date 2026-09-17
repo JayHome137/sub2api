@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { defineComponent, h } from 'vue'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 
 const isV1 = vi.fn(() => false)
 
@@ -26,24 +26,27 @@ describe('ChannelStatusView mode switch', () => {
     window.history.replaceState({}, '', '/monitor')
   })
 
-  it('renders V3 using the official V2 mode', () => {
+  it('renders V3 using the official V2 mode', async () => {
     isV1.mockReturnValue(false)
     const wrapper = mount(ChannelStatusView)
+    await flushPromises()
     expect(wrapper.find('[data-testid="v3"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="v1"]').exists()).toBe(false)
   })
 
-  it('retains V2 as an explicit diagnostic fallback', () => {
+  it('retains V2 as an explicit diagnostic fallback', async () => {
     window.history.replaceState({}, '', '/monitor?monitor_view=v2')
     isV1.mockReturnValue(false)
     const wrapper = mount(ChannelStatusView)
+    await flushPromises()
     expect(wrapper.find('[data-testid="v2"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="v3"]').exists()).toBe(false)
   })
 
-  it('renders V1 when in v1 mode', () => {
+  it('renders V1 when in v1 mode', async () => {
     isV1.mockReturnValue(true)
     const wrapper = mount(ChannelStatusView)
+    await flushPromises()
     expect(wrapper.find('[data-testid="v1"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="v2"]').exists()).toBe(false)
   })

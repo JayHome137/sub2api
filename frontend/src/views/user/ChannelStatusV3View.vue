@@ -111,7 +111,18 @@ const loading = ref(false)
 const refreshing = ref(false)
 const userGroupRates = ref<Record<number, number>>({})
 const countdownSeconds = ref(0)
-let controller: AbortController | null = null
+interface RangeData {
+  snapshot: MonitorSnapshot
+  matrix: MonitorMatrixResponse
+  expiresAt: number
+}
+// View-local only: never share permission-scoped responses across login sessions.
+const rangeCache = new Map<MonitorRange, RangeData>()
+const pendingRanges = new Map<MonitorRange, Promise<RangeData>>()
+const controllers = new Set<AbortController>()
+let disposed = false
+let renderRequest = 0
+let prefetchTimer: number | null = null
 let refreshTimer: number | null = null
 let countdownTimer: number | null = null
 
@@ -160,26 +171,68 @@ async function loadUserGroupRates() {
   }
 }
 
-async function reload(silent = true) {
-  controller?.abort()
+function loadRange(range: MonitorRange): Promise<RangeData> {
+  const pending = pendingRanges.get(range)
+  if (pending) return pending
   const request = new AbortController()
-  controller = request
+  controllers.add(request)
+  const rangeFilter = { ...filter.value, range }
+  const pendingRequest = Promise.all([
+    api.getSnapshot(rangeFilter, false, request.signal),
+    api.getMatrix(rangeFilter, 'platform_group', false, request.signal),
+  ]).then(([nextSnapshot, nextMatrix]) => {
+    const seconds = nextSnapshot.coverage.bootstrap?.active ? 10 : Math.min(60, nextSnapshot.config.refresh_interval_seconds)
+    const data = { snapshot: nextSnapshot, matrix: nextMatrix, expiresAt: Date.now() + seconds * 1000 }
+    if (!disposed) rangeCache.set(range, data)
+    return data
+  }).finally(() => {
+    pendingRanges.delete(range)
+    controllers.delete(request)
+  })
+  pendingRanges.set(range, pendingRequest)
+  return pendingRequest
+}
+
+async function prefetchRanges() {
+  for (const { value } of ranges.value) {
+    if (disposed || document.hidden) return
+    if (value === filter.value.range || rangeCache.has(value)) continue
+    try { await loadRange(value) } catch { /* The selected range reports its own errors. */ }
+  }
+}
+
+function showRange(data: RangeData) {
+  snapshot.value = data.snapshot
+  matrix.value = data.matrix
+  scheduleRefresh(Math.ceil((data.expiresAt - Date.now()) / 1000))
+}
+
+async function reload(silent = true, useCache = false) {
+  const revision = ++renderRequest
+  const range = filter.value.range
+  const cached = useCache ? rangeCache.get(range) : undefined
+  if (useCache) {
+    snapshot.value = cached?.snapshot ?? null
+    matrix.value = cached?.matrix ?? null
+  }
+  if (cached && cached.expiresAt > Date.now()) {
+    showRange(cached)
+    loading.value = false
+    refreshing.value = false
+    return
+  }
   refreshing.value = true
   if (!silent) loading.value = true
   try {
-    const [nextSnapshot, nextMatrix] = await Promise.all([
-      api.getSnapshot(filter.value, false, request.signal),
-      api.getMatrix(filter.value, 'platform_group', false, request.signal),
-    ])
-    if (request.signal.aborted || controller !== request) return
-    snapshot.value = nextSnapshot
-    matrix.value = nextMatrix
-    scheduleRefresh(nextSnapshot.coverage.bootstrap?.active ? 10 : nextSnapshot.config.refresh_interval_seconds)
+    const data = await loadRange(range)
+    if (disposed || revision !== renderRequest) return
+    showRange(data)
   } catch (error) {
+    if (disposed || revision !== renderRequest) return
     const e = error as { name?: string; code?: string }
     if (e.name !== 'AbortError' && e.code !== 'ERR_CANCELED') appStore.showError(extractApiErrorMessage(error, t('channelMonitorV3.loadFailed')))
   } finally {
-    if (controller === request) { loading.value = false; refreshing.value = false }
+    if (revision === renderRequest) { loading.value = false; refreshing.value = false }
   }
 }
 
@@ -196,10 +249,17 @@ function scheduleRefresh(seconds: number) {
   }, interval * 1000)
 }
 
-watch(() => filter.value.range, () => void reload(false))
-onMounted(() => { void loadUserGroupRates(); void reload(false) })
+watch(() => filter.value.range, () => void reload(false, true))
+onMounted(() => {
+  void loadUserGroupRates()
+  void reload(false).then(() => {
+    if (!disposed) prefetchTimer = window.setTimeout(() => void prefetchRanges(), 500)
+  })
+})
 onBeforeUnmount(() => {
-  controller?.abort()
+  disposed = true
+  controllers.forEach(request => request.abort())
+  if (prefetchTimer) window.clearTimeout(prefetchTimer)
   if (refreshTimer) window.clearInterval(refreshTimer)
   if (countdownTimer) window.clearInterval(countdownTimer)
 })

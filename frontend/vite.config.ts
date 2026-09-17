@@ -124,8 +124,11 @@ export default defineConfig(({ mode }) => {
               return 'vendor-vue'
             }
 
-            // UI 工具库（较大，单独分离）
-            if (id.includes('/@vueuse/') || id.includes('/xlsx/')) {
+            // Keep optional export/payment SDKs out of shared UI dependencies.
+            if (id.includes('/xlsx/')) return 'vendor-xlsx'
+            if (id.includes('/@airwallex/')) return 'vendor-airwallex'
+
+            if (id.includes('/@vueuse/')) {
               return 'vendor-ui'
             }
 

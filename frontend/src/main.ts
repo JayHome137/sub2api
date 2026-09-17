@@ -54,6 +54,9 @@ async function bootstrap() {
   // This must happen after pinia is installed but before router and i18n
   const appStore = useAppStore()
   appStore.initFromInjectedConfig()
+  // Static frontend deployments have no injected settings. Start the shared
+  // request alongside locale/route loading instead of after setup-status.
+  if (!appStore.publicSettingsLoaded) void appStore.fetchPublicSettings()
 
   // Set document title immediately after config is loaded
   if (appStore.siteName && appStore.siteName !== 'Sub2API') {
