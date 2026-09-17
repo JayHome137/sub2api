@@ -245,7 +245,7 @@ describe('ChannelStatusV3View platform grouping', () => {
     expect(compact.find('[data-testid="card-6"]').text()).toBe('Grok')
   })
 
-  it('does not let a later singleton fill a previous multi-group row', async () => {
+  it('lets a later platform fill the same grid after a multi-group platform', async () => {
     getMatrix.mockResolvedValue({
       coverage: coverage(),
       group_by: 'platform_group',
@@ -257,8 +257,8 @@ describe('ChannelStatusV3View platform grouping', () => {
     })
     const wrapper = mountView()
     await flushPromises()
-    const kimiCards = wrapper.get('[data-testid="channel-status-platform-kimi"]').findAll('[data-testid^="card-"]')
-    expect(kimiCards.map((card) => card.text())).toEqual(['Kimi', 'Kimi B300'])
+    const compact = wrapper.get('[data-testid="channel-status-compact-platforms"]')
+    expect(compact.findAll('[data-testid^="card-"]').map(card => card.text())).toEqual(['Kimi', 'Kimi B300', 'GLM'])
     expect(wrapper.get('[data-testid="channel-status-platform-kimi"]').find('[data-testid="card-13"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="channel-status-platform-zhipu"]').find('[data-testid="card-13"]').text()).toBe('GLM')
   })
