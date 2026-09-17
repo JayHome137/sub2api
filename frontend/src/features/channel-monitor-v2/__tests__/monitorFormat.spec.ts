@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  availabilityBarClass,
+  availabilityTextClass,
+  availabilityBadgeClass,
   formatLatencyKpiSecondary,
   formatLatencyPrivacy,
   formatMonitorMs,
@@ -18,6 +21,14 @@ import {
 import type { MonitorHealth } from '@/api/channelMonitorV2'
 
 describe('monitorFormat accuracy', () => {
+  it.each([[0, 'red'], [29.99, 'red'], [30, 'orange'], [50, 'orange'], [59.99, 'orange'], [60, 'yellow'], [79.99, 'yellow'], [80, 'emerald'], [90, 'emerald'], [100, 'emerald']])('uses the five availability bands at %s percent', (value, color) => {
+    for (const format of [availabilityBarClass, availabilityTextClass, availabilityBadgeClass]) {
+      const classes = format(Number(value))
+      expect(classes).toContain(`${color}-`)
+      expect(classes).not.toContain('black')
+      expect(classes).toContain('dark:')
+    }
+  })
   it('converts backend TPM (per minute) to tokens/sec for display', () => {
     expect(tokensPerSecondFromTpm(60)).toBe(1)
     expect(tokensPerSecondFromTpm(6000)).toBe(100)

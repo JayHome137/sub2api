@@ -68,7 +68,7 @@ describe('ChannelMonitorV3Timeline unknown bars', () => {
     expect(bar.classes()).not.toContain('bg-gray-950')
   })
 
-  it('keeps true low availability on the black band', () => {
+  it('shows true low availability in red in both themes', () => {
     const wrapper = mount(ChannelMonitorV3Timeline, {
       props: {
         buckets: [bucket('critical', 0.8, '2026-09-11T12:00:00Z')],
@@ -78,7 +78,8 @@ describe('ChannelMonitorV3Timeline unknown bars', () => {
       },
     })
     const bar = wrapper.get('.v3-soft-glass-bar')
-    expect(bar.classes()).toContain('bg-gray-950')
+    expect(bar.classes()).toContain('bg-red-500')
+    expect(bar.classes()).toContain('dark:bg-red-400')
   })
 
   it('preserves leading, internal and trailing gaps at their real timestamps', () => {
