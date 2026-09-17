@@ -2,7 +2,9 @@
 export default {
   channelMonitorV3: {
     title: '渠道状态',
-    description: 'V2 被动用量 · 缓存率与可用率',
+    description: '所选时段汇总',
+    bucketCount: '{count} 个时间段',
+    noSamplesAt: '{time} · 无样本',
     updatedTo: '更新至 {time}',
     partialCoverage: '部分历史覆盖',
     loadFailed: '渠道状态加载失败',
@@ -23,6 +25,6 @@ export default {
     emptyDescription: '当前时间范围内还没有可展示的被动监控数据',
     platformSection: '{platform}',
     summary: '可用率 {success} · 缓存率 {cache}',
-    ranges: { '90m': '90m', '24h': '24h', '7d': '7d', '30d': '30d' },
+    ranges: { '90m': '90 分钟', '24h': '24 小时', '7d': '7 天', '30d': '30 天' },
   },
 }

@@ -2,7 +2,9 @@
 export default {
   channelMonitorV3: {
     title: 'Channel status',
-    description: 'V2 passive usage · cache and availability',
+    description: 'Selected period totals',
+    bucketCount: '{count} time intervals',
+    noSamplesAt: '{time} · No samples',
     updatedTo: 'Updated to {time}',
     partialCoverage: 'Partial history coverage',
     loadFailed: 'Failed to load channel status',

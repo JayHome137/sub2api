@@ -72,6 +72,21 @@ function mountCard(overall: MonitorHealth['overall']) {
 }
 
 describe('ChannelMonitorV3Card status badge', () => {
+  it('uses range totals even when the latest bucket contains only errors', () => {
+    const data = row('healthy')
+    data.buckets[0]!.metrics.error_rate = 1
+    data.buckets[0]!.metrics.cache_rate = 0
+    data.buckets[0]!.metrics.ttft.p50_ms = null
+    data.buckets[0]!.health = health('unknown')
+    const wrapper = mount(ChannelMonitorV3Card, {
+      props: { row: data, countdownSeconds: 0, timelineLength: 18 },
+      global: { stubs: { ProviderIcon: true, ChannelMonitorV3Timeline: true } },
+    })
+    expect(wrapper.text()).toContain('80.0%')
+    expect(wrapper.text()).toContain('50.0%')
+    expect(wrapper.find('[data-testid="channel-status-sample-badge"]').exists()).toBe(false)
+  })
+
   it('hides 正常/降级/失败 when samples are sufficient', () => {
     for (const overall of ['healthy', 'warning', 'critical'] as const) {
       const wrapper = mountCard(overall)

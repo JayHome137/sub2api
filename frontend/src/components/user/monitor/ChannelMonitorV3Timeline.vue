@@ -1,7 +1,7 @@
 <template>
   <div class="mt-4 border-t border-white/70 pt-3 dark:border-dark-700/60">
     <div class="mb-2 flex justify-between text-[10px] font-semibold uppercase tracking-widest text-gray-400">
-      <span>{{ t('monitorCommon.history60pts', { n: length }) }}</span>
+      <span>{{ t('channelMonitorV3.bucketCount', { count: length }) }}</span>
       <span class="tabular-nums">{{ t('monitorCommon.nextUpdateIn', { n: countdownSeconds }) }}</span>
     </div>
 
@@ -58,13 +58,15 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { MonitorMatrixBucket } from '@/api/channelMonitorV2'
+import type { MonitorCoverage, MonitorMatrixBucket } from '@/api/channelMonitorV2'
+import { monitorAvailability, monitorCacheRate } from '@/features/channel-monitor-v2/monitorPresentation'
 import { availabilityBarClass, formatMonitorMs, formatMonitorPercent } from '@/features/channel-monitor-v2/monitorFormat'
 
 const props = withDefaults(defineProps<{
   buckets?: MonitorMatrixBucket[]
   countdownSeconds: number
   length?: number
+  coverage?: MonitorCoverage
 }>(), {
   buckets: () => [],
   length: 18,
@@ -148,33 +150,40 @@ function formatBucketTime(value: string) {
 }
 
 const displayBars = computed<TimelineBar[]>(() => {
-  const real = [...props.buckets]
-    .sort((a, b) => Date.parse(a.bucket_start) - Date.parse(b.bucket_start))
-    .slice(-props.length)
-  const bars: TimelineBar[] = Array.from({ length: Math.max(0, props.length - real.length) }, (_, index) => ({
-    key: `empty-${index}`,
-    ...STATUS_STYLE.unknown,
-    title: '',
-  }))
-
-  for (const bucket of real) {
+  const start = Date.parse(props.coverage?.requested_start ?? '')
+  const step = (props.coverage?.bucket_seconds ?? 0) * 1000
+  const byTime = new Map(props.buckets.map(bucket => [Date.parse(bucket.bucket_start), bucket]))
+  const bars: TimelineBar[] = []
+  for (let index = 0; index < props.length; index++) {
+    const time = start + index * step
+    const bucket = Number.isFinite(start) && step > 0 ? byTime.get(time) : undefined
+    if (!bucket) {
+      bars.push({
+        key: `empty-${index}`,
+        ...STATUS_STYLE.unknown,
+        title: Number.isFinite(time) && step > 0
+          ? t('channelMonitorV3.noSamplesAt', { time: formatBucketTime(new Date(time).toISOString()) }) : '',
+      })
+      continue
+    }
     const state = bucket.health.overall === 'healthy' || bucket.health.overall === 'warning' || bucket.health.overall === 'critical'
       ? bucket.health.overall
       : 'unknown'
-    const availabilityPercent = (1 - bucket.metrics.error_rate) * 100
+    const availability = monitorAvailability(bucket.metrics, bucket.health)
+    const cache = monitorCacheRate(bucket.metrics, bucket.health)
     const style = state === 'unknown'
       ? { ...STATUS_STYLE.unknown }
       : {
           ...(STATUS_STYLE[state]),
-          colorClass: availabilityBarClass(availabilityPercent),
+          colorClass: availabilityBarClass(availability == null ? null : availability * 100),
         }
     bars.push({
       key: bucket.bucket_start,
       ...style,
       title: t('channelMonitorV3.timelineTooltip', {
         time: formatBucketTime(bucket.bucket_start),
-        availability: formatMonitorPercent(1 - bucket.metrics.error_rate, locale.value || 'zh-CN'),
-        cache: formatMonitorPercent(bucket.metrics.cache_rate, locale.value || 'zh-CN'),
+        availability: availability == null ? '-' : formatMonitorPercent(availability, locale.value || 'zh-CN'),
+        cache: cache == null ? '-' : formatMonitorPercent(cache, locale.value || 'zh-CN'),
         ttft: formatMonitorMs(bucket.metrics.ttft.p50_ms),
       }),
     })

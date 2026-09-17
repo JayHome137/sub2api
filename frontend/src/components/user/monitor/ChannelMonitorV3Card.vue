@@ -38,6 +38,7 @@
       :buckets="row.buckets"
       :countdown-seconds="countdownSeconds"
       :length="timelineLength"
+      :coverage="coverage"
     />
   </article>
 </template>
@@ -45,7 +46,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { MonitorMatrixRow } from '@/api/channelMonitorV2'
+import type { MonitorCoverage, MonitorMatrixRow } from '@/api/channelMonitorV2'
+import { monitorAvailability, monitorCacheRate } from '@/features/channel-monitor-v2/monitorPresentation'
 import { availabilityTextClass, formatMonitorMs, formatMonitorPercent } from '@/features/channel-monitor-v2/monitorFormat'
 import { providerGradient, useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
 import ProviderIcon from './ProviderIcon.vue'
@@ -55,6 +57,7 @@ const props = withDefaults(defineProps<{
   row: MonitorMatrixRow
   countdownSeconds: number
   timelineLength: number
+  coverage?: MonitorCoverage
   userRateMultiplier?: number | null
   showPlatformBadge?: boolean
 }>(), {
@@ -68,20 +71,16 @@ const formattedUserRate = computed(() => {
   const value = props.userRateMultiplier
   return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(2)}x` : '-'
 })
-const latestBucket = computed(() => [...props.row.buckets]
-  .filter(bucket => bucket.bucket_start && bucket.metrics)
-  .sort((a, b) => Date.parse(a.bucket_start) - Date.parse(b.bucket_start))
-  .at(-1))
-const latestMetrics = computed(() => latestBucket.value?.metrics ?? props.row.metrics)
-const latestHealth = computed(() => latestBucket.value?.health ?? props.row.health)
-// The cards show the newest completed monitoring bucket, not the selected-range aggregate.
-const cacheRate = computed(() => formatMonitorPercent(latestMetrics.value.cache_rate))
-const availabilityPercent = computed(() => (1 - latestMetrics.value.error_rate) * 100)
-const successRate = computed(() => formatMonitorPercent(availabilityPercent.value / 100))
-const availabilityClass = computed(() => availabilityTextClass(availabilityPercent.value))
-const ttft = computed(() => formatMonitorMs(latestMetrics.value.ttft.p50_ms))
+const cacheRate = computed(() => {
+  const value = monitorCacheRate(props.row.metrics, props.row.health)
+  return value == null ? '-' : formatMonitorPercent(value)
+})
+const availability = computed(() => monitorAvailability(props.row.metrics, props.row.health))
+const successRate = computed(() => availability.value == null ? '-' : formatMonitorPercent(availability.value))
+const availabilityClass = computed(() => availabilityTextClass(availability.value == null ? null : availability.value * 100))
+const ttft = computed(() => formatMonitorMs(props.row.metrics.ttft.p50_ms))
 const showInsufficientSample = computed(() => {
-  const overall = latestHealth.value.overall
+  const overall = props.row.health.overall
   return overall !== 'healthy' && overall !== 'warning' && overall !== 'critical'
 })
 </script>
