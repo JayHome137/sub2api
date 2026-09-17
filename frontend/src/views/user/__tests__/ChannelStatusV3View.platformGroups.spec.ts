@@ -175,6 +175,27 @@ describe('ChannelStatusV3View platform grouping', () => {
     }))
   }
 
+  it('clears displayed cards and cached ranges when monitoring is disabled, and recovers on refresh', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountView()
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(501)
+    expect(wrapper.find('[data-testid="card-1"]').exists()).toBe(true)
+    getSnapshot.mockRejectedValue({ reason: 'CHANNEL_MONITOR_DISABLED', status: 403 })
+    await wrapper.findAll('button')[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid^="card-"]').exists()).toBe(false)
+    const before = getSnapshot.mock.calls.length
+    await wrapper.findAll('button').find(button => button.text() === 'channelMonitorV3.ranges.24h')!.trigger('click')
+    await flushPromises()
+    expect(getSnapshot.mock.calls.length).toBeGreaterThan(before)
+    expect(wrapper.find('[data-testid^="card-"]').exists()).toBe(false)
+    getSnapshot.mockResolvedValue(snapshot)
+    await wrapper.findAll('button')[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="card-1"]').exists()).toBe(true)
+  })
+
   it('orders ordinary before exclusive within each platform using metadata, without adding invisible groups', async () => {
     vi.mocked(userGroupsAPI.getAvailable).mockResolvedValue([
       { id: 1, is_exclusive: true }, { id: 2, is_exclusive: false },

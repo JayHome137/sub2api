@@ -105,6 +105,9 @@ export default {
       groupsTitle: 'Monitored groups',
       groupsSelected: '{count} groups selected',
       groupsAll: 'All groups',
+      groupsNone: 'No groups selected',
+      selectAllGroups: 'Select all',
+      clearGroups: 'Clear selection',
       groupsEmpty: 'No groups available',
       errorsTitle: 'Error categories and ignores',
       errorsHint:

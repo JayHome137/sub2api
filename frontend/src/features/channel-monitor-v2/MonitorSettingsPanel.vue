@@ -55,7 +55,7 @@
               {{ t('channelMonitorV2.settings.enableHint') }}
             </p>
           </div>
-          <Toggle v-model="draft.enabled" />
+          <Toggle v-model="draft.enabled" :disabled="draft.group_ids.length === 0" />
         </div>
         <div class="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
           <div>
@@ -123,17 +123,19 @@
               {{
                 draft.group_ids.length
                   ? t('channelMonitorV2.settings.groupsSelected', { count: draft.group_ids.length })
-                  : t('channelMonitorV2.settings.groupsAll')
+                  : t('channelMonitorV2.settings.groupsNone')
               }}
             </p>
           </div>
           <button
-            v-if="draft.group_ids.length"
             type="button"
             class="btn btn-ghost btn-sm"
-            @click="draft.group_ids = []"
+            @click="selectAllGroups"
           >
-            {{ t('channelMonitorV2.settings.groupsAll') }}
+            {{ t('channelMonitorV2.settings.selectAllGroups') }}
+          </button>
+          <button type="button" class="btn btn-ghost btn-sm" :disabled="!draft.group_ids.length" @click="clearGroups">
+            {{ t('channelMonitorV2.settings.clearGroups') }}
           </button>
         </div>
         <div class="max-h-[min(40vh,280px)] overflow-y-auto px-3 py-2 sm:px-4">
@@ -356,9 +358,25 @@ function setModels(platform: MonitorConfig['platforms'][number], event: Event) {
 
 function toggleGroup(id: number) {
   if (!draft.value) return
+  const wasEmpty = draft.value.group_ids.length === 0
   draft.value.group_ids = draft.value.group_ids.includes(id)
     ? draft.value.group_ids.filter((value) => value !== id)
     : [...draft.value.group_ids, id].sort((a, b) => a - b)
+  if (!draft.value.group_ids.length) draft.value.enabled = false
+  else if (wasEmpty) draft.value.enabled = true
+}
+
+function selectAllGroups() {
+  if (!draft.value) return
+  const wasEmpty = draft.value.group_ids.length === 0
+  draft.value.group_ids = groups.value.map(group => group.id).sort((a, b) => a - b)
+  if (wasEmpty) draft.value.enabled = draft.value.group_ids.length > 0
+}
+
+function clearGroups() {
+  if (!draft.value) return
+  draft.value.group_ids = []
+  draft.value.enabled = false
 }
 
 function isCategoryIgnored(category: string): boolean {
@@ -409,6 +427,10 @@ async function load() {
   try {
     const [value, groupRows] = await Promise.all([getConfig(), adminAPI.groups.getAllIncludingInactive()])
     const normalized = normalizeConfig(value)
+    // Official V2 uses an empty allow-list for all groups. Show its real scope.
+    if (normalized.enabled && !normalized.group_ids.length) {
+      normalized.group_ids = groupRows.map(group => group.id).sort((a, b) => a - b)
+    }
     draft.value = structuredClone(normalized)
     groups.value = groupRows
     original.value = JSON.stringify(normalized)
@@ -424,6 +446,8 @@ async function save() {
   saving.value = true
   try {
     const payload = normalizeConfig(draft.value)
+    // Empty selection must never be sent as the official "all groups" mode.
+    if (!payload.group_ids.length) payload.enabled = false
     const value = await updateConfig(payload)
     const normalized = normalizeConfig(value)
     draft.value = structuredClone(normalized)

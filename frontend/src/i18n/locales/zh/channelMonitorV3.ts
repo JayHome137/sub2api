@@ -8,6 +8,7 @@ export default {
     updatedTo: '更新至 {time}',
     partialCoverage: '部分历史覆盖',
     loadFailed: '渠道状态加载失败',
+    disabled: '暂无启用的监控分组',
     cacheRate: '缓存率',
     successRate: '可用率',
     ttft: '首 Token',

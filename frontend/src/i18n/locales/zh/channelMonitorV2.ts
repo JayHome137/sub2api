@@ -103,6 +103,9 @@ export default {
       groupsTitle: '监控分组',
       groupsSelected: '已选择 {count} 个分组',
       groupsAll: '全部分组',
+      groupsNone: '未选择分组',
+      selectAllGroups: '全选',
+      clearGroups: '取消全选',
       groupsEmpty: '没有可选择的分组',
       errorsTitle: '错误分类与忽略',
       errorsHint:

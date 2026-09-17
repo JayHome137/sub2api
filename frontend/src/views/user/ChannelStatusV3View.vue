@@ -10,7 +10,7 @@
             </h1>
             <div class="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
               <span class="h-2 w-2 rounded-full" :class="refreshing ? 'bg-gray-400' : 'bg-emerald-500'" />
-              <span>{{ snapshot ? t('channelMonitorV3.updatedTo', { time: formatTime(snapshot.coverage.data_through) }) : t('common.loading') }}</span>
+              <span>{{ monitorDisabled ? t('channelMonitorV3.disabled') : snapshot ? t('channelMonitorV3.updatedTo', { time: formatTime(snapshot.coverage.data_through) }) : t('common.loading') }}</span>
               <span v-if="snapshot && !snapshot.coverage.coverage_complete" class="badge badge-warning">{{ t('channelMonitorV3.partialCoverage') }}</span>
             </div>
           </div>
@@ -109,6 +109,7 @@ const snapshot = ref<MonitorSnapshot | null>(null)
 const matrix = ref<MonitorMatrixResponse | null>(null)
 const loading = ref(false)
 const refreshing = ref(false)
+const monitorDisabled = ref(false)
 const userGroupRates = ref<Record<number, number>>({})
 const groupExclusive = ref<Record<number, boolean>>({})
 const countdownSeconds = ref(0)
@@ -212,6 +213,7 @@ async function prefetchRanges() {
 }
 
 function showRange(data: RangeData) {
+  monitorDisabled.value = false
   snapshot.value = data.snapshot
   matrix.value = data.matrix
   scheduleRefresh(Math.ceil((data.expiresAt - Date.now()) / 1000))
@@ -239,8 +241,16 @@ async function reload(silent = true, useCache = false) {
     showRange(data)
   } catch (error) {
     if (disposed || revision !== renderRequest) return
-    const e = error as { name?: string; code?: string }
-    if (e.name !== 'AbortError' && e.code !== 'ERR_CANCELED') appStore.showError(extractApiErrorMessage(error, t('channelMonitorV3.loadFailed')))
+    const e = error as { name?: string; code?: string; reason?: string }
+    if (e.code === 'CHANNEL_MONITOR_DISABLED' || e.reason === 'CHANNEL_MONITOR_DISABLED') {
+      monitorDisabled.value = true
+      snapshot.value = null
+      matrix.value = null
+      rangeCache.clear()
+      controllers.forEach(request => request.abort())
+      pendingRanges.clear()
+      scheduleRefresh(60)
+    } else if (e.name !== 'AbortError' && e.code !== 'ERR_CANCELED') appStore.showError(extractApiErrorMessage(error, t('channelMonitorV3.loadFailed')))
   } finally {
     if (revision === renderRequest) { loading.value = false; refreshing.value = false }
   }

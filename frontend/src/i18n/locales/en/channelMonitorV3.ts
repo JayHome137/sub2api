@@ -8,6 +8,7 @@ export default {
     updatedTo: 'Updated to {time}',
     partialCoverage: 'Partial history coverage',
     loadFailed: 'Failed to load channel status',
+    disabled: 'No monitored groups enabled',
     cacheRate: 'Cache rate',
     successRate: 'Availability',
     ttft: 'First token',
