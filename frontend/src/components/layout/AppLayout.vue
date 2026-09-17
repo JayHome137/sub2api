@@ -22,6 +22,10 @@
   </div>
 </template>
 
+<script lang="ts">
+let activeShellOwner: symbol | null = null
+</script>
+
 <script setup lang="ts">
 import '@/styles/onboarding.css'
 import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
@@ -47,27 +51,39 @@ const { replayTour } = useOnboardingTour({
 
 const onboardingStore = useOnboardingStore()
 const routeClass = computed(() => aifooRouteClass(route.path))
+const shellOwner = Symbol('aifoo-layout')
+let appliedRouteClass = ''
 
-function applyAifooShell(nextClass: string, previousClass?: string) {
+function applyAifooShell(nextClass: string) {
   const root = document.documentElement
-  if (previousClass) root.classList.remove(previousClass)
+  // A redirect or a remounted layout may leave the bootstrap/previous route behind.
+  for (const name of [...root.classList]) {
+    if (name.startsWith('route-')) root.classList.remove(name)
+  }
+  appliedRouteClass = nextClass
   root.classList.add('console-shell')
   document.body.classList.add('console-override-active')
   if (nextClass) root.classList.add(nextClass)
 }
 
-watch(routeClass, (nextClass, previousClass) => {
-  applyAifooShell(nextClass, previousClass)
+watch(routeClass, (nextClass) => {
+  applyAifooShell(nextClass)
 }, { immediate: true })
 
 onMounted(() => {
+  activeShellOwner = shellOwner
   applyAifooShell(routeClass.value)
   onboardingStore.setReplayCallback(replayTour)
 })
 
 onBeforeUnmount(() => {
-  document.documentElement.classList.remove('console-shell', routeClass.value)
-  document.body.classList.remove('console-override-active')
+  const root = document.documentElement
+  // route.path may already point to the next page while this layout is unmounting.
+  if (activeShellOwner === shellOwner) {
+    activeShellOwner = null
+    root.classList.remove('console-shell', appliedRouteClass)
+    document.body.classList.remove('console-override-active')
+  }
 })
 
 defineExpose({ replayTour })
