@@ -110,6 +110,7 @@ const matrix = ref<MonitorMatrixResponse | null>(null)
 const loading = ref(false)
 const refreshing = ref(false)
 const userGroupRates = ref<Record<number, number>>({})
+const groupExclusive = ref<Record<number, boolean>>({})
 const countdownSeconds = ref(0)
 interface RangeData {
   snapshot: MonitorSnapshot
@@ -141,7 +142,8 @@ const platformSections = computed(() => {
   }
   return [...grouped.entries()].map(([platform, sectionRows]) => ({
     platform,
-    rows: sectionRows.sort((a, b) => (a.group_id ?? 0) - (b.group_id ?? 0)),
+    rows: sectionRows.sort((a, b) => groupCategory(a.group_id) - groupCategory(b.group_id)
+      || (a.group_id ?? 0) - (b.group_id ?? 0)),
   }))
 })
 const layoutBlocks = computed(() => buildChannelStatusLayout(platformSections.value))
@@ -149,6 +151,11 @@ const timelineLength = computed(() => ({ '90m': 18, '24h': 24, '7d': 14, '30d': 
 function formatPercent(value: number | null) { return value == null ? '-' : formatMonitorPercent(value, locale.value || 'zh-CN') }
 function formatTime(value?: string) { if (!value) return '-'; return new Intl.DateTimeFormat(locale.value || undefined, { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) }
 function setRange(value: MonitorRange) { filter.value = { ...filter.value, range: value } }
+
+function groupCategory(groupId?: number) {
+  const exclusive = groupId == null ? undefined : groupExclusive.value[groupId]
+  return exclusive === false ? 0 : exclusive === true ? 1 : 2
+}
 
 function getUserRateMultiplier(groupId?: number) {
   if (!groupId) return null
@@ -159,7 +166,10 @@ function getUserRateMultiplier(groupId?: number) {
 async function loadUserGroupRates() {
   try {
     const [groups, customRates] = await Promise.all([
-      userGroupsAPI.getAvailable(),
+      userGroupsAPI.getAvailable().then(groups => {
+        groupExclusive.value = Object.fromEntries(groups.map(group => [group.id, group.is_exclusive]))
+        return groups
+      }),
       userGroupsAPI.getUserGroupRates(),
     ])
     userGroupRates.value = Object.fromEntries(

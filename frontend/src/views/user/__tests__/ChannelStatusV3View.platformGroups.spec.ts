@@ -31,6 +31,7 @@ vi.mock('vue-i18n', async (importOriginal) => {
 })
 
 import ChannelStatusV3View from '../ChannelStatusV3View.vue'
+import userGroupsAPI from '@/api/groups'
 
 enableAutoUnmount(afterEach)
 afterEach(() => vi.useRealTimers())
@@ -115,6 +116,7 @@ const snapshot: MonitorSnapshot = {
 describe('ChannelStatusV3View platform grouping', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(userGroupsAPI.getAvailable).mockResolvedValue([])
     getSnapshot.mockResolvedValue(snapshot)
     getMatrix.mockResolvedValue({
       coverage: coverage(),
@@ -172,6 +174,24 @@ describe('ChannelStatusV3View platform grouping', () => {
       items: [row('openai', 1, filter.range)],
     }))
   }
+
+  it('orders ordinary before exclusive within each platform using metadata, without adding invisible groups', async () => {
+    vi.mocked(userGroupsAPI.getAvailable).mockResolvedValue([
+      { id: 1, is_exclusive: true }, { id: 2, is_exclusive: false },
+      { id: 4, is_exclusive: true }, { id: 5, is_exclusive: false },
+      { id: 99, is_exclusive: false },
+    ] as Awaited<ReturnType<typeof userGroupsAPI.getAvailable>>)
+    getMatrix.mockResolvedValue({ coverage: coverage(), group_by: 'platform_group', items: [
+      row('openai', 1, 'Exclusive'), row('openai', 2, 'Ordinary'),
+      row('anthropic', 4, 'Exclusive Claude'), row('anthropic', 5, 'Ordinary Claude'),
+    ] })
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid^="card-"]').map(card => card.text())).toEqual([
+      'Ordinary', 'Exclusive', 'Ordinary Claude', 'Exclusive Claude',
+    ])
+    expect(wrapper.find('[data-testid="card-99"]').exists()).toBe(false)
+  })
 
   it('prefetches once and immediately reuses fresh ranges without more requests', async () => {
     vi.useFakeTimers()
