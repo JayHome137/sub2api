@@ -23,4 +23,13 @@ This path does not use GitHub Actions, the self-hosted VM, private-repository Is
 
 The AIFoo UI stays fixed until it is intentionally changed. A new upstream backend release alone is not a UI rebuild trigger. When upstream adds a user-visible route, API contract, or page that AIFoo needs, compatibility is handled manually and the `AIFoo UI` workflow is dispatched once for VM validation, image publication, and optional frontend-only deployment.
 
+The V3 channel-monitor presentation is part of this retained frontend. It uses
+the official V2 snapshot/matrix APIs and the existing V2 monitoring mode; no
+fork-specific backend or database migration is required. `/monitor?monitor_view=v2`
+keeps the previous V2 presentation available for diagnosis. Preserve the V3
+components, locales, layout/format helpers, and view selection during upstream
+syncs; check API compatibility rather than overwriting the frontend. The initial
+presentation was ported from kiss-kedaya/sub2api commit
+`25f896f712ce99745decba6f817e794e1fb8e00d`.
+
 There are no scheduled, push, pull-request, release, or Issue workflows. The VM remains available only for deliberate AIFoo UI work.
