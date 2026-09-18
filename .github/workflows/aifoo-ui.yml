@@ -150,9 +150,11 @@ jobs:
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
         run: |
           set -euo pipefail
           ssh \
+            -p "$VPS_SSH_PORT" \
             -i "$RUNNER_TEMP/ssh/id_ed25519" \
             -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
             -o StrictHostKeyChecking=yes \
@@ -167,6 +169,7 @@ jobs:
           GHCR_TOKEN: ${{ github.token }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
           IMAGE: ${{ steps.selected_image.outputs.image }}
         run: |
           set -euo pipefail
