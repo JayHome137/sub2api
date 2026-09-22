@@ -157,6 +157,7 @@ func createAccountRecord(ctx context.Context, client *dbent.Client, account *ser
 	if account.RateMultiplier != nil {
 		builder.SetRateMultiplier(*account.RateMultiplier)
 	}
+	builder.SetGroupRateMultiplier(account.UserGroupRateMultiplier())
 	if account.LoadFactor != nil {
 		builder.SetLoadFactor(*account.LoadFactor)
 	}
@@ -555,6 +556,7 @@ func (r *accountRepository) updateLockedAccount(
 	if explicitRateMultiplier != nil {
 		builder.SetRateMultiplier(*explicitRateMultiplier)
 	}
+	builder.SetGroupRateMultiplier(account.UserGroupRateMultiplier())
 	if account.LoadFactor != nil {
 		builder.SetLoadFactor(*account.LoadFactor)
 	} else {
@@ -3138,6 +3140,11 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 		args = append(args, *updates.RateMultiplier)
 		idx++
 	}
+	if updates.GroupRateMultiplier != nil {
+		setClauses = append(setClauses, "group_rate_multiplier = $"+itoa(idx))
+		args = append(args, *updates.GroupRateMultiplier)
+		idx++
+	}
 	if updates.LoadFactor != nil {
 		if *updates.LoadFactor <= 0 {
 			setClauses = append(setClauses, "load_factor = NULL")
@@ -3721,6 +3728,7 @@ func accountEntityToService(m *dbent.Account) *service.Account {
 	}
 
 	rateMultiplier := m.RateMultiplier
+	groupRateMultiplier := m.GroupRateMultiplier
 
 	return &service.Account{
 		ID:                      m.ID,
@@ -3735,6 +3743,7 @@ func accountEntityToService(m *dbent.Account) *service.Account {
 		Concurrency:             m.Concurrency,
 		Priority:                m.Priority,
 		RateMultiplier:          &rateMultiplier,
+		GroupRateMultiplier:     &groupRateMultiplier,
 		LoadFactor:              m.LoadFactor,
 		Status:                  m.Status,
 		ErrorMessage:            derefString(m.ErrorMessage),
