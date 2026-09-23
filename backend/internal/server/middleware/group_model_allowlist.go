@@ -3,6 +3,7 @@ package middleware
 import (
 	"errors"
 	"fmt"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/requesttiming"
 	"net/http"
 	"strings"
 
@@ -32,6 +33,8 @@ import (
 //     命中用户禁用模型时提示「对你的账号不可用」，与分组白名单的提示区分开。
 func GroupModelAllowlist() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		done := requesttiming.Observe(c.Request.Context(), "model_allowlist")
+		defer done()
 		apiKey, ok := GetAPIKeyFromContext(c)
 		if !ok || apiKey == nil {
 			c.Next()

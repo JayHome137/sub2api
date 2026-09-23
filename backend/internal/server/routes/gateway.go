@@ -2,6 +2,7 @@ package routes
 
 import (
 	"errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/requesttiming"
 	"net/http"
 	"strings"
 
@@ -555,12 +556,16 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 		resolver = service.NewCompositeRouteResolver(nil)
 	}
 	return func(c *gin.Context) {
+		done := requesttiming.Observe(c.Request.Context(), "composite_routing")
+		defer done()
 		apiKey, ok := middleware.GetAPIKeyFromContext(c)
 		if !ok || apiKey == nil || apiKey.Group == nil || apiKey.Group.Platform != service.PlatformComposite {
+			done()
 			c.Next()
 			return
 		}
 		if c.Request == nil || c.Request.Method == http.MethodGet {
+			done()
 			c.Next()
 			return
 		}
@@ -602,6 +607,7 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 			}
 		}
 		requestmodel.ResetRequestBody(c.Request, body)
+		done()
 		c.Next()
 	}
 }

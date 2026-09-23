@@ -216,7 +216,7 @@
 
         <!-- 合并首字/总耗时的健康度列：左侧色条上端随首字档、下端随总耗时档，中段(40%-60%)短渐变过渡，便于纵向扫视整体健康状况 -->
         <template #cell-latency="{ row }">
-          <div class="flex items-stretch gap-2">
+          <button type="button" class="flex items-stretch gap-2 text-left hover:opacity-80 focus-visible:outline focus-visible:outline-primary-500" :aria-label="t('requestTiming.title')" @click="timingRecord = row">
             <span
               class="w-1 shrink-0 rounded-full"
               :class="row.first_token_ms != null
@@ -231,7 +231,7 @@
               <span class="text-gray-400 dark:text-gray-500">{{ t('usage.latencyDuration') }}</span>
               <span class="font-medium tabular-nums" :class="LATENCY_TEXT_CLASSES[durationSeverity(row.duration_ms ?? 0)]">{{ formatDuration(row.duration_ms) }}</span>
             </div>
-          </div>
+          </button>
         </template>
 
         <template #cell-created_at="{ value }">
@@ -494,10 +494,12 @@
       </div>
     </div>
   </Teleport>
+  <UsageTimingDialog :record="timingRecord" @close="timingRecord = null" />
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import UsageTimingDialog from './UsageTimingDialog.vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { formatDateTime, formatReasoningEffort } from '@/utils/format'
@@ -563,6 +565,8 @@ interface Props {
   /** 嵌入统一卡片内使用：去掉自身卡片外观 */
   flat?: boolean
 }
+
+const timingRecord = ref<AdminUsageLog | null>(null)
 
 const props = withDefaults(defineProps<Props>(), {
   loading: false,
