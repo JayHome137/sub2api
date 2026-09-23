@@ -5088,19 +5088,21 @@ func (m *AccountMutation) ResetEdge(name string) error {
 // AccountGroupMutation represents an operation that mutates the AccountGroup nodes in the graph.
 type AccountGroupMutation struct {
 	config
-	op             Op
-	typ            string
-	priority       *int
-	addpriority    *int
-	created_at     *time.Time
-	clearedFields  map[string]struct{}
-	account        *int64
-	clearedaccount bool
-	group          *int64
-	clearedgroup   bool
-	done           bool
-	oldValue       func(context.Context) (*AccountGroup, error)
-	predicates     []predicate.AccountGroup
+	op                   Op
+	typ                  string
+	priority             *int
+	addpriority          *int
+	allowed_models       *[]string
+	appendallowed_models []string
+	created_at           *time.Time
+	clearedFields        map[string]struct{}
+	account              *int64
+	clearedaccount       bool
+	group                *int64
+	clearedgroup         bool
+	done                 bool
+	oldValue             func(context.Context) (*AccountGroup, error)
+	predicates           []predicate.AccountGroup
 }
 
 var _ ent.Mutation = (*AccountGroupMutation)(nil)
@@ -5218,6 +5220,54 @@ func (m *AccountGroupMutation) ResetPriority() {
 	m.addpriority = nil
 }
 
+// SetAllowedModels sets the "allowed_models" field.
+func (m *AccountGroupMutation) SetAllowedModels(s []string) {
+	m.allowed_models = &s
+	m.appendallowed_models = nil
+}
+
+// AllowedModels returns the value of the "allowed_models" field in the mutation.
+func (m *AccountGroupMutation) AllowedModels() (r []string, exists bool) {
+	v := m.allowed_models
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// AppendAllowedModels adds s to the "allowed_models" field.
+func (m *AccountGroupMutation) AppendAllowedModels(s []string) {
+	m.appendallowed_models = append(m.appendallowed_models, s...)
+}
+
+// AppendedAllowedModels returns the list of values that were appended to the "allowed_models" field in this mutation.
+func (m *AccountGroupMutation) AppendedAllowedModels() ([]string, bool) {
+	if len(m.appendallowed_models) == 0 {
+		return nil, false
+	}
+	return m.appendallowed_models, true
+}
+
+// ClearAllowedModels clears the value of the "allowed_models" field.
+func (m *AccountGroupMutation) ClearAllowedModels() {
+	m.allowed_models = nil
+	m.appendallowed_models = nil
+	m.clearedFields[accountgroup.FieldAllowedModels] = struct{}{}
+}
+
+// AllowedModelsCleared returns if the "allowed_models" field was cleared in this mutation.
+func (m *AccountGroupMutation) AllowedModelsCleared() bool {
+	_, ok := m.clearedFields[accountgroup.FieldAllowedModels]
+	return ok
+}
+
+// ResetAllowedModels resets all changes to the "allowed_models" field.
+func (m *AccountGroupMutation) ResetAllowedModels() {
+	m.allowed_models = nil
+	m.appendallowed_models = nil
+	delete(m.clearedFields, accountgroup.FieldAllowedModels)
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (m *AccountGroupMutation) SetCreatedAt(t time.Time) {
 	m.created_at = &t
@@ -5325,7 +5375,7 @@ func (m *AccountGroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AccountGroupMutation) Fields() []string {
-	fields := make([]string, 0, 4)
+	fields := make([]string, 0, 5)
 	if m.account != nil {
 		fields = append(fields, accountgroup.FieldAccountID)
 	}
@@ -5334,6 +5384,9 @@ func (m *AccountGroupMutation) Fields() []string {
 	}
 	if m.priority != nil {
 		fields = append(fields, accountgroup.FieldPriority)
+	}
+	if m.allowed_models != nil {
+		fields = append(fields, accountgroup.FieldAllowedModels)
 	}
 	if m.created_at != nil {
 		fields = append(fields, accountgroup.FieldCreatedAt)
@@ -5352,6 +5405,8 @@ func (m *AccountGroupMutation) Field(name string) (ent.Value, bool) {
 		return m.GroupID()
 	case accountgroup.FieldPriority:
 		return m.Priority()
+	case accountgroup.FieldAllowedModels:
+		return m.AllowedModels()
 	case accountgroup.FieldCreatedAt:
 		return m.CreatedAt()
 	}
@@ -5390,6 +5445,13 @@ func (m *AccountGroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetPriority(v)
+		return nil
+	case accountgroup.FieldAllowedModels:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAllowedModels(v)
 		return nil
 	case accountgroup.FieldCreatedAt:
 		v, ok := value.(time.Time)
@@ -5442,7 +5504,11 @@ func (m *AccountGroupMutation) AddField(name string, value ent.Value) error {
 // ClearedFields returns all nullable fields that were cleared during this
 // mutation.
 func (m *AccountGroupMutation) ClearedFields() []string {
-	return nil
+	var fields []string
+	if m.FieldCleared(accountgroup.FieldAllowedModels) {
+		fields = append(fields, accountgroup.FieldAllowedModels)
+	}
+	return fields
 }
 
 // FieldCleared returns a boolean indicating if a field with the given name was
@@ -5455,6 +5521,11 @@ func (m *AccountGroupMutation) FieldCleared(name string) bool {
 // ClearField clears the value of the field with the given name. It returns an
 // error if the field is not defined in the schema.
 func (m *AccountGroupMutation) ClearField(name string) error {
+	switch name {
+	case accountgroup.FieldAllowedModels:
+		m.ClearAllowedModels()
+		return nil
+	}
 	return fmt.Errorf("unknown AccountGroup nullable field %s", name)
 }
 
@@ -5470,6 +5541,9 @@ func (m *AccountGroupMutation) ResetField(name string) error {
 		return nil
 	case accountgroup.FieldPriority:
 		m.ResetPriority()
+		return nil
+	case accountgroup.FieldAllowedModels:
+		m.ResetAllowedModels()
 		return nil
 	case accountgroup.FieldCreatedAt:
 		m.ResetCreatedAt()

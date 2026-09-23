@@ -149,9 +149,13 @@ type UpdateAccountRequest struct {
 	Concurrency             *int           `json:"concurrency"`
 	Priority                *int           `json:"priority"`
 	RateMultiplier          *float64       `json:"rate_multiplier"`
+	GroupRateMultiplier     *float64       `json:"group_rate_multiplier"`
 	LoadFactor              *int           `json:"load_factor"`
 	Status                  string         `json:"status" binding:"omitempty,oneof=active inactive error"`
 	GroupIDs                *[]int64       `json:"group_ids"`
+	// GroupAllowedModels 按分组 ID 覆盖账号在各分组内可用的模型；省略则不改，
+	// 传入时没有列出的分组恢复为不限制。
+	GroupAllowedModels      map[int64][]string `json:"group_allowed_models"`
 	ExpiresAt               *int64         `json:"expires_at"`
 	AutoPauseOnExpired      *bool          `json:"auto_pause_on_expired"`
 	ProbeEnabled            *bool          `json:"upstream_billing_probe_enabled"`
@@ -1185,6 +1189,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		LoadFactor:            req.LoadFactor,
 		Status:                req.Status,
 		GroupIDs:              req.GroupIDs,
+		GroupAllowedModels:    req.GroupAllowedModels,
 		ExpiresAt:             req.ExpiresAt,
 		AutoPauseOnExpired:    req.AutoPauseOnExpired,
 		ProbeEnabled:          req.ProbeEnabled,

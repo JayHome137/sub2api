@@ -996,6 +996,15 @@ export default {
       priorityHint: '优先级越小的账号优先使用',
       billingRateMultiplier: '账号计费倍率',
       billingRateMultiplierHint: '0 表示不计费，仅影响账号计费',
+      groupBillingRateMultiplier: '分组计费倍率',
+      groupBillingRateMultiplierHint: '参与用户/API Key 扣费；默认 1。分组 0.2x 时设置 5x 可恢复 1x 原价',
+      groupModelLimits: {
+        title: '各分组可用模型',
+        hint: '账号属于多个分组时，可以限制它在某个分组里只服务部分模型；只能在账号本身支持的模型里收窄。默认不限制。',
+        allModels: '全部模型',
+        selectedModels: '仅限部分',
+        emptyHint: '还没有选择模型，保存后该分组仍按不限制处理。'
+      },
       expiresAt: '过期时间',
       expiresAtHint: '留空表示不过期',
       higherPriorityFirst: '数值越小优先级越高',

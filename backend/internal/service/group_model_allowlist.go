@@ -30,14 +30,17 @@ func GroupModelAllowlistFromDomain(cfg domain.GroupModelAllowlist) GroupModelAll
 
 // supplementUnmappedOpenAIModels ensures a partial mapping catalog does not
 // hide models from unmapped OpenAI accounts. An empty catalog is left unchanged
-// so callers retain their existing discovery fallback.
-func supplementUnmappedOpenAIModels(accounts []Account, models []string) []string {
+// so callers retain their existing discovery fallback. Unmapped accounts that
+// the group restricts to specific models are already listed by that allowlist
+// and must not pull in the full default set.
+func supplementUnmappedOpenAIModels(accounts []Account, groupID *int64, models []string) []string {
 	if len(models) == 0 {
 		return models
 	}
 	for i := range accounts {
 		account := &accounts[i]
-		if account.Platform == PlatformOpenAI && len(account.GetModelMapping()) == 0 {
+		if account.Platform == PlatformOpenAI && len(account.GetModelMapping()) == 0 &&
+			len(account.GroupAllowedModels(derefGroupID(groupID))) == 0 {
 			return dedupeAndSortModelIDs(slices.Concat(models, openai.DefaultModelIDs()))
 		}
 	}

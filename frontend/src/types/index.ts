@@ -1175,6 +1175,7 @@ export interface Account {
   proxy?: Proxy
   group_ids?: number[] // Groups this account belongs to
   groups?: Group[] // Preloaded group objects
+  account_groups?: AccountGroupBinding[] // Per-group binding settings (detail responses only)
 
   // Rate limit & scheduling fields
   schedulable: boolean
@@ -1444,6 +1445,16 @@ export interface CreateAccountRequest {
   confirm_mixed_channel_risk?: boolean
 }
 
+// AccountGroupBinding is one account-to-group binding and its per-group settings.
+export interface AccountGroupBinding {
+  account_id: number
+  group_id: number
+  priority: number
+  // Models the account may serve in this group; omitted means no limit.
+  allowed_models?: string[]
+  created_at: string
+}
+
 export interface UpdateAccountRequest {
   name?: string
   notes?: string | null
@@ -1458,6 +1469,8 @@ export interface UpdateAccountRequest {
   schedulable?: boolean
   status?: 'active' | 'inactive' | 'error'
   group_ids?: number[]
+  // Replaces the per-group model limits; groups not listed become unrestricted.
+  group_allowed_models?: Record<number, string[]>
   expires_at?: number | null
   auto_pause_on_expired?: boolean
   upstream_billing_probe_enabled?: boolean
