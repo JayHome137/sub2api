@@ -30,4 +30,23 @@ describe('Usage timing details', () => {
     expect(wrapper.text()).toContain('r2')
     wrapper.unmount()
   })
+  it('explains a slow first output while keeping long streaming and new connections neutral', async () => {
+    mocks.get.mockResolvedValue({ retention_days: 30, traces: [{
+      trace_id: 'trace', started_at: '2026-09-23', total_ms: 50000, status: 200,
+      body_bytes: 20, body_complete: true, body_read_ms: 1, downstream_bytes: 100,
+      downstream_write_ms: 1, downstream_error: false, client_disconnect: false, canceled: false,
+      outcome: 'success', terminal: 'completed', events: { first_visible: 40000, first_semantic: 40000 },
+      spans: [{ name: 'handler', start_ms: 0, end_ms: 50000 }, { name: 'user_queue', start_ms: 0, end_ms: 6000 }],
+      attempts: [{ kind: 'egress', number: 1, account_id: 1, proxy_id: 0, start_ms: 6000, end_ms: 50000, status: 200, reused: false, body_eof: false, request_bytes: 20, response_bytes: 100, events: { response_headers: 10000 } }]
+    }] })
+    const wrapper = mount(UsageTimingDialog, { props: { record: row(1) }, ...options })
+    await flushPromises()
+    expect(wrapper.text()).toContain('requestTiming.health.firstSlow')
+    expect(wrapper.text()).toContain('requestTiming.health.largest')
+    expect(wrapper.findAll('strong').find(n => n.text() === '40.00s')?.element.parentElement?.className).toContain('text-orange-700')
+    const reuse = wrapper.findAll('div').find(n => n.element.children.length === 2 && n.element.children[0]?.textContent === 'requestTiming.fields.reused')
+    expect(reuse?.element.children[1]?.className).toContain('text-slate-600')
+    wrapper.unmount()
+  })
+
 })

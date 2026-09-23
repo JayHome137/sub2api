@@ -1,8 +1,11 @@
 name: Request timing validation and artifact
 on:
   push:
-    branches: [feat/request-latency-details]
+    branches: [feat/request-latency-details, feat/timing-health-colors, production]
   workflow_dispatch:
+concurrency:
+  group: request-timing-build-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -26,13 +29,13 @@ jobs:
         working-directory: frontend
       - name: Timing regression tests with race detector
         working-directory: backend
-        run: go test -race ./internal/pkg/requesttiming ./internal/server/middleware -run 'Test(FinishAndBinding|ConcurrentCallbacks|HTTPTraceKeeps|RequestTiming)' -count=1
+        run: go test -race ./internal/pkg/requesttiming ./internal/server/middleware ./internal/repository -run 'Test(FinishAndBinding|ConcurrentCallbacks|HTTPTraceKeeps|RequestTiming|TimingWrite|TimingBinding)' -count=1
       - name: Compile affected packages
         working-directory: backend
         run: go test -tags=unit ./internal/handler/... ./internal/service ./internal/repository ./internal/server/... -run '^$'
       - name: Frontend regression tests
         working-directory: frontend
-        run: pnpm test:run src/components/admin/usage/__tests__/UsageTable.spec.ts src/components/admin/usage/__tests__/UsageTimingDialog.spec.ts
+        run: pnpm test:run src/components/admin/usage/__tests__/UsageTable.spec.ts src/components/admin/usage/__tests__/UsageTimingDialog.spec.ts src/utils/__tests__/usageTps.spec.ts src/utils/__tests__/latencyHealth.spec.ts src/utils/__tests__/requestTimingHealth.spec.ts
       - name: Frontend production build
         working-directory: frontend
         run: pnpm build
@@ -50,5 +53,7 @@ jobs:
       - uses: actions/upload-artifact@v6
         with:
           name: request-timing-linux-amd64
-          path: artifacts/
+          path: |
+            artifacts/
+            frontend/dist/
           retention-days: 14

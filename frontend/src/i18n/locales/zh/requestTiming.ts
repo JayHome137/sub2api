@@ -70,6 +70,29 @@ export default {
     "stream_transfer": "响应头后读取与转发",
     "request_bytes": "出站 Content-Length",
     "response_bytes": "上游读取大小",
-    "body_eof": "读到上游 EOF"
+    "body_eof": "读到上游 EOF",
+    "outcome": "转发结果",
+    "client_disconnect": "转发检测到客户端断开"
+  },
+  "httpAttempt": "实际 HTTP 尝试",
+  "parent": "所属出口尝试",
+  "success": "转发成功",
+  "client_disconnected": "客户端已断开",
+  "tpsNote": "TPS 按现有使用记录估算；推理 Token、上游缓冲或首字后窗口很短时可能偏高，不代表模型实际生成速度。",
+  "health": {
+    "good": "正常",
+    "warn": "需留意",
+    "slow": "偏慢",
+    "critical": "明显偏慢 / 异常",
+    "neutral": "参考数据",
+    "guideTitle": "这次请求表现如何？",
+    "thresholdTitle": "颜色怎么看？",
+    "thresholds": "仅作排查参考，不是服务承诺。首字与上游等待：小于 10 秒为绿，10–30 秒为黄，30–60 秒为橙，60 秒起为红；请求总耗时：小于 60 秒为绿，60–180 秒为黄，180–300 秒为橙，300 秒起为红。本地处理和连接阶段：小于 200ms 为绿，200–1000ms 为黄，1–5 秒为橙，5 秒起为红。长输出、大请求会自然增加耗时。流传输时长、数据大小、读取速率及未采集值不评好坏；未复用连接或未读到 EOF 也不直接判故障。",
+    "largest": "已采集的本地阶段中，{stage} 用时最长：{time}。阶段可能重叠，不代表已确定根因。",
+    "failed": "请求出现失败或写入错误，先查看下方请求结果和上游尝试。",
+    "interrupted": "请求中途取消、断开或未完整结束，请结合请求结果查看。",
+    "insufficient": "缺少首字观测，暂时无法评价响应速度。",
+    "firstGood": "约 {time} 开始输出，首字等待在参考正常范围内。",
+    "firstSlow": "约 {time} 才开始输出，等待偏长。可对照下方读体、排队和上游等待定位。"
   }
 }

@@ -70,6 +70,29 @@ export default {
     "stream_transfer": "Read/forward after response headers",
     "request_bytes": "Outbound Content-Length",
     "response_bytes": "Upstream bytes read",
-    "body_eof": "Upstream EOF observed"
+    "body_eof": "Upstream EOF observed",
+    "outcome": "Forward outcome",
+    "client_disconnect": "Client disconnect detected"
+  },
+  "httpAttempt": "Physical HTTP attempt",
+  "parent": "Parent egress",
+  "success": "Forward succeeded",
+  "client_disconnected": "Client disconnected",
+  "tpsNote": "TPS is estimated from the usage record. Reasoning tokens, upstream buffering or a short post-first-token window may inflate it; it is not a direct measurement of model generation speed.",
+  "health": {
+    "good": "Normal",
+    "warn": "Watch",
+    "slow": "Slow",
+    "critical": "Very slow / error",
+    "neutral": "Informational",
+    "guideTitle": "How did this request perform?",
+    "thresholdTitle": "How to read the colors",
+    "thresholds": "Diagnostic reference bands, not an SLA. First output/upstream wait: green <10s, yellow 10–30s, orange 30–60s, red ≥60s. Total duration: green <60s, yellow 60–180s, orange 180–300s, red ≥300s. Local/connection stages: green <200ms, yellow 200–1000ms, orange 1–5s, red ≥5s. Long outputs and large bodies naturally take longer. Streaming duration, sizes, read rates and missing values are informational. New connections and missing EOF do not by themselves indicate failure.",
+    "largest": "Longest observed local stage: {stage}, {time}. Stages may overlap; this does not establish a root cause.",
+    "failed": "A request or downstream write failed. Check the result and upstream attempts below.",
+    "interrupted": "The request was canceled, disconnected or incomplete. Check the result below.",
+    "insufficient": "First-output data is missing; response speed cannot be assessed.",
+    "firstGood": "Output began after about {time}, within the reference normal range.",
+    "firstSlow": "Output began after about {time}, a longer wait. Compare body reads, queueing and upstream waits below."
   }
 }
