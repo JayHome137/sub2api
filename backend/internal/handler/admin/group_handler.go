@@ -1112,6 +1112,57 @@ func (h *GroupHandler) ClearGroupRPMOverrides(c *gin.Context) {
 	response.Success(c, gin.H{"message": "RPM overrides cleared successfully"})
 }
 
+// BatchSetGroupUserDeniedModelsRequest represents batch set user denied models request
+type BatchSetGroupUserDeniedModelsRequest struct {
+	Entries []service.GroupUserDeniedModelsInput `json:"entries" binding:"required"`
+}
+
+// BatchSetGroupUserDeniedModels replaces the models each user may not use in a group
+// PUT /api/v1/admin/groups/:id/user-denied-models
+func (h *GroupHandler) BatchSetGroupUserDeniedModels(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
+	groupID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid group ID")
+		return
+	}
+
+	var req BatchSetGroupUserDeniedModelsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	if err := h.adminService.BatchSetGroupUserDeniedModels(c.Request.Context(), groupID, req.Entries); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "User denied models updated successfully"})
+}
+
+// ClearGroupUserDeniedModels clears the denied models of every user in a group
+// DELETE /api/v1/admin/groups/:id/user-denied-models
+func (h *GroupHandler) ClearGroupUserDeniedModels(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
+	groupID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid group ID")
+		return
+	}
+
+	if err := h.adminService.ClearGroupUserDeniedModels(c.Request.Context(), groupID); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"message": "User denied models cleared successfully"})
+}
+
 // UpdateSortOrderRequest represents the request to update group sort orders
 type UpdateSortOrderRequest struct {
 	Updates []struct {

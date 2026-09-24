@@ -431,6 +431,17 @@
                 }}</span>
               </button>
               <button
+                v-if="!authStore.isSimpleMode"
+                data-testid="group-user-denied-models"
+                @click="handleUserDeniedModels(row)"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-red-600 dark:hover:bg-dark-700 dark:hover:text-red-400"
+              >
+                <Icon name="ban" size="sm" />
+                <span class="text-xs">{{
+                  t("admin.groups.userDeniedModels")
+                }}</span>
+              </button>
+              <button
                 @click="handleDelete(row)"
                 class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
               >
@@ -4414,6 +4425,14 @@
       @close="showRPMOverridesModal = false"
       @success="loadGroups"
     />
+
+    <!-- Group User Denied Models Modal -->
+    <GroupUserDeniedModelsModal
+      :show="showUserDeniedModelsModal"
+      :group="userDeniedModelsGroup"
+      @close="showUserDeniedModelsModal = false"
+      @success="loadGroups"
+    />
   </AppLayout>
 </template>
 
@@ -4450,6 +4469,7 @@ import PlatformIcon from "@/components/common/PlatformIcon.vue";
 import Icon from "@/components/icons/Icon.vue";
 import GroupRateMultipliersModal from "@/components/admin/group/GroupRateMultipliersModal.vue";
 import GroupRPMOverridesModal from "@/components/admin/group/GroupRPMOverridesModal.vue";
+import GroupUserDeniedModelsModal from "@/components/admin/group/GroupUserDeniedModelsModal.vue";
 import GroupCapacityBadge from "@/components/common/GroupCapacityBadge.vue";
 import ReasoningEffortPolicyFields from "@/components/admin/group/ReasoningEffortPolicyFields.vue";
 import PricingEntryCard from "@/components/admin/channel/PricingEntryCard.vue";
@@ -4983,6 +5003,8 @@ const showRateMultipliersModal = ref(false);
 const rateMultipliersGroup = ref<AdminGroup | null>(null);
 const showRPMOverridesModal = ref(false);
 const rpmOverridesGroup = ref<AdminGroup | null>(null);
+const showUserDeniedModelsModal = ref(false);
+const userDeniedModelsGroup = ref<AdminGroup | null>(null);
 const sortableGroups = ref<AdminGroup[]>([]);
 type ConcreteGroupPlatform = Exclude<GroupPlatform, "composite">;
 type CompositeRouteFormState = {
@@ -6398,6 +6420,11 @@ const handleRateMultipliers = (group: AdminGroup) => {
 const handleRPMOverrides = (group: AdminGroup) => {
   rpmOverridesGroup.value = group;
   showRPMOverridesModal.value = true;
+};
+
+const handleUserDeniedModels = (group: AdminGroup) => {
+  userDeniedModelsGroup.value = group;
+  showUserDeniedModelsModal.value = true;
 };
 
 const handleDuplicate = async (group: AdminGroup) => {

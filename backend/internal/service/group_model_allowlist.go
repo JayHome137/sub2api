@@ -103,8 +103,15 @@ func (a GroupModelAllowlist) Allows(model string) bool {
 	if model == "" {
 		return true
 	}
+	return modelMatchesGroupModelPatterns(a.Models, model)
+}
+
+// modelMatchesGroupModelPatterns 判断客户端模型名是否命中任一条目：不区分大小写，
+// 末尾 * 为前缀匹配，模型名先展开为与分组白名单相同的候选形式。
+// 分组白名单（放行）与用户在分组内的禁用模型（拒绝）共用这套规则。
+func modelMatchesGroupModelPatterns(patterns []string, model string) bool {
 	candidates := groupModelAllowlistCandidates(model)
-	for _, entry := range a.Models {
+	for _, entry := range patterns {
 		entry = strings.TrimSpace(entry)
 		if entry == "" {
 			continue

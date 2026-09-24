@@ -61,6 +61,9 @@ type AdminService interface {
 	BatchSetGroupRateMultipliers(ctx context.Context, groupID int64, entries []GroupRateMultiplierInput) error
 	ClearGroupRPMOverrides(ctx context.Context, groupID int64) error
 	BatchSetGroupRPMOverrides(ctx context.Context, groupID int64, entries []GroupRPMOverrideInput) error
+	// ClearGroupUserDeniedModels / BatchSetGroupUserDeniedModels 管理分组内各用户的禁用模型。
+	ClearGroupUserDeniedModels(ctx context.Context, groupID int64) error
+	BatchSetGroupUserDeniedModels(ctx context.Context, groupID int64, entries []GroupUserDeniedModelsInput) error
 	UpdateGroupSortOrders(ctx context.Context, updates []GroupSortOrderUpdate) error
 
 	// API Key management (admin)
@@ -148,6 +151,7 @@ const (
 	AdminGroupOperationCompositeRoute AdminGroupOperation = "composite_route"
 	AdminGroupOperationMultiplier     AdminGroupOperation = "multiplier"
 	AdminGroupOperationRPMOverride    AdminGroupOperation = "rpm_override"
+	AdminGroupOperationDeniedModels   AdminGroupOperation = "user_denied_models"
 	AdminGroupOperationSort           AdminGroupOperation = "sort"
 )
 
