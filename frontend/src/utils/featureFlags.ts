@@ -104,6 +104,11 @@ export const FeatureFlags = {
     mode: 'opt-in',
     label: 'Available Channels',
   }),
+  pelicanShowcase: defineFlag({
+    key: 'pelican_showcase_enabled',
+    mode: 'opt-in',
+    label: 'Pelican Showcase',
+  }),
   modelPlaza: defineFlag({
     key: 'model_plaza_enabled',
     mode: 'opt-in',

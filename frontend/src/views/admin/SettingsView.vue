@@ -7138,6 +7138,14 @@
           </div>
         </div>
 
+        <PelicanShowcaseSettings
+          v-model:enabled="form.pelican_showcase_enabled"
+          v-model:config="form.pelican_showcase_config"
+          :groups="pelicanShowcaseGroups"
+          :groups-loaded="pelicanShowcaseGroupsLoaded"
+          :groups-load-failed="pelicanShowcaseGroupsLoadFailed"
+        />
+
         <div class="card">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
@@ -8761,6 +8769,7 @@ import type {
   DefaultSubscriptionSetting,
   DefaultPlatformQuotasMap,
   OpenAIFastPolicyRule,
+  PelicanShowcaseConfig,
   WeChatConnectMode,
   WebSearchEmulationConfig,
   WebSearchProviderConfig,
@@ -8787,6 +8796,11 @@ import ImageUpload from "@/components/common/ImageUpload.vue";
 import BackupSettings from "@/views/admin/BackupView.vue";
 import EmailTemplateEditor from "@/views/admin/settings/EmailTemplateEditor.vue";
 import OpenAIFastPolicyUserSelector from "@/views/admin/settings/OpenAIFastPolicyUserSelector.vue";
+import PelicanShowcaseSettings from "@/views/admin/settings/PelicanShowcaseSettings.vue";
+import {
+  defaultPelicanShowcaseConfig,
+  sanitizePelicanShowcaseConfig,
+} from "@/views/admin/settings/pelicanShowcase";
 import { useClipboard } from "@/composables/useClipboard";
 import {
   useStepUp,
@@ -8930,6 +8944,9 @@ const adminApiKeyMasked = ref("");
 const adminApiKeyOperating = ref(false);
 const newAdminApiKey = ref("");
 const subscriptionGroups = ref<AdminGroup[]>([]);
+const pelicanShowcaseGroups = ref<AdminGroup[]>([]);
+const pelicanShowcaseGroupsLoaded = ref(false);
+const pelicanShowcaseGroupsLoadFailed = ref(false);
 
 // Upstream billing probe state
 const upstreamBillingProbeLoading = ref(true);
@@ -9457,6 +9474,8 @@ type SettingsForm = Omit<
   /** Form always binds a concrete boolean (SystemSettings marks this optional). */
   channel_monitor_hide_throughput: boolean;
   channel_monitor_show_quota: boolean;
+  pelican_showcase_enabled: boolean;
+  pelican_showcase_config: PelicanShowcaseConfig;
   smtp_password: string;
   turnstile_secret_key: string;
   tencent_captcha_app_secret_key: string;
@@ -9772,6 +9791,9 @@ const form = reactive<SettingsForm>({
   channel_monitor_show_quota: false,
   // Available Channels feature switch
   available_channels_enabled: false,
+  // Pelican showcase switch + gallery limits (defaults match the backend)
+  pelican_showcase_enabled: false,
+  pelican_showcase_config: defaultPelicanShowcaseConfig(),
   // Model Plaza feature switches + description
   model_plaza_enabled: false,
   model_plaza_require_auth: false,
@@ -10911,12 +10933,18 @@ async function loadSettings() {
 async function loadSubscriptionGroups() {
   try {
     const groups = await adminAPI.groups.getAll();
+    pelicanShowcaseGroups.value = groups.filter((group) => group.status === "active");
+    pelicanShowcaseGroupsLoaded.value = true;
+    pelicanShowcaseGroupsLoadFailed.value = false;
     subscriptionGroups.value = groups.filter(
       (group) =>
         group.subscription_type === "subscription" && group.status === "active",
     );
   } catch (_error: unknown) {
     subscriptionGroups.value = [];
+    pelicanShowcaseGroups.value = [];
+    pelicanShowcaseGroupsLoaded.value = false;
+    pelicanShowcaseGroupsLoadFailed.value = true;
   }
 }
 
@@ -11430,6 +11458,9 @@ async function saveSettings() {
       channel_monitor_show_quota: Boolean(form.channel_monitor_show_quota),
       // Available Channels feature switch
       available_channels_enabled: form.available_channels_enabled,
+      // Pelican showcase switch + gallery limits
+      pelican_showcase_enabled: form.pelican_showcase_enabled,
+      pelican_showcase_config: sanitizePelicanShowcaseConfig(form.pelican_showcase_config),
       // Model Plaza feature switches + description
       model_plaza_enabled: form.model_plaza_enabled,
       model_plaza_require_auth: form.model_plaza_require_auth,
