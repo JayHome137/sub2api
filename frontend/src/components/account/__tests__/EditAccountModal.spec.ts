@@ -328,6 +328,22 @@ describe('EditAccountModal', () => {
     authIsSimpleMode.value = true
   })
 
+  afterEach(() => vi.useRealTimers())
+
+  it('loads and removes Copilot SDK mode without dropping unrelated extra', async () => {
+    const account = buildAccount()
+    account.extra = { openai_copilot_sdk: true, unrelated_setting: 'keep' }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+    expect(wrapper.get<HTMLInputElement>('[data-testid="copilot-sdk-toggle"]').element.checked).toBe(true)
+    await wrapper.get('[data-testid="copilot-sdk-toggle"]').setValue(false)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.openai_copilot_sdk).toBeUndefined()
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.unrelated_setting).toBe('keep')
+  })
+
   it('reopening the same account rehydrates the OpenAI whitelist from props', async () => {
     const account = buildAccount()
     updateAccountMock.mockReset()

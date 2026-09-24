@@ -58,6 +58,15 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		return nil, errors.New("codex_cli_only restriction: only codex official clients are allowed")
 	}
 
+	// The SDK adapter owns Lite declarations, custom tools, replay item IDs,
+	// namespaces and compaction. Do not lower them to generic OpenAI API shapes.
+	if account.IsCopilotSDKEnabled() {
+		view := newOpenAIRequestView(body)
+		SetActualOpenAIUpstreamEndpoint(c, openAIResponsesUpstreamEndpoint)
+		return s.forwardOpenAIPassthrough(ctx, c, account, body, body, view.Model, false,
+			extractOpenAIReasoningEffortFromBody(body, view.Model), view.Stream, startTime)
+	}
+
 	normalizedBody, normalized, err := normalizeOpenAICodexCompactReasoningEffortForAccount(c, account, body)
 	if err != nil {
 		return nil, err
@@ -1344,6 +1353,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 }
 
 func shouldForwardOpenAIResponsesViaRawChatCompletions(account *Account) bool {
+	if account != nil && account.IsCopilotSDKEnabled() {
+		return false
+	}
 	if account == nil || account.Type != AccountTypeAPIKey {
 		return false
 	}
