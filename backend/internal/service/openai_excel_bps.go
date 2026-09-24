@@ -51,8 +51,13 @@ func newExcelBPSRequest(ctx context.Context, body []byte, token, accountID strin
 // only the selected account's bearer and ChatGPT account ID belong on this host.
 func (s *OpenAIGatewayService) forwardExcelBPS(ctx context.Context, c *gin.Context, account *Account, body []byte, start time.Time) (*OpenAIForwardResult, error) {
 	fail := func(status int, code, message string) (*OpenAIForwardResult, error) {
+		committed := StopOpenAICompactSSEKeepaliveCommitted(c)
 		MarkResponseCommitted(c)
-		c.JSON(status, gin.H{"error": gin.H{"type": "invalid_request_error", "code": code, "message": message}})
+		if committed {
+			writeOpenAICompactSSEFailureMessage(c, status, code, message)
+		} else {
+			c.JSON(status, gin.H{"error": gin.H{"type": "invalid_request_error", "code": code, "message": message}})
+		}
 		return nil, fmt.Errorf("excel BPS: %s", code)
 	}
 	originalModel := gjson.GetBytes(body, "model").String()
