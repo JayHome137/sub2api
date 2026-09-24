@@ -1,17 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import AccountQualityView from '../AccountQualityView.vue'
 import scheduledTests from '@/api/admin/scheduledTests'
 import { listQualityPlans, listQualityOperations } from '@/api/admin/accountQuality'
+vi.mock('@/components/admin/operations/SmartOpsNav.vue', () => ({ default: { template: '<nav />' } }))
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ user: { id: 1, role: 'admin' } }) }))
 vi.mock('@/components/layout/AppLayout.vue', () => ({ default: { template: '<main><slot /></main>' } }))
 vi.mock('vue-i18n', async () => ({ ...await vi.importActual<typeof import('vue-i18n')>('vue-i18n'), useI18n: () => ({ t: (key: string) => key, te: () => true }) }))
 vi.mock('@/api/admin/accountQuality', () => ({ listQualityPlans: vi.fn(), runQualityPlan: vi.fn(), listQualityOperations: vi.fn().mockResolvedValue({items:[],next_cursor:0}) }))
 vi.mock('@/api/admin/scheduledTests', () => ({ default: { create: vi.fn(), update: vi.fn(), delete: vi.fn(), listResults: vi.fn(), getResult: vi.fn() } }))
 vi.mock('@/api/admin/accounts', () => ({ list: vi.fn().mockResolvedValue({ items: [{ id: 1, name: 'Test account' }], total: 1 }) }))
 vi.mock('@/api/admin/groups', () => ({ getModelAllowlistCandidates: vi.fn().mockResolvedValue(["test-judge"]), getAllIncludingInactive: vi.fn().mockResolvedValue([{ id: 21, name: 'Quality pool', status:'active' }]) }))
-const mountView = () => mount(AccountQualityView, { global: { stubs: { AppLayout: { template: '<main><slot /></main>' } } } })
+const mountView = () => mount(AccountQualityView, { global: { plugins: [createPinia()], stubs: { Teleport: true, AppLayout: { template: '<main><slot /></main>' } } } })
 describe('quality operations', () => {
-  beforeEach(() => { vi.clearAllMocks(); vi.mocked(listQualityPlans).mockResolvedValue([]) })
+  beforeEach(() => { vi.clearAllMocks(); vi.mocked(listQualityPlans).mockResolvedValue([]); vi.mocked(listQualityOperations).mockResolvedValue({items:[],next_cursor:0}) })
   it('requires explicit group selection and keeps automatic restoration opt-in', async () => {
     const wrapper = mountView(); await flushPromises()
     const vm = wrapper.vm as any
@@ -44,6 +47,8 @@ describe('quality operations', () => {
     expect(scheduledTests.getResult).not.toHaveBeenCalled()
     await vm.operationDetails(operation)
     expect(scheduledTests.getResult).toHaveBeenCalledWith(4, 10)
+    expect(scheduledTests.getResult).not.toHaveBeenCalledWith(4, 9)
+    await vm.selectResult(vm.results[1])
     expect(scheduledTests.getResult).toHaveBeenCalledWith(4, 9)
     expect(wrapper.text()).toContain('same answer')
     await vm.moreOperations(); expect(listQualityOperations).toHaveBeenLastCalledWith(10)
@@ -57,7 +62,8 @@ describe('quality operations', () => {
     wrapper.unmount()
   })
   it('renders returned model content as text', async () => {
-    vi.mocked(scheduledTests.listResults).mockResolvedValue([{ id: 4, status: 'failed', error_message: 'answer_mismatch', response_text: '<img src=x onerror=alert(1)>', quality_action: 'groups_removed' }] as any)
+    vi.mocked(scheduledTests.listResults).mockResolvedValue([{ id: 4, status: 'failed', error_message: 'answer_mismatch', quality_action: 'groups_removed' }] as any)
+    vi.mocked(scheduledTests.getResult).mockResolvedValue({ id: 4, status: 'failed', error_message: 'answer_mismatch', response_text: '<img src=x onerror=alert(1)>', quality_action: 'groups_removed' } as any)
     const wrapper = mountView(); await flushPromises(); const vm = wrapper.vm as any
     await vm.history({ id: 1 })
     expect(wrapper.find('pre').text()).toContain('<img')

@@ -36,6 +36,11 @@ func TestQualityActionsRestoreOwnershipAndStaleRuns(t *testing.T) {
 			listed, err := plans.ListQualityPlans(ctx)
 			require.NoError(t, err)
 			require.NotEmpty(t, listed)
+			for _, item := range listed {
+				if item.ID == plan.ID {
+					require.Equal(t, "quality", item.AccountName)
+				}
+			}
 			require.NoError(t, plans.TriggerQuality(ctx, plan.ID))
 			plan, err = plans.GetByID(ctx, plan.ID)
 			require.NoError(t, err)

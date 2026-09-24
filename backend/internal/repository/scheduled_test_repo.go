@@ -184,13 +184,17 @@ type scannable interface {
 	Scan(dest ...any) error
 }
 
-func scanPlan(row scannable) (*service.ScheduledTestPlan, error) {
+func scanPlan(row scannable, withAccountName ...bool) (*service.ScheduledTestPlan, error) {
 	p := &service.ScheduledTestPlan{}
 	var config []byte
-	if err := row.Scan(
+	dest := []any{
 		&p.ID, &p.AccountID, &p.ModelID, &p.CronExpression, &p.Enabled, &p.MaxResults, &p.AutoRecover,
 		&p.LastRunAt, &p.NextRunAt, &p.CreatedAt, &p.UpdatedAt, &config, &p.RunningUntil,
-	); err != nil {
+	}
+	if len(withAccountName) > 0 && withAccountName[0] {
+		dest = append(dest, &p.AccountName)
+	}
+	if err := row.Scan(dest...); err != nil {
 		return nil, err
 	}
 	if len(config) > 0 {
@@ -201,10 +205,10 @@ func scanPlan(row scannable) (*service.ScheduledTestPlan, error) {
 	return p, nil
 }
 
-func scanPlans(rows *sql.Rows) ([]*service.ScheduledTestPlan, error) {
+func scanPlans(rows *sql.Rows, withAccountName ...bool) ([]*service.ScheduledTestPlan, error) {
 	var plans []*service.ScheduledTestPlan
 	for rows.Next() {
-		p, err := scanPlan(rows)
+		p, err := scanPlan(rows, withAccountName...)
 		if err != nil {
 			return nil, err
 		}

@@ -12,14 +12,14 @@ import (
 )
 
 func (r *scheduledTestPlanRepository) ListQualityPlans(ctx context.Context) ([]*service.ScheduledTestPlan, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT p.id, p.account_id, p.model_id, p.cron_expression, p.enabled, p.max_results, p.auto_recover, p.last_run_at, p.next_run_at, p.created_at, p.updated_at, p.pelican_config, p.running_until
+	rows, err := r.db.QueryContext(ctx, `SELECT p.id, p.account_id, p.model_id, p.cron_expression, p.enabled, p.max_results, p.auto_recover, p.last_run_at, p.next_run_at, p.created_at, p.updated_at, p.pelican_config, p.running_until, a.name
  FROM scheduled_test_plans p JOIN accounts a ON a.id=p.account_id
  WHERE p.pelican_config->'quality' IS NOT NULL AND a.deleted_at IS NULL ORDER BY p.id DESC`)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	return scanPlans(rows)
+	return scanPlans(rows, true)
 }
 func (r *scheduledTestPlanRepository) TriggerQuality(ctx context.Context, id int64) error {
 	result, err := r.db.ExecContext(ctx, `UPDATE scheduled_test_plans SET next_run_at=NOW(), updated_at=NOW()

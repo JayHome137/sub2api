@@ -728,6 +728,9 @@ func registerUserAttributeRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 }
 
 func registerScheduledTestRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	admin.GET("/account-ops/config", h.Admin.AccountOps.GetConfig)
+	admin.PUT("/account-ops/config", h.Admin.AccountOps.SaveConfig)
+	admin.GET("/account-ops/alerts", h.Admin.AccountOps.List)
 	admin.GET("/account-quality-results", h.Admin.ScheduledTest.ListQualityHistory)
 	admin.GET("/account-quality-plans", h.Admin.ScheduledTest.ListQualityPlans)
 	admin.POST("/account-quality-plans/:id/run", h.Admin.ScheduledTest.TriggerQuality)
