@@ -725,6 +725,10 @@ func registerUserAttributeRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 }
 
 func registerScheduledTestRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	admin.GET("/account-quality-results", h.Admin.ScheduledTest.ListQualityHistory)
+	admin.GET("/account-quality-plans", h.Admin.ScheduledTest.ListQualityPlans)
+	admin.POST("/account-quality-plans/:id/run", h.Admin.ScheduledTest.TriggerQuality)
+	admin.GET("/pelican-test-results", h.Admin.ScheduledTest.ListPelicanHistory)
 	plans := admin.Group("/scheduled-test-plans")
 	{
 		plans.POST("", h.Admin.ScheduledTest.Create)

@@ -2353,6 +2353,35 @@ export interface TotpLogin2FARequest {
 
 // ==================== Scheduled Test Types ====================
 
+export interface QualityJudgeConfig {
+  group_id: number
+  model_id: string
+  prompt: string
+}
+export interface QualityJudgment {
+  verdict: 'correct' | 'incorrect' | 'unknown'
+  reason: string
+  account_id?: number
+  group_id?: number
+  model_id?: string
+}
+export interface QualityPolicy {
+  judge?: QualityJudgeConfig
+  expected_answer: string
+  action: 'remove_groups' | 'disable_scheduling'
+  remove_group_ids: number[]
+  auto_restore: boolean
+}
+
+export interface PelicanTestConfig {
+  quality?: QualityPolicy
+  question_kind?: 'candy' | 'pelican'
+  prompt: string
+  reasoning_effort: string
+  parallel_count: number
+  model_id?: string
+}
+
 export interface ScheduledTestPlan {
   id: number
   account_id: number
@@ -2368,6 +2397,10 @@ export interface ScheduledTestPlan {
 }
 
 export interface ScheduledTestResult {
+  quality_judgment?: QualityJudgment
+  quality_round_id?: string
+  quality_action?: string
+  pelican_config?: PelicanTestConfig
   id: number
   plan_id: number
   status: string
