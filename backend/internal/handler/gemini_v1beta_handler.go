@@ -324,7 +324,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		modelName = strings.TrimSpace(resolvedModel)
 	}
 
-	stream := action == "streamGenerateContent"
+	stream := action == gemini.ActionStreamGenerateContent
 	reqLog = reqLog.With(zap.String("model", modelName), zap.String("action", action), zap.Bool("stream", stream))
 
 	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
@@ -751,18 +751,11 @@ func parseGeminiModelAction(rest string) (model string, action string, err error
 	if rest == "" {
 		return "", "", &pathParseError{"missing path"}
 	}
-
-	// Standard: {model}:{action}
-	if i := strings.Index(rest, ":"); i > 0 && i < len(rest)-1 {
-		return rest[:i], rest[i+1:], nil
+	model, action, ok := gemini.ParseModelAction(rest)
+	if !ok {
+		return "", "", &pathParseError{"invalid model action path"}
 	}
-
-	// Fallback: {model}/{action}
-	if i := strings.Index(rest, "/"); i > 0 && i < len(rest)-1 {
-		return rest[:i], rest[i+1:], nil
-	}
-
-	return "", "", &pathParseError{"invalid model action path"}
+	return model, action, nil
 }
 
 func (h *GatewayHandler) handleGeminiFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError) {
