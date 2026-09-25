@@ -150,6 +150,13 @@ func New(store Store, dir string, config Config) (*Manager, error) {
 					return nil, e
 				}
 			}
+			// A crash can occur between record persistence and task counter flush.
+			if t.Requests != requests || t.Partial != partial || t.Bytes != bytes {
+				t.Requests, t.Partial, t.Bytes = requests, partial, bytes
+				if e = store.SaveTask(ctx, &t); e != nil {
+					return nil, e
+				}
+			}
 		}
 		if len(tasks) < 100 {
 			break
