@@ -344,3 +344,43 @@ func TestFailedCaptureReleasesIdleBusinessConnection(t *testing.T) {
 	s.Finish(101)
 	require.Equal(t, int64(1<<20), m.Stats().BufferBytes)
 }
+
+func TestCamelCaseCredentialsAndWebSocketURLs(t *testing.T) {
+	input := `{"accessToken":"SECRET-1","refreshToken":"SECRET-2","awsSecretAccessKey":"SECRET-3","nested":{"clientSecret":{"value":"SECRET-4"}},"socket":"wss://user:SECRET-5@example.org/path?accessToken=SECRET-6","plainSocket":"ws://user:SECRET-7@example.org/?apiKey=SECRET-8","usage":{"input_tokens":7},"text":"keep business text"}`
+	for _, size := range []int{1, 7, 32, 1000} {
+		f := newBodyFilter("application/json", false)
+		var out bytes.Buffer
+		for start := 0; start < len(input); start += size {
+			_, _ = out.Write(f.Write([]byte(input[start:min(start+size, len(input))])))
+		}
+		tail, reason := f.End()
+		_, _ = out.Write(tail)
+		require.Empty(t, reason)
+		require.True(t, json.Valid(out.Bytes()), out.String())
+		require.NotContains(t, out.String(), "SECRET")
+		require.Contains(t, out.String(), "keep business text")
+		require.Contains(t, out.String(), `"input_tokens":7`)
+	}
+}
+
+func TestSSETerminalMarkerAndUnsupportedFields(t *testing.T) {
+	for _, size := range []int{1, 2, 32} {
+		f := newBodyFilter("text/event-stream", false)
+		input := "data: [DONE]"
+		var out bytes.Buffer
+		for start := 0; start < len(input); start += size {
+			_, _ = out.Write(f.Write([]byte(input[start:min(start+size, len(input))])))
+		}
+		tail, reason := f.End()
+		_, _ = out.Write(tail)
+		require.Empty(t, reason)
+		require.Equal(t, input, out.String())
+	}
+	f := newBodyFilter("text/event-stream", false)
+	out := f.Write([]byte("unknown: sensitive value\n\ndata: [DONE]\n\n"))
+	tail, reason := f.End()
+	out = append(out, tail...)
+	require.Equal(t, "unsupported_sse_field", reason)
+	require.NotContains(t, string(out), "sensitive value")
+	require.Contains(t, string(out), "[DONE]")
+}
