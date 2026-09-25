@@ -693,6 +693,8 @@ export default {
         apiKeyHint: '您的 OpenAI API Key',
         oauthPassthrough: '自动透传（仅替换认证）',
         excelBPS: 'Excel / BPS 协议',
+        excelBPSAutoDisableOn403: '遇到 BPS 403 错误时自动关闭协议',
+        excelBPSAutoDisableOn403Desc: '默认关闭. 勾选后, 当 Excel / BPS 上游返回 HTTP 403 且错误为 basispoints_upstream_error 时, 自动关闭此账号的 Excel / BPS 协议. 不禁用账号, 不重试当前请求. 模型权限错误不触发, 403 也不代表已确认封禁.',
         excelBPSDesc: '使用本账号已有的 ChatGPT OAuth 凭据，经 Excel 接口转发 Responses 请求。无需 GitHub 登录或 sidecar；关闭后恢复原 Codex 路径。',
         excelBPSAllModels: '对所有模型启用（兼容原设置）',
         excelBPSModels: '勾选使用 Excel / BPS 的模型',
