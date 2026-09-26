@@ -67,7 +67,7 @@ const { t } = useI18n()
 
 interface Props {
   modelValue: number[]
-  groups: (Group & { account_count?: number })[]
+  groups: (AdminGroup & { account_count?: number })[]
   /** Field label; defaults to the generic "Groups". */
   label?: string
   platform?: GroupPlatform // Optional platform filter

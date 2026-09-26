@@ -3008,7 +3008,7 @@ const authStore = useAuthStore()
 // 各分组内的可用模型限制，按当前勾选的分组顺序展示
 const groupAllowedModels = ref<GroupAllowedModels>({})
 const groupsForModelLimits = computed(() => {
-  const byId = new Map(selectableGroups.value.map(group => [group.id, group]))
+  const byId = new Map(props.groups.map(group => [group.id, group]))
   return form.group_ids.flatMap(id => {
     const group = byId.get(id)
     return group ? [{ id: group.id, name: group.name }] : []

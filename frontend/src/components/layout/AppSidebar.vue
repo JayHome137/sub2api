@@ -349,6 +349,10 @@ const ChartIcon = {
     )
 }
 
+// Harvest flow is an operational flow view; reuse the existing chart glyph
+// until the icon registry has a dedicated flow symbol.
+const FlowIcon = ChartIcon
+
 const GiftIcon = {
   render: () =>
     h(
