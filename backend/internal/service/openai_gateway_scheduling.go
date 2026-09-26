@@ -42,7 +42,7 @@ var explicitOpenAIHeaderSessionNames = []string{
 // fields: request/message IDs rotate every turn and would defeat sticky routing
 // and upstream prompt caching.
 func explicitOpenAIHeaderSessionID(c *gin.Context) string {
-	if c == nil {
+	if c == nil || c.Request == nil {
 		return ""
 	}
 
@@ -102,13 +102,13 @@ func explicitOpenAIRequestSessionID(c *gin.Context, body []byte) string {
 	}
 
 	sessionID := explicitOpenAIHeaderSessionID(c)
-	if sessionID == "" && isGrokRequestContext(c) {
+	if sessionID == "" && c.Request != nil && isGrokRequestContext(c) {
 		sessionID = strings.TrimSpace(c.GetHeader(grokConversationIDHeader))
 	}
 	if sessionID == "" && len(body) > 0 {
 		sessionID = strings.TrimSpace(openAIRequestPayloadView(body).Get("prompt_cache_key").String())
 	}
-	if sessionID == "" && isGrokRequestContext(c) && len(body) > 0 {
+	if sessionID == "" && c.Request != nil && isGrokRequestContext(c) && len(body) > 0 {
 		sessionID = grokPreviousResponseSessionSeed(body)
 	}
 	return sessionID

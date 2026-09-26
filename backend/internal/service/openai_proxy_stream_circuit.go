@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"net/http"
 	"sync"
 	"time"
 
@@ -235,6 +236,20 @@ func openAIProxyStreamCircuitProxyID(account *Account) (int64, bool) {
 	return *account.ProxyID, true
 }
 
+type openAIResponseEgressKey struct{}
+
+func markOpenAIResponseEgress(resp *http.Response, req *http.Request, proxyID int64) *http.Response {
+	if resp == nil || req == nil || proxyID < 0 {
+		return resp
+	}
+	responseRequest := resp.Request
+	if responseRequest == nil {
+		responseRequest = req
+	}
+	resp.Request = responseRequest.WithContext(context.WithValue(responseRequest.Context(), openAIResponseEgressKey{}, proxyID))
+	return resp
+}
+
 func (s *OpenAIGatewayService) recordOpenAIProxyStreamDisconnect(account *Account, streamErr error, upstreamRequestID string) {
 	proxyID, ok := openAIProxyStreamCircuitProxyID(account)
 	if !ok || streamErr == nil || errors.Is(streamErr, context.Canceled) || errors.Is(streamErr, context.DeadlineExceeded) {
@@ -271,6 +286,15 @@ func (s *OpenAIGatewayService) clearOpenAIProxyStreamDisconnect(account *Account
 // proxies: a degraded proxy is strictly better than answering 502 (#5056).
 type openAIProxyStreamQuarantineBypassKey struct{}
 
+type openAIProxyQuarantineNativeTransportKey struct{}
+
+func withOpenAIProxyQuarantineTransport(ctx context.Context, transport OpenAIUpstreamTransport) context.Context {
+	if transport == OpenAIUpstreamTransportAny || transport == OpenAIUpstreamTransportHTTPSSE {
+		return ctx
+	}
+	return context.WithValue(ctx, openAIProxyQuarantineNativeTransportKey{}, true)
+}
+
 func withOpenAIProxyStreamQuarantineBypass(ctx context.Context) context.Context {
 	return context.WithValue(ctx, openAIProxyStreamQuarantineBypassKey{}, true)
 }
@@ -292,7 +316,14 @@ func (s *OpenAIGatewayService) isOpenAIProxyStreamQuarantined(ctx context.Contex
 		return false
 	}
 	circuit := s.getOpenAIProxyStreamCircuit()
-	return circuit != nil && circuit.isBlocked(proxyID, time.Now())
+	if circuit == nil || !circuit.isBlocked(proxyID, time.Now()) {
+		return false
+	}
+	if native, _ := ctx.Value(openAIProxyQuarantineNativeTransportKey{}).(bool); native {
+		return true
+	}
+	_, canFallback := s.resolveRuntimeProxyFallback(ctx, account)
+	return !canFallback
 }
 
 // logOpenAIProxyStreamQuarantineFailOpen emits a rate-limited warning when a

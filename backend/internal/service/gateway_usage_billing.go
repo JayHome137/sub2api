@@ -609,7 +609,9 @@ func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usage
 	usageCtx, cancel := detachedBillingContext(ctx)
 	defer cancel()
 	defer func() {
-		if recorder, ok := repo.(interface { RecordRequestTiming(context.Context, string, int64) }); ok {
+		if recorder, ok := repo.(interface {
+			RecordRequestTiming(context.Context, string, int64)
+		}); ok {
 			recorder.RecordRequestTiming(ctx, usageLog.RequestID, usageLog.APIKeyID)
 		}
 	}()

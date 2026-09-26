@@ -82,10 +82,6 @@ func (h *AccountHandler) SetOpenCodeGoUsageService(usage *service.OpenCodeGoUsag
 	h.opencodeGoUsage = usage
 }
 
-func (h *AccountHandler) SetOpenCodeGoUsageService(usage *service.OpenCodeGoUsageService) {
-	h.opencodeGoUsage = usage
-}
-
 // NewAccountHandler creates a new admin account handler
 func NewAccountHandler(
 	adminService service.AdminService,
@@ -145,27 +141,27 @@ type CreateAccountRequest struct {
 // UpdateAccountRequest represents update account request
 // 使用指针类型来区分"未提供"和"设置为0"
 type UpdateAccountRequest struct {
-	Name                    string         `json:"name"`
-	Notes                   *string        `json:"notes"`
-	Type                    string         `json:"type" binding:"omitempty,oneof=oauth setup-token apikey upstream bedrock service_account"`
-	Credentials             map[string]any `json:"credentials"`
-	Extra                   map[string]any `json:"extra"`
-	ProxyID                 *int64         `json:"proxy_id"`
-	Concurrency             *int           `json:"concurrency"`
-	Priority                *int           `json:"priority"`
-	RateMultiplier          *float64       `json:"rate_multiplier"`
-	GroupRateMultiplier     *float64       `json:"group_rate_multiplier"`
-	LoadFactor              *int           `json:"load_factor"`
-	Status                  string         `json:"status" binding:"omitempty,oneof=active inactive error"`
-	GroupIDs                *[]int64       `json:"group_ids"`
+	Name                string         `json:"name"`
+	Notes               *string        `json:"notes"`
+	Type                string         `json:"type" binding:"omitempty,oneof=oauth setup-token apikey upstream bedrock service_account"`
+	Credentials         map[string]any `json:"credentials"`
+	Extra               map[string]any `json:"extra"`
+	ProxyID             *int64         `json:"proxy_id"`
+	Concurrency         *int           `json:"concurrency"`
+	Priority            *int           `json:"priority"`
+	RateMultiplier      *float64       `json:"rate_multiplier"`
+	GroupRateMultiplier *float64       `json:"group_rate_multiplier"`
+	LoadFactor          *int           `json:"load_factor"`
+	Status              string         `json:"status" binding:"omitempty,oneof=active inactive error"`
+	GroupIDs            *[]int64       `json:"group_ids"`
 	// GroupAllowedModels 按分组 ID 覆盖账号在各分组内可用的模型；省略则不改，
 	// 传入时没有列出的分组恢复为不限制。
 	GroupAllowedModels      map[int64][]string `json:"group_allowed_models"`
-	ExpiresAt               *int64         `json:"expires_at"`
-	AutoPauseOnExpired      *bool          `json:"auto_pause_on_expired"`
-	ProbeEnabled            *bool          `json:"upstream_billing_probe_enabled"`
-	RateSyncEnabled         *bool          `json:"upstream_billing_rate_sync_enabled"`
-	ConfirmMixedChannelRisk *bool          `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
+	ExpiresAt               *int64             `json:"expires_at"`
+	AutoPauseOnExpired      *bool              `json:"auto_pause_on_expired"`
+	ProbeEnabled            *bool              `json:"upstream_billing_probe_enabled"`
+	RateSyncEnabled         *bool              `json:"upstream_billing_rate_sync_enabled"`
+	ConfirmMixedChannelRisk *bool              `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
 }
 
 // BulkUpdateAccountsRequest represents the payload for bulk editing accounts

@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/binary"
 	"io"
 	"net/http"
 	"strings"
@@ -15,6 +17,15 @@ import (
 )
 
 func fakeCodexTicketState(n int) string {
+	if n == 292 {
+		raw := make([]byte, 57+16*openAICodexTicketPersonalBlocks)
+		raw[0] = 0x80
+		binary.BigEndian.PutUint64(raw[1:9], uint64(time.Now().Add(-time.Minute).Unix()))
+		for i := 9; i < len(raw); i++ {
+			raw[i] = byte(i)
+		}
+		return base64.URLEncoding.EncodeToString(raw)
+	}
 	if n < len(openAICodexTicketStatePrefix) {
 		return strings.Repeat("A", n)
 	}
@@ -26,6 +37,8 @@ func ticketTestAccount(id int64) *Account {
 		ID:          id,
 		Platform:    PlatformOpenAI,
 		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
 		Credentials: map[string]any{"access_token": "tok", "chatgpt_account_id": "acc-1"},
 	}
 }
@@ -207,12 +220,12 @@ func TestHarvestOpenAICodexTicket_StopsAt292AndUsesHarvestProxy(t *testing.T) {
 			{
 				StatusCode: http.StatusOK,
 				Header:     header312,
-				Body:       io.NopCloser(strings.NewReader("data: {}\n\n")),
+				Body:       io.NopCloser(strings.NewReader("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n")),
 			},
 			{
 				StatusCode: http.StatusOK,
 				Header:     header292,
-				Body:       io.NopCloser(strings.NewReader("data: {}\n\n")),
+				Body:       io.NopCloser(strings.NewReader("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n")),
 			},
 		},
 	}
@@ -258,7 +271,7 @@ func TestHarvestOpenAICodexTicket_HTTP503DoesNotAbortHunt(t *testing.T) {
 	responses = append(responses, &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     header292,
-		Body:       io.NopCloser(strings.NewReader("data: {}\n\n")),
+		Body:       io.NopCloser(strings.NewReader("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n")),
 	})
 	upstream := &httpUpstreamRecorder{responses: responses}
 	svc := ticketTestService(t, config.OpenAICodexTicketConfig{
@@ -366,7 +379,7 @@ func (u *codexTicketConcurrentUpstream) Do(req *http.Request, _ string, _ int64,
 	}
 	h := http.Header{}
 	h.Set(openAICodexTurnStateHeader, fakeCodexTicketState(292))
-	return &http.Response{StatusCode: 200, Header: h, Body: io.NopCloser(strings.NewReader("data: {}\n\n"))}, nil
+	return &http.Response{StatusCode: 200, Header: h, Body: io.NopCloser(strings.NewReader("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n"))}, nil
 }
 func TestRefreshOpenAICodexTickets_ConcurrentModelsPreserveAccountSnapshot(t *testing.T) {
 	account := ticketTestAccount(41)
@@ -379,7 +392,13 @@ func TestRefreshOpenAICodexTickets_ConcurrentModelsPreserveAccountSnapshot(t *te
 	svc.refreshOpenAICodexTickets(context.Background())
 	require.Equal(t, int64(2), upstream.started.Load())
 	require.Equal(t, map[string]any{"existing": true}, account.Extra)
-	require.Len(t, repo.updates, 2)
+	ticketUpdates := make(map[string]any)
+	for key, value := range repo.updates {
+		if strings.HasPrefix(key, openAICodexTicketExtraKeyPrefix) && !strings.HasSuffix(key, ":probe") {
+			ticketUpdates[key] = value
+		}
+	}
+	require.Len(t, ticketUpdates, 2)
 	for _, model := range []string{openAICodexTicketDefaultModel, openAICodexTicketDefaultSolModel} {
 		ticket := svc.lookupOpenAICodexTicket(account, model)
 		require.NotNil(t, ticket)

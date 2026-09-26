@@ -521,6 +521,9 @@ func (b *Bridge) finishClientToolCall(native object, info tool, envelope object,
 		}
 		encoded, _ := json.Marshal(args)
 		result["arguments"] = string(encoded)
+		// The relay envelope carries plaintext arguments. Mark that explicitly so
+		// clients do not package the call as encrypted content.
+		result["encrypted_function_args"] = []string{}
 	}
 	return result, nil
 }

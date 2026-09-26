@@ -194,6 +194,7 @@ func TestExcelBPSUpstreamDiagnostics(t *testing.T) {
 	account.Credentials["refresh_token"] = "refresh-secret"
 	upstream := &httpUpstreamRecorder{resp: &http.Response{StatusCode: 400, Header: http.Header{"X-Request-Id": {"req-test"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"code":"invalid_tool_output","type":"invalid_request_error","param":"input[3]","message":"Invalid tool output: test-token refresh-secret Bearer other-secret https://user:pass@example.com/?api_key=query-secret"},"input":"PRIVATE_PROMPT","authorization":"PRIVATE_AUTH"}`))}}
 	svc := openAIClientToolsTestService(upstream)
+	svc.cfg.Gateway.LogUpstreamErrorBody = true
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest("POST", "/v1/responses", nil)

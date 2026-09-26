@@ -76,6 +76,8 @@ type openAIWSAcquireRequest struct {
 	// whose authorization is per-dial (Agent Identity) are never cached in
 	// lastAcquire or delayed prewarm state.
 	HeadersFactory  func(context.Context, http.Header) (http.Header, error)
+	BindHandshake   func(http.Header) *openAIWSTurnBinding
+	CheckBinding    func(context.Context, *openAIWSTurnBinding) error
 	ProxyURL        string
 	PreferredConnID string
 	// ForceNewConn: 强制本次获取新连接（避免复用导致连接内续链状态互相污染）。
@@ -284,6 +286,7 @@ type openAIWSConn struct {
 	ws openAIWSClientConn
 
 	handshakeHeaders       http.Header
+	turnBinding            *openAIWSTurnBinding
 	handshakeCompatibility openAIWSHandshakeCompatibilityKey
 	routingAffinity        string
 
@@ -1137,6 +1140,13 @@ func (p *openAIWSConnPool) Acquire(ctx context.Context, req openAIWSAcquireReque
 		p.metrics.acquireQueueWaitMs.Add(queueWait.total.Milliseconds())
 	}
 	if lease != nil && lease.conn != nil {
+		if req.CheckBinding != nil {
+			if checkErr := req.CheckBinding(ctx, lease.conn.turnBinding); checkErr != nil {
+				lease.MarkBroken()
+				lease.Release()
+				return nil, checkErr
+			}
+		}
 		now := time.Now()
 		lease.idleBefore = lease.conn.idleDuration(now)
 		lease.ageBefore = lease.conn.age(now)
@@ -2166,6 +2176,9 @@ func (p *openAIWSConnPool) dialConn(ctx context.Context, req openAIWSAcquireRequ
 	pooledConn.onPeerClosed.Store(&evict)
 	pooledConn.handshakeCompatibility = normalizeOpenAIWSHandshakeCompatibility(req.Account, req.Headers)
 	pooledConn.routingAffinity = normalizeOpenAIWSRoutingAffinity(req.Headers)
+	if req.BindHandshake != nil {
+		pooledConn.turnBinding = req.BindHandshake(handshakeHeaders)
+	}
 	return pooledConn, nil
 }
 

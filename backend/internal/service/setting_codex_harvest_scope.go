@@ -11,6 +11,11 @@ import (
 
 const SettingKeyOpenAICodexTicketHarvestScope = "openai_codex_ticket_harvest_scope"
 
+type cachedOpenAICodexTicketHarvestScope struct {
+	scope     CodexTicketHarvestScope
+	expiresAt int64
+}
+
 const (
 	CodexHarvestSchedulableOnly       = "schedulable_only"
 	CodexHarvestPrioritizeSchedulable = "prioritize_schedulable"
@@ -77,6 +82,14 @@ func (s *SettingService) GetCodexTicketHarvestScope(ctx context.Context) (CodexT
 		return CodexTicketHarvestScope{}, err
 	}
 	return parseCodexTicketHarvestScope(raw)
+}
+
+func (s *SettingService) InvalidateOpenAICodexTicketHarvestScopeCache() {
+	if s == nil {
+		return
+	}
+	s.openAICodexTicketHarvestScopeCache.Store(&cachedOpenAICodexTicketHarvestScope{expiresAt: 0})
+	s.openAICodexTicketHarvestScopeSF.Forget(SettingKeyOpenAICodexTicketHarvestScope)
 }
 
 func (scope CodexTicketHarvestScope) includes(account *Account) bool {

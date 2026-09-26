@@ -4016,6 +4016,40 @@ func closeOpenAIClientWS(conn *coderws.Conn, status coderws.StatusCode, reason s
 	_ = conn.CloseNow()
 }
 
+// cyberSessionBlockWritePlan is retained for callers that build a legacy
+// transcript block record. The live gateway writes the typed identity through
+// recordCyberPolicyIfMarkedWithIdentity.
+type cyberSessionBlockWritePlan struct {
+	keys     []string
+	scopeKey string
+}
+
+func buildCyberSessionBlockWritePlan(apiKeyID int64, c *gin.Context, body []byte) cyberSessionBlockWritePlan {
+	plan := cyberSessionBlockWritePlan{}
+	appendUnique := func(key string) {
+		if key == "" {
+			return
+		}
+		for _, existing := range plan.keys {
+			if existing == key {
+				return
+			}
+		}
+		plan.keys = append(plan.keys, key)
+	}
+	appendUnique(service.CyberSessionExplicitBlockKey(apiKeyID, c, body))
+	for _, key := range service.CyberSessionTranscriptBlockKeys(apiKeyID, body) {
+		appendUnique(key)
+	}
+	clientIP, userAgent := "", ""
+	if c != nil {
+		clientIP = strings.TrimSpace(ip.GetClientIP(c))
+		userAgent = c.GetHeader("User-Agent")
+	}
+	plan.scopeKey = service.CyberSessionScopeKey(apiKeyID, clientIP, userAgent)
+	return plan
+}
+
 func openAIWSNextAttemptMessage(current, retryPayload []byte, retryCurrentTurn bool) ([]byte, bool) {
 	if !retryCurrentTurn {
 		return append([]byte(nil), current...), true

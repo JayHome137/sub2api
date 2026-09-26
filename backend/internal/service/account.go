@@ -107,7 +107,8 @@ const (
 	// （openai_responses_supported / openai_responses_mode），而非
 	// credentials["openai_capabilities"] 配置集。仅用于生图意图的 /v1/responses
 	// 调度，避免把请求调度到会在 forward 阶段被降级为 Chat Completions 的账号（#4417）。
-	OpenAIEndpointCapabilityResponses OpenAIEndpointCapability = "responses"
+	OpenAIEndpointCapabilityResponses        OpenAIEndpointCapability = "responses"
+	OpenAIEndpointCapabilityResponsesCompact OpenAIEndpointCapability = "responses_compact"
 )
 
 const openAIEndpointCapabilitiesCredentialKey = "openai_capabilities"
@@ -1884,6 +1885,11 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 		}
 		// 支持 Responses 的上游同样需具备 chat 能力：复用下方 chat_completions
 		// 配置集校验。
+		capability = OpenAIEndpointCapabilityChatCompletions
+	case OpenAIEndpointCapabilityResponsesCompact:
+		if a.Type == AccountTypeAPIKey && !openai_compat.ShouldUseResponsesAPI(a.Extra) {
+			return false
+		}
 		capability = OpenAIEndpointCapabilityChatCompletions
 	case OpenAIEndpointCapabilityAlphaSearch:
 		// alpha/search 的转发按账号类型分流：OAuth/PAT 走

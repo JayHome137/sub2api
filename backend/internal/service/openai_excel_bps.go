@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -21,6 +24,46 @@ import (
 )
 
 var excelBPSReplay basispoints.ReplayCache
+
+func (s *OpenAIGatewayService) excelBPSImageRelay(ctx context.Context) (*basispoints.ImageRelay, error) {
+	if s == nil || s.settingService == nil {
+		return nil, nil
+	}
+	settings, err := s.settingService.GetExcelBPSImageRelaySettings(ctx)
+	if err != nil || !settings.Enabled {
+		return nil, err
+	}
+	s.excelBPSImagesMu.Lock()
+	defer s.excelBPSImagesMu.Unlock()
+	if s.excelBPSImages == nil {
+		dataDir := strings.TrimSpace(os.Getenv("DATA_DIR"))
+		if dataDir == "" {
+			dataDir = "./data"
+		}
+		s.excelBPSImages, err = basispoints.NewImageRelay(settings.BaseURL, filepath.Join(dataDir, "bps-images"))
+	} else {
+		err = s.excelBPSImages.SetPublicOrigin(settings.BaseURL)
+	}
+	return s.excelBPSImages, err
+}
+
+func (s *OpenAIGatewayService) CloseExcelBPSImages() error {
+	if s == nil {
+		return nil
+	}
+	s.excelBPSImagesMu.Lock()
+	defer s.excelBPSImagesMu.Unlock()
+	return s.excelBPSImages.Close()
+}
+
+func (s *OpenAIGatewayService) ServeExcelBPSImage(c *gin.Context) {
+	relay, _ := s.excelBPSImageRelay(c.Request.Context())
+	if relay == nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	relay.ServeHTTP(c.Writer, c.Request)
+}
 
 func (s *OpenAIGatewayService) disableExcelBPSOn403(ctx context.Context, account *Account) bool {
 	if !account.IsExcelBPSAutoDisableOn403Enabled() {
@@ -119,6 +162,19 @@ func (s *OpenAIGatewayService) forwardExcelBPS(ctx context.Context, c *gin.Conte
 		}
 	}
 	scope := fmt.Sprintf("account:%d/key:%d/thread:%s", account.ID, getAPIKeyIDFromContext(c), identity)
+	relay, err := s.excelBPSImageRelay(ctx)
+	if err != nil {
+		return fail(503, "basispoints_image_relay_unavailable", "Image relay is unavailable")
+	}
+	if relay != nil {
+		body, err = relay.Rewrite(body, scope)
+		if err != nil {
+			if errors.Is(err, basispoints.ErrImageRelayFull) || errors.Is(err, basispoints.ErrImageRelayStorage) {
+				return fail(503, "basispoints_image_relay_unavailable", "Image relay is unavailable")
+			}
+			return fail(400, "basispoints_request_invalid", err.Error())
+		}
+	}
 	upstreamBody, bridge, err := basispoints.Prepare(body, scope, &excelBPSReplay)
 	if err != nil {
 		return fail(400, "basispoints_request_invalid", err.Error())
@@ -152,6 +208,9 @@ func (s *OpenAIGatewayService) forwardExcelBPS(ctx context.Context, c *gin.Conte
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 512<<10))
 		message, detail, requestID := excelBPSErrorDiagnostics(raw, resp.Header.Get("x-request-id"), token, account)
+		if s.cfg == nil || !s.cfg.Gateway.LogUpstreamErrorBody {
+			detail = ""
+		}
 		setOpsUpstreamError(c, resp.StatusCode, message, detail)
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 			Platform: account.Platform, AccountID: account.ID,
@@ -163,7 +222,7 @@ func (s *OpenAIGatewayService) forwardExcelBPS(ctx context.Context, c *gin.Conte
 		if code == "basispoints_model_access_changed" {
 			return fail(resp.StatusCode, code, "This model is not available on the account's Excel BPS endpoint")
 		}
-		message := "Excel BPS rejected this request; account scheduling was not changed"
+		message = "Excel BPS rejected this request; account scheduling was not changed"
 		if resp.StatusCode == http.StatusForbidden && s.disableExcelBPSOn403(ctx, account) {
 			message = "Excel BPS rejected this request; Excel BPS was automatically disabled for this account; request was not replayed"
 		}

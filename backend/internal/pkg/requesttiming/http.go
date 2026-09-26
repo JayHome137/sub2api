@@ -36,6 +36,22 @@ func StartAttempt(req *http.Request, accountID, proxyID int64) (*http.Request, *
 	ctx := context.WithValue(req.Context(), attemptKey{}, t)
 	return req.Clone(httptrace.WithClientTrace(ctx, t.clientTrace())), t
 }
+
+// StartTransport marks the physical HTTP call nested inside an upstream
+// attempt. Older collectors do not expose parent metadata, so it reuses the
+// enclosing account and proxy identifiers when available.
+func StartTransport(req *http.Request) (*http.Request, *Trace) {
+	if req == nil {
+		return req, nil
+	}
+	var accountID, proxyID int64
+	if parent, ok := req.Context().Value(attemptKey{}).(*Trace); ok && parent != nil {
+		parent.update(func(a *Attempt) {
+			accountID, proxyID = a.AccountID, a.ProxyID
+		})
+	}
+	return StartAttempt(req, accountID, proxyID)
+}
 func (t *Trace) update(fn func(*Attempt)) {
 	if t == nil {
 		return

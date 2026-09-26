@@ -393,7 +393,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			// passthrough error handling sees the same response after recovery fails.
 			probeBody := s.readUpstreamErrorBody(resp)
 			_ = resp.Body.Close()
-		resp.Body = io.NopCloser(bytes.NewReader(probeBody))
+			resp.Body = io.NopCloser(bytes.NewReader(probeBody))
 			if account.IsCopilotSDKEnabled() {
 				// In particular, 409 means a lost/foreign pending SDK turn, not a
 				// reason to fail over or rewrite fields and retry the request.
@@ -1894,6 +1894,10 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		return nil, errors.New("streaming not supported")
+	}
+	if account != nil && account.IsCopilotSDKEnabled() {
+		stopCancelBody := closeResponseBodyOnContextCancel(ctx, resp.Body)
+		defer stopCancelBody()
 	}
 
 	usage := &OpenAIUsage{}

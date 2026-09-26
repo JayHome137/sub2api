@@ -279,7 +279,7 @@ func (s *OpenAIGatewayService) latestOpenAITurnAccountForGroup(
 	// admission predicate aligned with the scheduler instead of rejecting an
 	// account that the scheduler just selected.
 	enforceGroup = enforceGroup && (s == nil || s.cfg == nil || s.cfg.RunMode != config.RunModeSimple)
-	if enforceGroup {
+	if authoritativeRead && enforceGroup {
 		if (groupID != 0 && !slices.Contains(latest.GroupIDs, groupID)) ||
 			(groupID == 0 && len(latest.GroupIDs) != 0) {
 			return nil, denyOpenAITurn("group_membership_changed")

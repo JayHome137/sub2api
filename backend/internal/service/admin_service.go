@@ -433,19 +433,19 @@ type ShadowOptions struct {
 }
 
 type UpdateAccountInput struct {
-	Name                  string
-	Notes                 *string
-	Type                  string // Account type: oauth, setup-token, apikey
-	Credentials           map[string]any
-	Extra                 map[string]any
-	ProxyID               *int64
-	Concurrency           *int     // 使用指针区分"未提供"和"设置为0"
-	Priority              *int     // 使用指针区分"未提供"和"设置为0"
-	RateMultiplier        *float64 // 账号计费倍率（>=0，允许 0）
-	GroupRateMultiplier   *float64 // 账号级分组计费倍率（>=0，默认 1）
-	LoadFactor            *int
-	Status                string
-	GroupIDs              *[]int64
+	Name                string
+	Notes               *string
+	Type                string // Account type: oauth, setup-token, apikey
+	Credentials         map[string]any
+	Extra               map[string]any
+	ProxyID             *int64
+	Concurrency         *int     // 使用指针区分"未提供"和"设置为0"
+	Priority            *int     // 使用指针区分"未提供"和"设置为0"
+	RateMultiplier      *float64 // 账号计费倍率（>=0，允许 0）
+	GroupRateMultiplier *float64 // 账号级分组计费倍率（>=0，默认 1）
+	LoadFactor          *int
+	Status              string
+	GroupIDs            *[]int64
 	// GroupAllowedModels 按分组 ID 覆盖账号在各分组内可用的模型；nil 表示不改，
 	// 非 nil 时没有列出的分组恢复为不限制。
 	GroupAllowedModels    map[int64][]string
