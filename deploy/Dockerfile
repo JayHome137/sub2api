@@ -25,7 +25,7 @@ ENV NODE_OPTIONS=--max-old-space-size=1536
 RUN corepack enable && corepack prepare pnpm@10.28.2 --activate
 
 # Install dependencies first (better caching)
-COPY frontend/package.json frontend/pnpm-lock.yaml ./
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml frontend/.npmrc ./
 RUN pnpm install --frozen-lockfile
 
 # Copy frontend source and build.
