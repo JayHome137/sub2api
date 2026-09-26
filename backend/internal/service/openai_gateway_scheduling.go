@@ -911,7 +911,7 @@ func (s *OpenAIGatewayService) selectAccountForModelWithExclusionsStickyHit(ctx 
 
 	// 2. 获取可调度的 OpenAI 账号
 	// Get schedulable OpenAI accounts
-	accounts, err := s.listSchedulableAccounts(ctx, groupID, platform)
+	accounts, err := s.listSchedulableAccountsForRequest(ctx, groupID, platform, requestedModel, requireCompact, excludedIDs)
 	if err != nil {
 		return nil, false, fmt.Errorf("query accounts failed: %w", err)
 	}
@@ -984,7 +984,7 @@ func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID 
 		_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 		return nil
 	}
-	if s.isOpenAIAccountRequestRuntimeBlocked(account, requestedModel) {
+	if s.isOpenAIAccountRequestRuntimeBlocked(account, requestedModel, requireCompact) {
 		_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 		return nil
 	}
@@ -1037,7 +1037,7 @@ func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *i
 			filterStats.exclude("ineligible")
 			continue
 		}
-		fresh = s.recheckSelectedOpenAIAccountFromDBBeforeProfit(ctx, fresh, groupID, platform, requestedModel, false, requiredCapability)
+		fresh = s.recheckSelectedOpenAIAccountFromDBBeforeProfit(ctx, fresh, groupID, platform, requestedModel, false, requiredCapability, requireCompact)
 		if fresh == nil {
 			filterStats.exclude("ineligible")
 			continue
@@ -1176,7 +1176,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		return markStickySessionHit(selection, stickyHit), selectErr
 	}
 
-	accounts, err := s.listSchedulableAccounts(ctx, groupID, platform)
+	accounts, err := s.listSchedulableAccountsForRequest(ctx, groupID, platform, requestedModel, requireCompact, excludedIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -1213,7 +1213,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 					} else if !s.openAIAccountMatchesSchedulingGroup(account, groupID) {
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
-					} else if s.isOpenAIAccountRequestRuntimeBlocked(account, requestedModel) {
+					} else if s.isOpenAIAccountRequestRuntimeBlocked(account, requestedModel, requireCompact) {
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 					} else if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, account, requestedModel, requireCompact) {
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
@@ -1282,7 +1282,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			filterStats.exclude("shadow_parent_unhealthy")
 			continue
 		}
-		if s.isOpenAIAccountRequestRuntimeBlocked(acc, requestedModel) {
+		if s.isOpenAIAccountRequestRuntimeBlocked(acc, requestedModel, requireCompact) {
 			filterStats.exclude("runtime_blocked")
 			continue
 		}
@@ -1563,7 +1563,11 @@ func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccountBeforeProfit(
 	if !parentHealthyForShadow(fresh, s.parentAccountLookup(ctx)) {
 		return nil
 	}
-	if s.isOpenAIAccountRequestRuntimeBlocked(fresh, requestedModel) {
+	ticketCompact := requireCompact
+	if len(ticketCompactOverride) > 0 {
+		ticketCompact = ticketCompactOverride[0]
+	}
+	if s.isOpenAIAccountRequestRuntimeBlocked(fresh, requestedModel, ticketCompact) {
 		return nil
 	}
 	if s.isOpenAIAccountBlockedBySchedulingThreshold(ctx, fresh) {
@@ -1589,8 +1593,8 @@ func (s *OpenAIGatewayService) parentAccountLookup(ctx context.Context) func(int
 	}
 }
 
-func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDB(ctx context.Context, account *Account, groupID *int64, platform string, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability) *Account {
-	latest := s.recheckSelectedOpenAIAccountFromDBBeforeProfit(ctx, account, groupID, platform, requestedModel, requireCompact, requiredCapability)
+func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDB(ctx context.Context, account *Account, groupID *int64, platform string, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability, ticketCompactOverride ...bool) *Account {
+	latest := s.recheckSelectedOpenAIAccountFromDBBeforeProfit(ctx, account, groupID, platform, requestedModel, requireCompact, requiredCapability, ticketCompactOverride...)
 	if latest == nil {
 		return nil
 	}
@@ -1600,7 +1604,7 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDB(ctx context.Co
 	return latest
 }
 
-func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDBBeforeProfit(ctx context.Context, account *Account, groupID *int64, platform string, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability) *Account {
+func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDBBeforeProfit(ctx context.Context, account *Account, groupID *int64, platform string, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability, ticketCompactOverride ...bool) *Account {
 	if account == nil {
 		return nil
 	}
@@ -1640,7 +1644,11 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDBBeforeProfit(ct
 	if !parentHealthyForShadow(latest, s.parentAccountLookup(ctx)) {
 		return nil
 	}
-	if s.isOpenAIAccountRequestRuntimeBlocked(latest, requestedModel) {
+	ticketCompact := requireCompact
+	if len(ticketCompactOverride) > 0 {
+		ticketCompact = ticketCompactOverride[0]
+	}
+	if s.isOpenAIAccountRequestRuntimeBlocked(latest, requestedModel, ticketCompact) {
 		return nil
 	}
 	if s.isOpenAIAccountBlockedBySchedulingThreshold(ctx, latest) {
