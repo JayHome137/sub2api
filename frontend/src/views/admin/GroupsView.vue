@@ -4466,6 +4466,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
+import { getActivePinia } from "pinia";
 import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/app";
 import { useAuthStore } from "@/stores/auth";
@@ -4629,7 +4630,9 @@ const groupPricingToAPI = (
 
 const { t } = useI18n();
 const appStore = useAppStore();
-const authStore = useAuthStore();
+const authStore = getActivePinia()
+  ? useAuthStore()
+  : ({ isSimpleMode: false } as { isSimpleMode: boolean });
 const onboardingStore = useOnboardingStore();
 
 const ALWAYS_VISIBLE_COLUMNS = new Set(["name", "actions"]);
