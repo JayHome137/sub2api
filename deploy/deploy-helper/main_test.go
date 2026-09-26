@@ -82,7 +82,7 @@ func TestComposeImageRewriteChangesOnlySelectedService(t *testing.T) {
 	path := filepath.Join(directory, "docker-compose.yml")
 	original := `services:
   sub2api:
-    image: weishaw/sub2api:0.1.182
+    image: ghcr.io/jayhome137/sub2api:0.1.182
     environment:
       - VALUE=${VALUE:-unchanged}
   frontend:
@@ -91,7 +91,7 @@ func TestComposeImageRewriteChangesOnlySelectedService(t *testing.T) {
 	if err := os.WriteFile(path, []byte(original), 0640); err != nil {
 		t.Fatal(err)
 	}
-	target := "weishaw/sub2api@sha256:" + strings.Repeat("b", 64)
+	target := "ghcr.io/jayhome137/sub2api@sha256:" + strings.Repeat("b", 64)
 	if err := rewriteComposeImage(path, "sub2api", target); err != nil {
 		t.Fatal(err)
 	}
