@@ -148,6 +148,9 @@ export async function getModelsListCandidates(
   return data.models || []
 }
 
+// Compatibility name used by the quality and denied-models workspaces.
+export const getModelAllowlistCandidates = getModelsListCandidates
+
 /**
  * Create new group
  * @param groupData - Group data
@@ -561,6 +564,7 @@ export const groupsAPI = {
   getLiveCapability,
   getById,
   getModelsListCandidates,
+  getModelAllowlistCandidates,
   create,
   duplicate,
   update,

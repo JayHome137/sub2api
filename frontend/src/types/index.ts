@@ -190,6 +190,7 @@ export interface CustomMenuItem {
   page_slug?: string
   visibility: 'user' | 'admin'
   sort_order: number
+  hide_open_button?: boolean
 }
 
 export interface CustomEndpoint {
@@ -1126,6 +1127,44 @@ export interface OllamaCloudUsageSettings {
   debounce_minutes: number
 }
 
+export type OpenCodeGoUsageStatus = 'ok' | 'unauthorized' | 'failed'
+
+export interface OpenCodeGoUsageWindow {
+  status?: string
+  percent: number
+  resets_at?: string
+}
+
+export interface OpenCodeGoUsageData {
+  rolling?: OpenCodeGoUsageWindow
+  weekly?: OpenCodeGoUsageWindow
+  monthly?: OpenCodeGoUsageWindow
+}
+
+export interface OpenCodeGoUsageSnapshot {
+  status: OpenCodeGoUsageStatus
+  data?: OpenCodeGoUsageData
+  fetched_at?: string
+  last_attempt_at?: string
+  next_refresh_at?: string
+  failure_count?: number
+  http_status?: number
+  last_error?: string
+}
+
+export interface OpenCodeGoUsageState {
+  account_id: number
+  eligible: boolean
+  auto_refresh_enabled: boolean
+  snapshot?: OpenCodeGoUsageSnapshot
+}
+
+export interface OpenCodeGoUsageSettings {
+  enabled: boolean
+  interval_minutes: number
+  debounce_minutes: number
+}
+
 export interface Account {
   id: number
   name: string
@@ -1139,6 +1178,7 @@ export interface Account {
   credentials?: Record<string, unknown>
   credentials_status?: Record<string, boolean>
   ollama_cloud_usage?: OllamaCloudUsageState
+  opencode_go_usage?: OpenCodeGoUsageState
   // Extra fields including Codex usage, OpenAI compact capability, and model-level rate limits.
   extra?: (CodexUsageSnapshot & OpenAICompactState & {
     model_rate_limits?: Record<string, { rate_limited_at: string; rate_limit_reset_at: string }>
@@ -1271,6 +1311,10 @@ export interface Account {
   parent_subscription_expires_at?: string
   parent_chatgpt_account_id?: string
 }
+
+// The admin account list may return this compact shape when lite=1. Detail
+// operations still use Account from /admin/accounts/:id.
+export type AccountListItem = Omit<Account, 'groups'>
 
 export interface AccountSchedulerGroupScore {
   group_id?: number | null
@@ -2383,6 +2427,8 @@ export interface QualityPolicy {
 }
 
 export interface PelicanTestConfig {
+  run_for_hours?: number
+  interval_minutes?: number
   quality?: QualityPolicy
   question_kind?: 'candy' | 'pelican'
   prompt: string
@@ -2393,6 +2439,7 @@ export interface PelicanTestConfig {
 
 export interface ScheduledTestPlan {
   account_name?: string
+  expires_at?: string | null
   pelican_config?: PelicanTestConfig
   running_until?: string | null
   id: number
@@ -2425,6 +2472,7 @@ export interface ScheduledTestResult {
 }
 
 export interface CreateScheduledTestPlanRequest {
+  pelican_config?: PelicanTestConfig
   account_id: number
   model_id: string
   cron_expression: string
@@ -2434,6 +2482,7 @@ export interface CreateScheduledTestPlanRequest {
 }
 
 export interface UpdateScheduledTestPlanRequest {
+  pelican_config?: PelicanTestConfig
   model_id?: string
   cron_expression?: string
   enabled?: boolean

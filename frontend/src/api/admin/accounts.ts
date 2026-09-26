@@ -7,6 +7,7 @@ import { apiClient } from '../client'
 import type { OpenAIReferralRefreshResult, OpenAIReferralSendResult } from '@/types/openaiReferrals'
 import type {
   Account,
+  AccountListItem,
   CreateAccountRequest,
   UpdateAccountRequest,
   PaginatedResponse,
@@ -25,7 +26,9 @@ import type {
   UpstreamBillingProbeResult,
   UpstreamBillingProbeSettings,
   OllamaCloudUsageSettings,
-  OllamaCloudUsageState
+  OllamaCloudUsageState,
+  OpenCodeGoUsageSettings,
+  OpenCodeGoUsageState
 } from '@/types'
 
 /**
@@ -53,8 +56,8 @@ export async function list(
   options?: {
     signal?: AbortSignal
   }
-): Promise<PaginatedResponse<Account>> {
-  const { data } = await apiClient.get<PaginatedResponse<Account>>('/admin/accounts', {
+): Promise<PaginatedResponse<AccountListItem>> {
+  const { data } = await apiClient.get<PaginatedResponse<AccountListItem>>('/admin/accounts', {
     params: {
       page,
       page_size: pageSize,
@@ -68,7 +71,7 @@ export async function list(
 export interface AccountListWithEtagResult {
   notModified: boolean
   etag: string | null
-  data: PaginatedResponse<Account> | null
+  data: PaginatedResponse<AccountListItem> | null
 }
 
 export async function listWithEtag(
@@ -96,7 +99,7 @@ export async function listWithEtag(
     headers['If-None-Match'] = options.etag
   }
 
-  const response = await apiClient.get<PaginatedResponse<Account>>('/admin/accounts', {
+  const response = await apiClient.get<PaginatedResponse<AccountListItem>>('/admin/accounts', {
     params: {
       page,
       page_size: pageSize,
@@ -1011,6 +1014,39 @@ export async function refreshOllamaCloudUsage(id: number): Promise<OllamaCloudUs
   return data
 }
 
+export async function getOpenCodeGoUsageSettings(): Promise<OpenCodeGoUsageSettings> {
+  const { data } = await apiClient.get<OpenCodeGoUsageSettings>('/admin/accounts/opencode-go-usage/settings')
+  return data
+}
+
+export async function updateOpenCodeGoUsageSettings(
+  settings: OpenCodeGoUsageSettings
+): Promise<OpenCodeGoUsageSettings> {
+  const { data } = await apiClient.put<OpenCodeGoUsageSettings>(
+    '/admin/accounts/opencode-go-usage/settings',
+    settings
+  )
+  return data
+}
+
+export async function getOpenCodeGoUsage(id: number): Promise<OpenCodeGoUsageState> {
+  const { data } = await apiClient.get<OpenCodeGoUsageState>(`/admin/accounts/${id}/opencode-go-usage`)
+  return data
+}
+
+export async function setOpenCodeGoUsageAutoRefresh(id: number, enabled: boolean): Promise<OpenCodeGoUsageState> {
+  const { data } = await apiClient.put<OpenCodeGoUsageState>(
+    `/admin/accounts/${id}/opencode-go-usage/auto-refresh`,
+    { enabled }
+  )
+  return data
+}
+
+export async function refreshOpenCodeGoUsage(id: number): Promise<OpenCodeGoUsageState> {
+  const { data } = await apiClient.post<OpenCodeGoUsageState>(`/admin/accounts/${id}/opencode-go-usage/refresh`)
+  return data
+}
+
 export const accountsAPI = {
   list,
   listWithEtag,
@@ -1073,7 +1109,12 @@ export const accountsAPI = {
   saveOllamaCloudUsageSession,
   deleteOllamaCloudUsageSession,
   setOllamaCloudUsageAutoRefresh,
-  refreshOllamaCloudUsage
+  refreshOllamaCloudUsage,
+  getOpenCodeGoUsageSettings,
+  updateOpenCodeGoUsageSettings,
+  getOpenCodeGoUsage,
+  setOpenCodeGoUsageAutoRefresh,
+  refreshOpenCodeGoUsage
 }
 
 export default accountsAPI
