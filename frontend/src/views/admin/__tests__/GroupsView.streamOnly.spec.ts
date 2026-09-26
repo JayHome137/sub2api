@@ -67,6 +67,12 @@ const DataTableStub = defineComponent({
   </div></div>`
 })
 
+const ToggleStub = defineComponent({
+  props: { modelValue: { type: Boolean, default: false } },
+  emits: ['update:modelValue'],
+  template: '<button :aria-checked="String(modelValue)" @click="$emit(\'update:modelValue\', !modelValue)"><slot /></button>'
+})
+
 function mountView() {
   return mount(GroupsView, {
     global: {
@@ -76,7 +82,8 @@ function mountView() {
         DataTable: DataTableStub,
         BaseDialog: defineComponent({ props: { show: Boolean }, template: '<div v-if="show"><slot /><slot name="footer" /></div>' }),
         Pagination: true, ConfirmDialog: true, EmptyState: true, Select: true, PlatformIcon: true, Icon: true,
-        GroupCapacityBadge: true, GroupRateMultipliersModal: true, GroupRPMOverridesModal: true, VueDraggable: true
+        GroupCapacityBadge: true, GroupRateMultipliersModal: true, GroupRPMOverridesModal: true, VueDraggable: true,
+        Toggle: ToggleStub
       }
     }
   })
