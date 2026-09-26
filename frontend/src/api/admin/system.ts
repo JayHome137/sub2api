@@ -61,7 +61,7 @@ export async function getRollbackVersions(): Promise<{ versions: RollbackVersion
   return data
 }
 
-// The local bridge pulls an immutable official image before the user confirms
+// The local bridge pulls an immutable custom full-stack image before the user confirms
 // the restart. Slow registry links must not inherit the global 30s timeout.
 const UPDATE_REQUEST_TIMEOUT_MS = 15 * 60 * 1000
 
