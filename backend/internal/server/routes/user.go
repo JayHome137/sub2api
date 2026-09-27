@@ -154,5 +154,11 @@ func RegisterUserRoutes(
 			monitorV2.GET("/errors", h.ChannelMonitorV2.Errors)
 			monitorV2.GET("/users", h.ChannelMonitorV2.Users)
 		}
+
+		quality := authenticated.Group("/channel-quality")
+		{
+			quality.GET("", h.ChannelQuality.ListUser)
+			quality.GET("/:group_id/history", h.ChannelQuality.HistoryUser)
+		}
 	}
 }

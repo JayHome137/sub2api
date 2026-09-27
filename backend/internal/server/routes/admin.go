@@ -118,6 +118,7 @@ func RegisterAdminRoutes(
 		// 渠道监控
 		registerChannelMonitorRoutes(admin, h, settingService)
 		registerChannelMonitorV2Routes(admin, h, settingService)
+		registerChannelQualityRoutes(admin, h)
 
 		// 风控中心
 		registerContentModerationRoutes(admin, h)
@@ -859,6 +860,17 @@ func registerChannelMonitorV2Routes(admin *gin.RouterGroup, h *handler.Handlers,
 			reads.GET("/errors", h.ChannelMonitorV2.Errors)
 			reads.GET("/users", h.ChannelMonitorV2.AdminUsers)
 		}
+	}
+}
+
+func registerChannelQualityRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	quality := admin.Group("/channel-quality")
+	{
+		quality.GET("/config", h.Admin.ChannelQuality.GetConfig)
+		quality.PUT("/config", h.Admin.ChannelQuality.UpdateConfig)
+		quality.GET("", h.Admin.ChannelQuality.ListAdmin)
+		quality.POST("/run", h.Admin.ChannelQuality.RunNow)
+		quality.GET("/:group_id/history", h.Admin.ChannelQuality.HistoryAdmin)
 	}
 }
 

@@ -490,6 +490,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/channels/quality',
+    name: 'AdminChannelQuality',
+    component: () => import('@/views/admin/ChannelQualityView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Channel Quality',
+      titleKey: 'channelQuality.title',
+      descriptionKey: 'channelQuality.description'
+    }
+  },
+  {
     path: '/monitor',
     name: 'ChannelStatus',
     component: () => import('@/views/user/ChannelStatusView.vue'),
@@ -498,6 +510,17 @@ const routes: RouteRecordRaw[] = [
       requiresAdmin: false,
       title: 'Channel Status',
       titleKey: 'nav.channelStatus'
+    }
+  },
+  {
+    path: '/quality',
+    name: 'ChannelQuality',
+    component: () => import('@/views/user/ChannelQualityView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Channel Quality',
+      titleKey: 'channelQuality.title'
     }
   },
   {
