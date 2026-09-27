@@ -31,13 +31,17 @@ type updateServiceGitHubClientStub struct {
 	release        *GitHubRelease
 	recentReleases []*GitHubRelease
 	recentErr      error
+	latestRepo     string
+	recentRepo     string
 }
 
-func (s *updateServiceGitHubClientStub) FetchLatestRelease(context.Context, string) (*GitHubRelease, error) {
+func (s *updateServiceGitHubClientStub) FetchLatestRelease(_ context.Context, repo string) (*GitHubRelease, error) {
+	s.latestRepo = repo
 	return s.release, nil
 }
 
-func (s *updateServiceGitHubClientStub) FetchRecentReleases(context.Context, string, int) ([]*GitHubRelease, error) {
+func (s *updateServiceGitHubClientStub) FetchRecentReleases(_ context.Context, repo string, _ int) ([]*GitHubRelease, error) {
+	s.recentRepo = repo
 	return s.recentReleases, s.recentErr
 }
 
@@ -47,6 +51,24 @@ func (s *updateServiceGitHubClientStub) DownloadFile(context.Context, string, st
 
 func (s *updateServiceGitHubClientStub) FetchChecksumFile(context.Context, string) ([]byte, error) {
 	panic("FetchChecksumFile should not be called when no update is available")
+}
+
+func TestUpdateServiceUsesCustomGitHubRepository(t *testing.T) {
+	client := &updateServiceGitHubClientStub{
+		release: &GitHubRelease{TagName: "v0.1.133", Name: "v0.1.133"},
+		recentReleases: []*GitHubRelease{
+			{TagName: "v0.1.131"},
+		},
+	}
+	svc := NewUpdateService(&updateServiceCacheStub{}, client, "0.1.132", "release")
+
+	_, err := svc.CheckUpdate(context.Background(), true)
+	require.NoError(t, err)
+	_, err = svc.ListRollbackVersions(context.Background())
+	require.NoError(t, err)
+
+	require.Equal(t, "JayHome137/sub2api", client.latestRepo)
+	require.Equal(t, "JayHome137/sub2api", client.recentRepo)
 }
 
 func TestUpdateServicePerformUpdateNoUpdateReturnsSentinel(t *testing.T) {

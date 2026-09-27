@@ -217,17 +217,17 @@ func (s *bridgeServer) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	info, err := s.checkUpdates(r)
 	if err != nil {
-		log.Printf("official update check failed: %v", err)
-		writeError(w, http.StatusBadGateway, "official update check unavailable")
+		log.Printf("custom update check failed: %v", err)
+		writeError(w, http.StatusBadGateway, "custom update check unavailable")
 		return
 	}
 	if !info.HasUpdate {
-		writeError(w, http.StatusConflict, "the official backend is already up to date")
+		writeError(w, http.StatusConflict, "the custom backend is already up to date")
 		return
 	}
 	target, err := normalizeVersion(info.LatestVersion)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "official update check returned an invalid version")
+		writeError(w, http.StatusBadGateway, "custom update check returned an invalid version")
 		return
 	}
 	s.runPreparation(w, r, target)
@@ -292,7 +292,7 @@ func (s *bridgeServer) runPreparation(w http.ResponseWriter, r *http.Request, ta
 	result, err := s.helper.Run(ctx, "backend-prepare", target)
 	if err != nil {
 		log.Printf("backend preparation failed: %v", err)
-		writeError(w, http.StatusBadGateway, "unable to prepare the official backend image")
+		writeError(w, http.StatusBadGateway, "unable to prepare the custom full-stack image")
 		return
 	}
 	writeJSON(w, http.StatusOK, updateResult{Message: result.Message, NeedRestart: true})
