@@ -1452,22 +1452,8 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 			if platform != "" && acc.Platform != platform && !mixedListingModelAllowed(platform, model) {
 				continue
 			}
-			// 账号在本分组里被限制了可用模型时，只公布允许的那部分。
-			if !acc.IsModelAllowedInGroup(groupID, model) {
-				continue
-			}
 			modelSet[model] = struct{}{}
 			hasAnyMapping = true
-		}
-		// 没有映射的账号默认支持全部模型；在本分组被限制时改为公布限制清单里的具体模型名。
-		if len(mapping) == 0 {
-			for _, model := range groupAllowedConcreteModels(&acc, groupID) {
-				if platform != "" && acc.Platform != platform && !mixedListingModelAllowed(platform, model) {
-					continue
-				}
-				modelSet[model] = struct{}{}
-				hasAnyMapping = true
-			}
 		}
 	}
 
@@ -1488,7 +1474,7 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 	sort.Strings(models)
 
 	if platform == PlatformOpenAI {
-		models = supplementUnmappedOpenAIModels(accounts, groupID, models)
+		models = supplementUnmappedOpenAIModels(accounts, models)
 	}
 
 	if s.modelsListCache != nil {

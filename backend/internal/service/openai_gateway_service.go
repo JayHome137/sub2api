@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/requesttiming"
 	"log/slog"
 	"math/rand"
 	"net/http"
@@ -21,12 +20,10 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/platform/liveattestation"
-	"github.com/Wei-Shaw/sub2api/internal/service/basispoints"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/cespare/xxhash/v2"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
-	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -444,11 +441,7 @@ var ErrNoAvailableCompactAccounts = errors.New("no available accounts support /r
 
 // OpenAIGatewayService handles OpenAI API gateway operations
 type OpenAIGatewayService struct {
-	excelBPSImages        *basispoints.ImageRelay
-	excelBPSImagesMu      sync.Mutex
-	codexHarvestRunMu     sync.RWMutex
 	accountRepo           AccountRepository
-	proxyRepo             ProxyRepository
 	usageLogRepo          UsageLogRepository
 	usageBillingRepo      UsageBillingRepository
 	userRepo              UserRepository
@@ -512,22 +505,8 @@ type OpenAIGatewayService struct {
 	// openaiCodexTurnStateOrigins: 下游会话 seed → openAICodexTurnStateOrigin，
 	// 记录最近一次向该会话下发 x-codex-turn-state 的铸造账号，供出站守卫
 	// 剥离跨账号回带（openai_codex_turn_state.go）。
-	openaiCodexTurnStateOrigins    sync.Map
-	openaiCodexTurnStateWrites     atomic.Uint64
-	openaiCodexTickets             sync.Map
-	openaiCodexTicketStateMu       sync.Mutex
-	openaiCodexTicketCursors       sync.Map
-	openaiCodexTicketFlight        singleflight.Group
-	openaiCodexTicketProbeCooldown sync.Map
-	openaiCodexTicketChatHold      sync.Map
-	openaiCodexTicketLifecycleMu   sync.Mutex
-	openaiCodexTicketCancel        context.CancelFunc
-	openaiCodexTicketDone          chan struct{}
-	openaiCodexTicketStopped       bool
-
-	requireLatestTurnAdmission bool
-	codexHarvest               *CodexHarvestService
-	codexHarvestRoundActive    atomic.Bool
+	openaiCodexTurnStateOrigins sync.Map
+	openaiCodexTurnStateWrites  atomic.Uint64
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService
@@ -1221,7 +1200,6 @@ func hashSensitiveValueForLog(raw string) string {
 
 // GetAccessToken gets the access token for an OpenAI account
 func (s *OpenAIGatewayService) GetAccessToken(ctx context.Context, account *Account) (string, string, error) {
-	defer requesttiming.Observe(ctx, "upstream_credentials")()
 	if account.IsShadow() {
 		credAccount, err := resolveCredentialAccount(ctx, s.accountRepo, account)
 		if err != nil {

@@ -1,9 +1,9 @@
 # AIFoo 本地更新控制面
 
-网页版本面板继续使用自定义 Sub2API 的检查、回滚版本列表和交互。三个 Docker mutation 改由同源本地桥处理：
+网页版本面板继续使用官方 Sub2API 的检查、回滚版本列表和交互。三个 Docker mutation 改由同源本地桥处理：
 
-- `POST /api/v1/aifoo-upgrade/update`：查询 `JayHome137/sub2api` 最新版本，拉取 `ghcr.io/jayhome137/sub2api:<version>`，解析并锁定精确 digest。
-- `POST /api/v1/aifoo-upgrade/rollback`：拉取管理员选择的自定义旧版本并锁定 digest。
+- `POST /api/v1/aifoo-upgrade/update`：查询官方最新版本，拉取 `weishaw/sub2api:<version>`，解析并锁定精确 digest。
+- `POST /api/v1/aifoo-upgrade/rollback`：拉取管理员选择的官方旧版本并锁定 digest。
 - `POST /api/v1/aifoo-upgrade/restart`：只重建 Compose 的 `sub2api` 服务，验证容器健康和二进制版本；失败时恢复原 Compose 和原后端。
 
 日常后端更新不访问私有 GitHub 仓库，不触发 Actions，不构建后端，也不使用 VM。桥只监听 `127.0.0.1:8091`，每个 mutation 都把浏览器现有的 Bearer Token 回查官方管理员 API。它不读取 GitHub PAT。

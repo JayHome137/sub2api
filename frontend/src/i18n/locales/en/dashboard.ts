@@ -83,21 +83,6 @@ export default {
     columnAlwaysVisible: 'This column is always visible',
     createKey: 'Create API Key',
     editKey: 'Edit API Key',
-    bulkEdit: {
-      title: 'Bulk Edit',
-      selectedCount: '{count} keys selected',
-      selectKey: 'Select key {name}',
-      clearSelection: 'Clear selection',
-      hint: 'Check the fields to update. Unchecked fields keep their current values.',
-      limitHint: 'Enter 0 for no limit. Existing usage is preserved.',
-      ipHint: 'One IP or CIDR per line. Leave empty to clear this list on the selected keys.',
-      invalidLimit: 'Enter a valid amount greater than or equal to 0.',
-      invalidExpiration: 'Choose a valid expiration date or select Never expires.',
-      apply: 'Apply to {count} keys',
-      success: 'Updated {count} keys',
-      partialFailure: 'Updated {success} keys; {failed} failed',
-      failureHint: 'These keys could not be updated. Adjust the settings and retry. Only failed keys will be retried.'
-    },
     deleteKey: 'Delete API Key',
     deleteConfirmMessage: "Are you sure you want to delete '{name}'? This action cannot be undone.",
     id: 'ID',
@@ -340,8 +325,6 @@ export default {
     latency: 'Latency',
     latencyFirstToken: 'First',
     latencyDuration: 'Total',
-    latencyTps: 'Avg TPS',
-    latencyTpsHint: 'Average TPS = output tokens ÷ total duration (seconds). Includes waiting time and any reasoning tokens reported in output usage; not model generation speed.',
     time: 'Time',
     ws: 'WS',
     stream: 'Stream',
@@ -541,47 +524,6 @@ export default {
     empty: {
       title: 'No channels available',
       description: 'No monitored channels have been configured yet.'
-    }
-  },
-
-  // Pelican showcase (user-facing gallery)
-  pelicanShowcase: {
-    title: 'Pelican Showcase',
-    description: 'Each group answers the same drawing prompt on a schedule. Compare model quality by looking at the results.',
-    allGroups: 'All groups',
-    keepRule: 'Latest {count} per group',
-    retentionRule: 'Auto-removed after {days} days',
-    itemCount: '{count} items',
-    latestAt: 'Updated {time}',
-    groupEmpty: 'No results in this group yet. They appear here once a scheduled test succeeds.',
-    loadMore: 'Load more',
-    loadError: 'Failed to load the Pelican showcase',
-    itemLoading: 'Loading…',
-    itemLoadError: 'Failed to load this result',
-    invalidHtml: 'This result cannot be displayed',
-    duration: '{seconds}s',
-    reasoning: 'Reasoning {effort}',
-    efforts: {
-      minimal: 'minimal',
-      low: 'low',
-      medium: 'medium',
-      high: 'high',
-      xhigh: 'xhigh'
-    },
-    preview: 'View full size',
-    previewTitle: '{group} · {model}',
-    sandboxNote: 'Results run in an isolated sandbox without network access and cannot read your account.',
-    remove: 'Remove from showcase',
-    removeConfirm: 'Remove this result from the Pelican showcase? No user will see it any more. This cannot be undone.',
-    removed: 'Removed from the showcase',
-    removeFailed: 'Failed to remove',
-    disabled: {
-      title: 'Pelican showcase is not available',
-      description: 'Once an administrator enables it, scheduled results of each group appear here.'
-    },
-    empty: {
-      title: 'Nothing to show yet',
-      description: 'The administrator has not selected any groups to showcase.'
     }
   },
 

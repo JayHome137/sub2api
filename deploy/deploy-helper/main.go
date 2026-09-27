@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	backendRepository  = "ghcr.io/jayhome137/sub2api"
+	backendRepository  = "weishaw/sub2api"
 	frontendRepository = "ghcr.io/jayhome137/sub2api-frontend"
 )
 
@@ -278,7 +278,7 @@ func (a *app) prepareBackend(ctx context.Context, version string) (commandResult
 		return commandResult{}, err
 	}
 	if imageVersion != version {
-		return commandResult{}, fmt.Errorf("custom full-stack image reports %s, expected %s", imageVersion, version)
+		return commandResult{}, fmt.Errorf("official image reports %s, expected %s", imageVersion, version)
 	}
 
 	state := preparedState{
@@ -292,7 +292,7 @@ func (a *app) prepareBackend(ctx context.Context, version string) (commandResult
 		return commandResult{}, err
 	}
 	return commandResult{
-		Message:       fmt.Sprintf("Custom full-stack backend %s is ready. Restart to activate it.", version),
+		Message:       fmt.Sprintf("Official backend %s is ready. Restart to activate it.", version),
 		TargetVersion: version,
 		Image:         digestImage,
 	}, nil
@@ -506,7 +506,7 @@ func (a *app) resolveDigest(ctx context.Context, taggedImage, repository string)
 			return candidate, nil
 		}
 	}
-	return "", errors.New("pulled image did not expose the custom repository digest")
+	return "", errors.New("pulled image did not expose an official repository digest")
 }
 
 func (a *app) imageVersion(ctx context.Context, image string) (string, error) {

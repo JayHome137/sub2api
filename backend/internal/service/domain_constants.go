@@ -241,11 +241,10 @@ const (
 	SettingKeyContentModerationConfig             = "content_moderation_config"        // 内容审计配置（JSON）
 	SettingKeyCyberSessionBlockEnabled            = "cyber_session_block_enabled"      // cyber 命中后会话级自动屏蔽总开关(默认关)
 	SettingKeyCyberSessionBlockTTLSeconds         = "cyber_session_block_ttl_seconds"  // 会话屏蔽 TTL 秒数(默认 3600)
-	SettingKeyCyberSessionIdentityStrictEnabled   = "cyber_session_identity_strict_enabled"
-	SettingKeyLoginAgreementEnabled               = "login_agreement_enabled"    // 登录前是否要求同意条款
-	SettingKeyLoginAgreementMode                  = "login_agreement_mode"       // 条款确认展示模式：modal / checkbox
-	SettingKeyLoginAgreementUpdatedAt             = "login_agreement_updated_at" // 条款更新日期（展示用）
-	SettingKeyLoginAgreementDocuments             = "login_agreement_documents"  // 条款文档列表（JSON，Markdown 内容）
+	SettingKeyLoginAgreementEnabled               = "login_agreement_enabled"          // 登录前是否要求同意条款
+	SettingKeyLoginAgreementMode                  = "login_agreement_mode"             // 条款确认展示模式：modal / checkbox
+	SettingKeyLoginAgreementUpdatedAt             = "login_agreement_updated_at"       // 条款更新日期（展示用）
+	SettingKeyLoginAgreementDocuments             = "login_agreement_documents"        // 条款文档列表（JSON，Markdown 内容）
 
 	// 邮件服务设置
 	SettingKeySMTPHost     = "smtp_host"      // SMTP服务器地址
@@ -537,12 +536,6 @@ const (
 	// sidebar entry is hidden. Defaults to false (opt-in feature).
 	SettingKeyAvailableChannelsEnabled = "available_channels_enabled"
 
-	// SettingKeyPelicanShowcaseEnabled is a DB-backed soft switch for the user-facing
-	// Pelican gallery (scheduled Pelican HTML results of selected groups). When false the
-	// user endpoints return an empty gallery, the sidebar entry is hidden and no new
-	// snapshots are copied; cleanup keeps running. Defaults to false (opt-in feature).
-	SettingKeyPelicanShowcaseEnabled = "pelican_showcase_enabled"
-
 	// SettingKeySubscriptionEnabled is a DB-backed soft switch for the user-facing
 	// subscription surface: sidebar entries, purchase-page subscription tab, header
 	// progress badge, usage billing-type filter and the /subscriptions route. When
@@ -717,11 +710,6 @@ const (
 	SettingKeyOpenAICodexClientVersionSynced = "openai_codex_client_version_synced"
 	// SettingKeyOpenAICodexVersionAutoSyncEnabled 是否启用 Codex 客户端版本号自动同步（默认 true）。
 	SettingKeyOpenAICodexVersionAutoSyncEnabled = "openai_codex_version_auto_sync_enabled"
-	SettingKeyOpenAICodexTicketEnabled          = "openai_codex_ticket_enabled"
-	SettingKeyOpenAICodexTicketFailClosed       = "openai_codex_ticket_fail_closed"
-	SettingKeyOpenAICodexTicketHarvestProxyURL  = "openai_codex_ticket_harvest_proxy_url"
-	SettingKeyOpenAICodexTicketStaticProxyURL   = "openai_codex_ticket_static_proxy_url"
-	SettingKeyOpenAICodexTicketModels           = "openai_codex_ticket_models"
 	// SettingKeyClaudeCodeClientVersion 网关对 Anthropic 上游声明的 Claude Code CLI 客户端版本号（管理员覆写）。
 	// 空值表示跟随自动同步值；自动同步也没有结果时回退到 claude.CLIVersion()（环境变量覆盖 + 内置基线）。
 	// 版本太旧会被 Anthropic 拒绝（claude_code_version_too_old），故该值需保持跟随官方发布。
