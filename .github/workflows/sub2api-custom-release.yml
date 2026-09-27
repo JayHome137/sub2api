@@ -3,9 +3,12 @@ name: Sub2API custom full-stack release
 on:
   pull_request:
     branches: [sub2api-custom]
-  push:
-    branches: [sub2api-custom]
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish a custom image and Release after final validation
+        type: boolean
+        default: false
 
 concurrency:
   group: sub2api-custom-release
@@ -33,11 +36,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/sub2api-custom" ]; then
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$GITHUB_REF" = "refs/heads/sub2api-custom" ] && [ "$PUBLISH_RELEASE" = "true" ]; then
             printf 'version=0.3.%s\n' "$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
           else
             printf 'version=0.0.0-ci.%s\n' "$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
           fi
+        env:
+          PUBLISH_RELEASE: ${{ inputs.publish_release }}
 
       - uses: actions/setup-go@v6
         with:
@@ -89,7 +94,7 @@ jobs:
           (cd ../artifacts && sha256sum "sub2api_${VERSION}_linux_amd64.tar.gz" > checksums.txt)
 
       - name: Log in to GHCR for custom release
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/sub2api-custom' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/sub2api-custom' && inputs.publish_release }}
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -105,7 +110,7 @@ jobs:
           context: .
           file: deploy/Dockerfile
           platforms: linux/amd64
-          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/sub2api-custom' }}
+          push: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/sub2api-custom' && inputs.publish_release }}
           tags: |
             ${{ env.IMAGE_REPOSITORY }}:${{ steps.version.outputs.version }}
             ${{ env.IMAGE_REPOSITORY }}:custom-latest
@@ -116,7 +121,7 @@ jobs:
           sbom: false
 
       - name: Publish release assets
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/sub2api-custom' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/sub2api-custom' && inputs.publish_release }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}

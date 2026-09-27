@@ -21,7 +21,7 @@ The custom branch release workflow builds and publishes the full-stack image and
 
 ## UI updates
 
-The AIFoo UI is preserved as the visual base, while branch backend changes and their required UI/API compatibility fixes are maintained together. A push to `sub2api-custom` produces a full-stack release after validation.
+The AIFoo UI is preserved as the visual base, while branch backend changes and their required UI/API compatibility fixes are maintained together. Pull requests validate the full-stack build; a Release is published only by manually dispatching the custom workflow on `sub2api-custom` with `publish_release` enabled.
 
 The V3 channel-monitor presentation is part of this retained frontend. It uses
 the official V2 snapshot/matrix APIs and the existing V2 monitoring mode; no
@@ -34,5 +34,5 @@ presentation was ported from kiss-kedaya/sub2api commit
 
 `production` has no scheduled, push, pull-request, release, or Issue workflows;
 its existing AIFoo UI workflow remains manual-only. `sub2api-custom` has one
-push/manual release workflow for the full-stack image and release assets. The VM
+pull-request/manual workflow for the full-stack image and release assets. The VM
 remains available only for deliberate AIFoo UI work on `production`.
