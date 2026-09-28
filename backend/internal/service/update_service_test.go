@@ -91,6 +91,37 @@ func TestUpdateServicePerformUpdateNoUpdateReturnsSentinel(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoUpdateAvailable)
 }
 
+func TestUpdateServiceUsesReleaseTimeWhenVersionResetsToUpstreamVersion(t *testing.T) {
+	tests := []struct {
+		name        string
+		publishedAt string
+		wantUpdate  bool
+	}{
+		{name: "new release despite lower version", publishedAt: "2026-09-28T06:00:00Z", wantUpdate: true},
+		{name: "older release despite higher version", publishedAt: "2026-09-28T04:00:00Z", wantUpdate: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := NewUpdateService(
+				&updateServiceCacheStub{},
+				&updateServiceGitHubClientStub{release: &GitHubRelease{
+					TagName:     "v0.2.9",
+					PublishedAt: tt.publishedAt,
+				}},
+				"0.3.23",
+				"release",
+			)
+			svc.buildDate = "2026-09-28T05:00:00Z"
+
+			info, err := svc.CheckUpdate(context.Background(), true)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.wantUpdate, info.HasUpdate)
+		})
+	}
+}
+
 func newRollbackTestService(current string, releases []*GitHubRelease) *UpdateService {
 	return NewUpdateService(
 		&updateServiceCacheStub{},
@@ -138,6 +169,26 @@ func TestUpdateServiceListRollbackVersionsSortsUnorderedInput(t *testing.T) {
 	require.Equal(t, "0.1.146", versions[0].Version)
 	require.Equal(t, "0.1.145", versions[1].Version)
 	require.Equal(t, "0.1.144", versions[2].Version)
+}
+
+func TestUpdateServiceListRollbackVersionsUsesPublicationOrderAfterVersionReset(t *testing.T) {
+	releases := []*GitHubRelease{
+		{TagName: "v0.3.13", PublishedAt: "2026-09-26T00:00:00Z"},
+		{TagName: "v0.2.9", PublishedAt: "2026-09-28T07:00:00Z"},
+		{TagName: "v0.3.23", PublishedAt: "2026-09-28T04:00:00Z"},
+		{TagName: "v0.2.8", PublishedAt: "2026-09-27T00:00:00Z"},
+	}
+	svc := newRollbackTestService("0.2.9", releases)
+	svc.buildDate = "2026-09-28T06:00:00Z"
+
+	versions, err := svc.ListRollbackVersions(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"0.3.23", "0.2.8", "0.3.13"}, []string{
+		versions[0].Version,
+		versions[1].Version,
+		versions[2].Version,
+	})
 }
 
 func TestUpdateServiceListRollbackVersionsEmptyWhenNoneOlder(t *testing.T) {

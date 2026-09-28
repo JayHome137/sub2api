@@ -64,6 +64,7 @@ type UpdateService struct {
 	cache          UpdateCache
 	githubClient   GitHubReleaseClient
 	currentVersion string
+	buildDate      string
 	buildType      string // "source" for manual builds, "release" for CI builds
 }
 
@@ -379,24 +380,51 @@ func (s *UpdateService) fetchRollbackCandidates(ctx context.Context) ([]*GitHubR
 			continue
 		}
 		// Only versions strictly older than current (also excludes current itself)
-		if compareVersions(v, s.currentVersion) >= 0 {
+		if !s.isRollbackCandidate(r) {
 			continue
 		}
 		seen[v] = true
 		candidates = append(candidates, r)
 	}
 
-	sort.SliceStable(candidates, func(i, j int) bool {
-		return compareVersions(
-			strings.TrimPrefix(candidates[i].TagName, "v"),
-			strings.TrimPrefix(candidates[j].TagName, "v"),
-		) > 0
-	})
+	if _, ok := parseBuildDate(s.buildDate); ok {
+		sort.SliceStable(candidates, func(i, j int) bool {
+			left, leftOK := parseBuildDate(candidates[i].PublishedAt)
+			right, rightOK := parseBuildDate(candidates[j].PublishedAt)
+			if leftOK && rightOK {
+				return left.After(right)
+			}
+			return compareVersions(
+				strings.TrimPrefix(candidates[i].TagName, "v"),
+				strings.TrimPrefix(candidates[j].TagName, "v"),
+			) > 0
+		})
+	} else {
+		sort.SliceStable(candidates, func(i, j int) bool {
+			return compareVersions(
+				strings.TrimPrefix(candidates[i].TagName, "v"),
+				strings.TrimPrefix(candidates[j].TagName, "v"),
+			) > 0
+		})
+	}
 
 	if len(candidates) > maxRollbackVersions {
 		candidates = candidates[:maxRollbackVersions]
 	}
 	return candidates, nil
+}
+
+func (s *UpdateService) isRollbackCandidate(release *GitHubRelease) bool {
+	version := strings.TrimPrefix(release.TagName, "v")
+	if version == "" || version == s.currentVersion {
+		return false
+	}
+	buildDate, buildDateOK := parseBuildDate(s.buildDate)
+	releaseDate, releaseDateOK := parseBuildDate(release.PublishedAt)
+	if buildDateOK && releaseDateOK {
+		return releaseDate.Before(buildDate)
+	}
+	return compareVersions(version, s.currentVersion) < 0
 }
 
 func (s *UpdateService) fetchLatestRelease(ctx context.Context) (*UpdateInfo, error) {
@@ -419,7 +447,7 @@ func (s *UpdateService) fetchLatestRelease(ctx context.Context) (*UpdateInfo, er
 	return &UpdateInfo{
 		CurrentVersion: s.currentVersion,
 		LatestVersion:  latestVersion,
-		HasUpdate:      compareVersions(s.currentVersion, latestVersion) < 0,
+		HasUpdate:      s.hasUpdate(latestVersion, release.PublishedAt),
 		ReleaseInfo: &ReleaseInfo{
 			Name:        release.Name,
 			Body:        release.Body,
@@ -430,6 +458,23 @@ func (s *UpdateService) fetchLatestRelease(ctx context.Context) (*UpdateInfo, er
 		Cached:    false,
 		BuildType: s.buildType,
 	}, nil
+}
+
+func (s *UpdateService) hasUpdate(latestVersion, publishedAt string) bool {
+	if latestVersion == s.currentVersion {
+		return false
+	}
+	buildDate, buildDateOK := parseBuildDate(s.buildDate)
+	releaseDate, releaseDateOK := parseBuildDate(publishedAt)
+	if buildDateOK && releaseDateOK {
+		return releaseDate.After(buildDate)
+	}
+	return compareVersions(s.currentVersion, latestVersion) < 0
+}
+
+func parseBuildDate(value string) (time.Time, bool) {
+	parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(value))
+	return parsed, err == nil
 }
 
 func (s *UpdateService) downloadFile(ctx context.Context, downloadURL, dest string) error {
@@ -611,11 +656,15 @@ func (s *UpdateService) getFromCache(ctx context.Context) (*UpdateInfo, error) {
 	if time.Now().Unix()-cached.Timestamp > updateCacheTTL {
 		return nil, fmt.Errorf("cache expired")
 	}
+	publishedAt := ""
+	if cached.ReleaseInfo != nil {
+		publishedAt = cached.ReleaseInfo.PublishedAt
+	}
 
 	return &UpdateInfo{
 		CurrentVersion: s.currentVersion,
 		LatestVersion:  cached.Latest,
-		HasUpdate:      compareVersions(s.currentVersion, cached.Latest) < 0,
+		HasUpdate:      s.hasUpdate(cached.Latest, publishedAt),
 		ReleaseInfo:    cached.ReleaseInfo,
 		Cached:         true,
 		BuildType:      s.buildType,

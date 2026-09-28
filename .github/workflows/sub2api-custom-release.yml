@@ -37,7 +37,12 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$GITHUB_REF" = "refs/heads/sub2api-custom" ] && [ "$PUBLISH_RELEASE" = "true" ]; then
-            printf 'version=0.3.%s\n' "$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+            version="$(tr -d '\r\n' < backend/cmd/server/VERSION)"
+            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Invalid release version in backend/cmd/server/VERSION: $version" >&2
+              exit 1
+            fi
+            printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
           else
             printf 'version=0.0.0-ci.%s\n' "$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
           fi
