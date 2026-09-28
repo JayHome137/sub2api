@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 )
 
 const (
@@ -244,13 +246,21 @@ type ChannelMonitorV2ModelRow struct {
 }
 
 type ChannelMonitorV2MatrixRow struct {
-	Platform  string                       `json:"platform"`
-	GroupID   *int64                       `json:"group_id,omitempty"`
-	GroupName string                       `json:"group_name,omitempty"`
-	Model     string                       `json:"model,omitempty"`
-	Metrics   ChannelMonitorV2Metric       `json:"metrics"`
-	Health    ChannelMonitorV2Health       `json:"health"`
-	Buckets   []ChannelMonitorV2TrendPoint `json:"buckets"`
+	Platform       string                          `json:"platform"`
+	GroupID        *int64                          `json:"group_id,omitempty"`
+	GroupName      string                          `json:"group_name,omitempty"`
+	Model          string                          `json:"model,omitempty"`
+	Metrics        ChannelMonitorV2Metric          `json:"metrics"`
+	Health         ChannelMonitorV2Health          `json:"health"`
+	Buckets        []ChannelMonitorV2TrendPoint    `json:"buckets"`
+	QualityBuckets []ChannelMonitorV2QualityBucket `json:"quality_buckets,omitempty"`
+	QualityEnabled bool                            `json:"quality_enabled,omitempty"`
+}
+
+type ChannelMonitorV2QualityBucket struct {
+	BucketStart time.Time `json:"bucket_start"`
+	Checked     int       `json:"checked"`
+	Degraded    int       `json:"degraded"`
 }
 
 type ChannelMonitorV2Matrix struct {
@@ -378,6 +388,7 @@ func ChannelMonitorV2BootstrapProgress(now, coveredFrom time.Time, hasData bool)
 type ChannelMonitorV2Service struct {
 	repo     ChannelMonitorV2Repository
 	settings channelMonitorRuntimeReader
+	quality  *GroupQualityCheckService
 	now      func() time.Time
 }
 
@@ -391,6 +402,15 @@ func (s *ChannelMonitorV2Service) SetRuntimeReader(r channelMonitorRuntimeReader
 		return
 	}
 	s.settings = r
+}
+
+// SetGroupQualityCheckService wires the degradation history source used to
+// decorate group matrix rows. The monitor remains usable when it is absent.
+func (s *ChannelMonitorV2Service) SetGroupQualityCheckService(quality *GroupQualityCheckService) {
+	if s == nil {
+		return
+	}
+	s.quality = quality
 }
 
 func (s *ChannelMonitorV2Service) hideThroughputForViewer(ctx context.Context, admin bool) bool {
@@ -538,7 +558,46 @@ func (s *ChannelMonitorV2Service) Matrix(ctx context.Context, filter ChannelMoni
 			}
 		}
 	}
+	s.attachQualityBuckets(ctx, matrix, filter)
 	return matrix, nil
+}
+
+func (s *ChannelMonitorV2Service) attachQualityBuckets(ctx context.Context, matrix *ChannelMonitorV2Matrix, filter ChannelMonitorV2Filter) {
+	if s == nil || s.quality == nil || matrix == nil || len(matrix.Items) == 0 || filter.Bucket <= 0 {
+		return
+	}
+	groupIDs := make([]int64, 0, len(matrix.Items))
+	for i := range matrix.Items {
+		if matrix.Items[i].GroupID != nil && *matrix.Items[i].GroupID > 0 {
+			groupIDs = append(groupIDs, *matrix.Items[i].GroupID)
+		}
+	}
+	if len(groupIDs) == 0 {
+		return
+	}
+	series, err := s.quality.ListGroupSeries(ctx, groupIDs, filter.Start, int64(filter.Bucket.Seconds()))
+	if err != nil {
+		logger.LegacyPrintf("service.channel_monitor_v2", "[ChannelMonitorV2] quality buckets load failed: %v", err)
+		return
+	}
+	for i := range matrix.Items {
+		id := matrix.Items[i].GroupID
+		if id == nil {
+			continue
+		}
+		group, ok := series[*id]
+		if !ok || group == nil {
+			continue
+		}
+		matrix.Items[i].QualityEnabled = true
+		for _, bucket := range group.Buckets {
+			matrix.Items[i].QualityBuckets = append(matrix.Items[i].QualityBuckets, ChannelMonitorV2QualityBucket{
+				BucketStart: bucket.BucketStart,
+				Checked:     bucket.Checked,
+				Degraded:    bucket.Degraded,
+			})
+		}
+	}
 }
 
 func ParseChannelMonitorV2GroupBy(value string) (ChannelMonitorV2GroupBy, error) {
@@ -1096,4 +1155,22 @@ func healthBand(value, warning, critical float64) string {
 		return "warning"
 	}
 	return "healthy"
+}
+
+// QualityEvents returns one group's verdict-bearing degradation history for
+// the user-facing channel page. The handler has already restricted the group
+// to what the viewer may see; only success/degraded runs are exposed.
+func (s *ChannelMonitorV2Service) QualityEvents(ctx context.Context, groupID int64, limit int) ([]*GroupQualityEvent, error) {
+	if s == nil || s.quality == nil {
+		return nil, errors.New("quality check service unavailable")
+	}
+	return s.quality.ListGroupEvents(ctx, groupID, limit)
+}
+
+// QualityArtwork returns one probe's stored artwork, scoped to its group.
+func (s *ChannelMonitorV2Service) QualityArtwork(ctx context.Context, groupID, resultID int64) (string, error) {
+	if s == nil || s.quality == nil {
+		return "", errors.New("quality check service unavailable")
+	}
+	return s.quality.GetGroupEventArtwork(ctx, groupID, resultID)
 }

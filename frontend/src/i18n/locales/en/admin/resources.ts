@@ -5,6 +5,8 @@ export default {
       editPlan: 'Edit Plan',
       deletePlan: 'Delete Plan',
       model: 'Model',
+      prompt: 'Test prompt',
+      promptPlaceholder: 'Enter the exact prompt sent during each scheduled check',
       cronExpression: 'Cron Expression',
       enabled: 'Enabled',
       lastRun: 'Last Run',
@@ -18,8 +20,13 @@ export default {
       results: 'Test Results',
       noResults: 'No test results yet',
       responseText: 'Response',
+      preview: 'Preview',
+      source: 'Source',
+      noResponse: 'No response content to display',
       errorMessage: 'Error',
       success: 'Success',
+      degraded: 'Degraded',
+      unknown: 'Inconclusive',
       failed: 'Failed',
       running: 'Running',
       schedule: 'Schedule',
@@ -37,7 +44,10 @@ export default {
       maxResultsTooltipExample: 'For example, 100 means keeping at most the latest 100 test results. When the 101st result is saved, the oldest one is removed.',
       maxResultsTooltipRange: 'Recommended range: usually 20 to 200. Use 20-50 when you only care about recent health status, or 100-200 if you want a longer trend history.',
       autoRecover: 'Auto Recover',
-      autoRecoverHelp: 'Automatically recover account from error/rate-limited state on successful test'
+      autoRecoverHelp: 'Automatically recover account from error/rate-limited state on successful test',
+      qualityCheck: 'Degradation Check',
+      qualityCheckHelp: 'Evaluates the built-in pelican prompt. After two consecutive degraded results, accounts in multi-account groups may be paused. Single-account groups and upstream accounts are never auto-paused.',
+      promptHelp: 'Only the built-in pelican prompt has a quality verdict. Custom prompts are sent but do not affect quality status or auto-pausing. When Degradation Check is off, the upstream default connectivity prompt is used.'
     },
 
     // Proxies

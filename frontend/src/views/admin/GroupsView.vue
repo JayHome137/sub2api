@@ -2226,6 +2226,20 @@
             class="input"
           ></textarea>
         </div>
+        <div class="flex items-start gap-3 border-t border-gray-200 pt-4 dark:border-dark-600">
+          <Toggle
+            v-model="editForm.quality_check_enabled"
+            :disabled="!qualityCheckSettingsLoaded"
+          />
+          <div>
+            <div class="text-sm font-medium text-gray-700 dark:text-gray-300">
+              {{ t("admin.groups.qualityCheck") }}
+            </div>
+            <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+              {{ t("admin.groups.qualityCheckHelp") }}
+            </p>
+          </div>
+        </div>
         <div>
           <label class="input-label">{{
             t("admin.groups.form.platform")
@@ -4442,6 +4456,7 @@ import AppLayout from "@/components/layout/AppLayout.vue";
 import TablePageLayout from "@/components/layout/TablePageLayout.vue";
 import DataTable from "@/components/common/DataTable.vue";
 import Pagination from "@/components/common/Pagination.vue";
+import Toggle from "@/components/common/Toggle.vue";
 import BaseDialog from "@/components/common/BaseDialog.vue";
 import ConfirmDialog from "@/components/common/ConfirmDialog.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
@@ -5396,9 +5411,14 @@ const convertApiFormatToRoutingRules = async (
   return rules;
 };
 
+const qualityCheckStatuses = ref<Record<string, { enabled: boolean }>>({});
+const qualityCheckSettingsLoaded = ref(false);
+const editOriginalQualityCheckEnabled = ref(false);
+
 const editForm = reactive({
   name: "",
   description: "",
+  quality_check_enabled: false,
   platform: "anthropic" as GroupPlatform,
   rate_multiplier: 1.0,
   is_exclusive: false,
@@ -5733,6 +5753,15 @@ const loadGroups = async () => {
     if (abortController === currentController && !signal.aborted) {
       loading.value = false;
     }
+  }
+};
+
+const loadQualityCheckSettings = async () => {
+  try {
+    qualityCheckStatuses.value = await adminAPI.qualityCheck.list();
+    qualityCheckSettingsLoaded.value = true;
+  } catch (error) {
+    console.error("Error loading group quality settings:", error);
   }
 };
 
@@ -6097,9 +6126,14 @@ const handleCreateGroup = async () => {
 };
 
 const handleEdit = async (group: AdminGroup) => {
+  if (!qualityCheckSettingsLoaded.value) {
+    await loadQualityCheckSettings();
+  }
   editingGroup.value = group;
   editForm.name = group.name;
   editForm.description = group.description || "";
+  editForm.quality_check_enabled = qualityCheckStatuses.value[String(group.id)]?.enabled ?? false;
+  editOriginalQualityCheckEnabled.value = editForm.quality_check_enabled;
   editForm.platform = group.platform;
   editForm.rate_multiplier = group.rate_multiplier;
   editForm.is_exclusive = group.is_exclusive;
@@ -6247,8 +6281,9 @@ const handleUpdateGroup = async () => {
   submitting.value = true;
   try {
     // 转换 fallback_group_id: null -> 0 (后端使用 0 表示清除)
+    const { quality_check_enabled: _qualityCheckEnabled, ...groupFields } = editForm;
     const payload = {
-      ...editForm,
+      ...groupFields,
       model_pricing: groupPricingToAPI(
         editForm.model_pricing,
         editForm.platform,
@@ -6353,6 +6388,24 @@ const handleUpdateGroup = async () => {
       editForm.peak_rate_multiplier,
     );
     await adminAPI.groups.update(editingGroup.value.id, payload);
+    if (editForm.quality_check_enabled !== editOriginalQualityCheckEnabled.value) {
+      try {
+        const settings = await adminAPI.qualityCheck.setEnabled(
+          editingGroup.value.id,
+          editForm.quality_check_enabled,
+        );
+        qualityCheckStatuses.value = {
+          ...qualityCheckStatuses.value,
+          [String(settings.group_id)]: settings,
+        };
+        editOriginalQualityCheckEnabled.value = settings.enabled;
+      } catch (error) {
+        appStore.showError(t("admin.groups.qualityCheckUpdateFailed"));
+        console.error("Error updating group quality settings:", error);
+        await loadQualityCheckSettings();
+        return;
+      }
+    }
     appStore.showSuccess(t("admin.groups.groupUpdated"));
     closeEditModal();
     loadGroups();
@@ -6830,6 +6883,7 @@ const saveSortOrder = async () => {
 
 onMounted(() => {
   loadGroups();
+  void loadQualityCheckSettings();
   void loadLiveCapability();
   loadModelsListCandidates("create", 0, createForm.platform);
   document.addEventListener("click", handleClickOutside);

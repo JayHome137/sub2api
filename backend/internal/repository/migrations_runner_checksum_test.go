@@ -43,6 +43,30 @@ func TestIsMigrationChecksumCompatible(t *testing.T) {
 		require.True(t, ok)
 	})
 
+	t.Run("KISS 2.0.19-2.0.23定时质量迁移checksum可兼容", func(t *testing.T) {
+		cases := []struct {
+			file string
+			db   string
+			code string
+		}{
+			{"246_add_scheduled_test_prompt.sql", "6a1b18928694a5f8052592667f28581309a9c65dc73dda979dadfc9e87cce8db", "b8d4cb17c93635b5a2fc4df069e340be96ede2e770d78d8b89557caa9966426c"},
+			{"247_group_quality_check.sql", "f4fc23de5b64ee3a746f5c8d31b78f1dc50cf807e504152feb69664371c2ab27", "e55e37987d929823d3070ac0ebf73f59b6c0d538ee538692c04be2143bf1585c"},
+			{"248_drop_group_quality_check_results.sql", "cd667ef1ac4e30a58cfa781bc82e4a179690d45ba58479438c6e4290a2f82514", "dac52a792b3f3b74e769601c92b2f9a40024244ddaa54f2bdbf51cd0b63508ab"},
+			{"249_add_scheduled_test_quality_toggle.sql", "6dc4c030b591973b08192b8e919567dcfb42d7ad14c759575f91729a5e701ad2", "8131fc71f121091aa6166ca03000836b54765d91ef70f7345034c4d0da13cbb9"},
+		}
+		for _, tc := range cases {
+			require.True(t, isMigrationChecksumCompatible(tc.file, tc.db, tc.code), tc.file)
+		}
+	})
+
+	t.Run("KISS质量迁移的未知checksum仍不兼容", func(t *testing.T) {
+		require.False(t, isMigrationChecksumCompatible(
+			"246_add_scheduled_test_prompt.sql",
+			"0000000000000000000000000000000000000000000000000000000000000000",
+			"b8d4cb17c93635b5a2fc4df069e340be96ede2e770d78d8b89557caa9966426c",
+		))
+	})
+
 	t.Run("非白名单迁移不兼容", func(t *testing.T) {
 		ok := isMigrationChecksumCompatible(
 			"001_init.sql",

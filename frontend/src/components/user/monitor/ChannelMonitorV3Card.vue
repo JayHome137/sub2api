@@ -40,6 +40,11 @@
       :length="timelineLength"
       :coverage="coverage"
     />
+
+    <ChannelMonitorV3QualityHistory
+      :group-id="row.group_id ?? undefined"
+      :enabled="row.quality_enabled ?? false"
+    />
   </article>
 </template>
 
@@ -52,6 +57,7 @@ import { availabilityTextClass, formatMonitorMs, formatMonitorPercent } from '@/
 import { providerGradient, useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
 import ProviderIcon from './ProviderIcon.vue'
 import ChannelMonitorV3Timeline from './ChannelMonitorV3Timeline.vue'
+import ChannelMonitorV3QualityHistory from './ChannelMonitorV3QualityHistory.vue'
 
 const props = withDefaults(defineProps<{
   row: MonitorMatrixRow

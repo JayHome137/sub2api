@@ -20,20 +20,24 @@ func NewScheduledTestHandler(scheduledTestSvc *service.ScheduledTestService) *Sc
 }
 
 type createScheduledTestPlanRequest struct {
-	AccountID      int64  `json:"account_id" binding:"required"`
-	ModelID        string `json:"model_id"`
-	CronExpression string `json:"cron_expression" binding:"required"`
-	Enabled        *bool  `json:"enabled"`
-	MaxResults     int    `json:"max_results"`
-	AutoRecover    *bool  `json:"auto_recover"`
+	AccountID           int64  `json:"account_id" binding:"required"`
+	ModelID             string `json:"model_id"`
+	PromptText          string `json:"prompt_text"`
+	CronExpression      string `json:"cron_expression" binding:"required"`
+	Enabled             *bool  `json:"enabled"`
+	MaxResults          int    `json:"max_results"`
+	AutoRecover         *bool  `json:"auto_recover"`
+	QualityCheckEnabled *bool  `json:"quality_check_enabled"`
 }
 
 type updateScheduledTestPlanRequest struct {
-	ModelID        string `json:"model_id"`
-	CronExpression string `json:"cron_expression"`
-	Enabled        *bool  `json:"enabled"`
-	MaxResults     int    `json:"max_results"`
-	AutoRecover    *bool  `json:"auto_recover"`
+	ModelID             string `json:"model_id"`
+	PromptText          string `json:"prompt_text"`
+	CronExpression      string `json:"cron_expression"`
+	Enabled             *bool  `json:"enabled"`
+	MaxResults          int    `json:"max_results"`
+	AutoRecover         *bool  `json:"auto_recover"`
+	QualityCheckEnabled *bool  `json:"quality_check_enabled"`
 }
 
 // ListByAccount GET /admin/accounts/:id/scheduled-test-plans
@@ -63,6 +67,7 @@ func (h *ScheduledTestHandler) Create(c *gin.Context) {
 	plan := &service.ScheduledTestPlan{
 		AccountID:      req.AccountID,
 		ModelID:        req.ModelID,
+		PromptText:     req.PromptText,
 		CronExpression: req.CronExpression,
 		Enabled:        true,
 		MaxResults:     req.MaxResults,
@@ -72,6 +77,9 @@ func (h *ScheduledTestHandler) Create(c *gin.Context) {
 	}
 	if req.AutoRecover != nil {
 		plan.AutoRecover = *req.AutoRecover
+	}
+	if req.QualityCheckEnabled != nil {
+		plan.QualityCheckEnabled = *req.QualityCheckEnabled
 	}
 
 	created, err := h.scheduledTestSvc.CreatePlan(c.Request.Context(), plan)
@@ -105,6 +113,9 @@ func (h *ScheduledTestHandler) Update(c *gin.Context) {
 	if req.ModelID != "" {
 		existing.ModelID = req.ModelID
 	}
+	if req.PromptText != "" {
+		existing.PromptText = req.PromptText
+	}
 	if req.CronExpression != "" {
 		existing.CronExpression = req.CronExpression
 	}
@@ -116,6 +127,9 @@ func (h *ScheduledTestHandler) Update(c *gin.Context) {
 	}
 	if req.AutoRecover != nil {
 		existing.AutoRecover = *req.AutoRecover
+	}
+	if req.QualityCheckEnabled != nil {
+		existing.QualityCheckEnabled = *req.QualityCheckEnabled
 	}
 
 	updated, err := h.scheduledTestSvc.UpdatePlan(c.Request.Context(), existing)

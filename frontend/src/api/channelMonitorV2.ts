@@ -158,6 +158,13 @@ export interface MonitorMatrixBucket {
   health: MonitorHealth
 }
 
+/** One bucket of a group's degradation (降智) probe history. */
+export interface MonitorQualityBucket {
+  bucket_start: string
+  checked: number
+  degraded: number
+}
+
 export interface MonitorMatrixRow {
   platform: string
   group_id?: number
@@ -166,6 +173,10 @@ export interface MonitorMatrixRow {
   metrics: MonitorMetric
   health: MonitorHealth
   buckets: MonitorMatrixBucket[]
+  /** Present when degradation detection is enabled for this group. */
+  quality_buckets?: MonitorQualityBucket[]
+  /** True when degradation detection is enabled for this group. */
+  quality_enabled?: boolean
 }
 
 export interface MonitorMatrixResponse {
@@ -268,4 +279,31 @@ export async function getConfig() {
 export async function updateConfig(config: MonitorConfig) {
   const { data } = await apiClient.put<MonitorConfig>('/admin/channel-monitor-v2/config', config)
   return data
+}
+
+/** One historical degradation probe that produced a verdict (success/degraded). */
+export interface MonitorQualityEvent {
+  id: number
+  group_id: number
+  account_id: number
+  model_id: string
+  status: 'success' | 'degraded'
+  error_message: string
+  created_at: string
+}
+
+export async function getQualityEvents(groupId: number, limit = 30, signal?: AbortSignal) {
+  const { data } = await apiClient.get<{ group_id: number; events: MonitorQualityEvent[] }>(
+    '/channel-monitor-v2/quality-events',
+    { params: { group_id: groupId, limit }, signal },
+  )
+  return data?.events ?? []
+}
+
+export async function getQualityEventArtwork(groupId: number, resultId: number, signal?: AbortSignal) {
+  const { data } = await apiClient.get<{ response_text: string }>(
+    `/channel-monitor-v2/quality-events/${resultId}/artwork`,
+    { params: { group_id: groupId }, signal },
+  )
+  return data?.response_text ?? ''
 }

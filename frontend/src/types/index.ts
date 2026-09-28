@@ -2334,10 +2334,12 @@ export interface ScheduledTestPlan {
   id: number
   account_id: number
   model_id: string
+  prompt_text: string
   cron_expression: string
   enabled: boolean
   max_results: number
   auto_recover: boolean
+  quality_check_enabled: boolean
   last_run_at: string | null
   next_run_at: string | null
   created_at: string
@@ -2359,18 +2361,22 @@ export interface ScheduledTestResult {
 export interface CreateScheduledTestPlanRequest {
   account_id: number
   model_id: string
+  prompt_text?: string
   cron_expression: string
   enabled?: boolean
   max_results?: number
   auto_recover?: boolean
+  quality_check_enabled?: boolean
 }
 
 export interface UpdateScheduledTestPlanRequest {
   model_id?: string
+  prompt_text?: string
   cron_expression?: string
   enabled?: boolean
   max_results?: number
   auto_recover?: boolean
+  quality_check_enabled?: boolean
 }
 
 // Payment types
