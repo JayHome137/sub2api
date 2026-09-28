@@ -11,8 +11,8 @@ import (
 var ErrChannelQualityConfigConflict = fmt.Errorf("channel quality configuration conflict")
 
 // ChannelQualityService owns the independent quality task and its history.
-// It uses the normal account test path, but never writes account state and
-// never exposes the selected account in its results.
+// It uses the account probe path in read-only mode and never exposes the
+// selected account in its results.
 type ChannelQualityService struct {
 	repo        ChannelQualityRepository
 	accountRepo AccountRepository
@@ -159,7 +159,7 @@ func (s *ChannelQualityService) runGroup(ctx context.Context, group *Group, cfg 
 	if accountID == 0 || s.accountTest == nil {
 		return finish(ChannelQualityUnknown, "当前分组没有可检测的上游账号", time.Since(started).Milliseconds())
 	}
-	test, testErr := s.accountTest.RunTestBackgroundWithPrompt(ctx, accountID, model, cfg.Prompt)
+	test, testErr := s.accountTest.RunReadOnlyTestBackgroundWithPrompt(ctx, accountID, model, cfg.Prompt)
 	latency := time.Since(started).Milliseconds()
 	if testErr != nil || test == nil || test.Status != "success" {
 		return finish(ChannelQualityUnknown, "上游请求未完成，暂时无法判断质量", latency)
