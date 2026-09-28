@@ -973,10 +973,12 @@ var ProviderSet = wire.NewSet(
 	ProvideBalanceNotifyService,
 	ProvideChannelMonitorService,
 	ProvideChannelMonitorRunner,
+	ProvideChannelQualityRunner,
 	NewChannelMonitorQuotaFetcher,
 	ProvideChannelMonitorV2Service,
 	ProvideChannelMonitorV2Aggregator,
 	NewChannelMonitorRequestTemplateService,
+	NewChannelQualityService,
 	ProvideUserPlatformQuotaUsageFlusher,
 )
 
@@ -1057,6 +1059,13 @@ func ProvideChannelMonitorV2Service(repo ChannelMonitorV2Repository, settingServ
 	svc := NewChannelMonitorV2Service(repo)
 	svc.SetRuntimeReader(settingService)
 	return svc
+}
+
+// ProvideChannelQualityRunner starts the independent channel quality scheduler.
+func ProvideChannelQualityRunner(svc *ChannelQualityService) *ChannelQualityRunner {
+	runner := NewChannelQualityRunner(svc)
+	runner.Start()
+	return runner
 }
 
 // ProvideChannelMonitorV2Aggregator starts the passive minute-rollup worker.
