@@ -60,6 +60,9 @@ func scheduledTestAnimationQuality(content string) (string, string) {
 			}
 		}
 	})
+	if reason := qualityMorphFailure(doc); reason != "" {
+		return "degraded", reason
+	}
 	if dynamic {
 		return unknown("script or dynamic SVG requires rendered motion evaluation")
 	}
@@ -93,6 +96,9 @@ func scheduledTestAnimationQuality(content string) (string, string) {
 				return "degraded", "quality check failed: rotating SVG limb/wheel replaces its placement transform (CSS rotation overrides SVG translation)"
 			}
 		}
+		if strings.Contains(label, "leg") && qualityRigidLeg(n, sheet) && qualityAngleRange(angles) > 15 {
+			return "degraded", "quality check failed: a complete bent leg rotates as one rigid shape; knee and foot do not articulate through the pedal cycle"
+		}
 		fullTurn := false
 		for _, angle := range angles {
 			if math.Abs(angle) >= 359 {
@@ -110,7 +116,7 @@ func scheduledTestAnimationQuality(content string) (string, string) {
 		}
 	}
 	// Absence of a known defect is not a positive visual assessment.
-	return unknown("no proven structural defect; visual quality requires rendered evaluation")
+	return unknown("no proven structural defect; visual quality and leg/pedal linkage need rendered evaluation")
 }
 
 func qualityWalk(n *html.Node, visit func(*html.Node)) {
@@ -274,6 +280,83 @@ func qualitySelectorMatch(n *html.Node, selector string) (int, bool) {
 		}
 	}
 	return score, true
+}
+
+func qualityAngleRange(angles []float64) float64 {
+	if len(angles) == 0 {
+		return 0
+	}
+	lo, hi := angles[0], angles[0]
+	for _, angle := range angles[1:] {
+		lo = math.Min(lo, angle)
+		hi = math.Max(hi, angle)
+	}
+	return hi - lo
+}
+
+func qualityRigidLeg(n *html.Node, sheet qualityCSS) bool {
+	if n == nil || n.Parent == nil {
+		return false
+	}
+	// A valid leg animation may be split into independently animated thigh,
+	// shin, and foot elements. Flag only a repeated, whole-path leg motion.
+	root := n.Parent
+	for root.Parent != nil && root.Parent.Data != "svg" {
+		root = root.Parent
+	}
+	legNodes, rigidNodes := 0, 0
+	qualityWalk(root, func(candidate *html.Node) {
+		if candidate.Type != html.ElementNode {
+			return
+		}
+		label := strings.ToLower(qualityAttr(candidate, "id") + " " + qualityAttr(candidate, "class"))
+		if !strings.Contains(label, "leg") {
+			return
+		}
+		style, ok := sheet.style(candidate)
+		if !ok {
+			return
+		}
+		angles, rotating := sheet.activeRotation(style)
+		if !rotating || qualityAngleRange(angles) <= 15 {
+			return
+		}
+		legNodes++
+		articulated := false
+		pathCount := 0
+		if candidate.Data == "path" && qualityPathHasMultipleSegments(qualityAttr(candidate, "d")) {
+			pathCount++
+		}
+		qualityWalk(candidate, func(child *html.Node) {
+			if child == candidate || child.Type != html.ElementNode {
+				return
+			}
+			if child.Data == "path" && qualityPathHasMultipleSegments(qualityAttr(child, "d")) {
+				pathCount++
+			}
+			childStyle, childOK := sheet.style(child)
+			if childOK && childStyle["animation"] != "" && childStyle["animation"] != "none" {
+				articulated = true
+			}
+		})
+		if !articulated && pathCount > 0 {
+			rigidNodes++
+		}
+	})
+	return legNodes >= 2 && rigidNodes >= 2
+}
+
+func qualityPathHasMultipleSegments(path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	commands := 0
+	for i := 0; i < len(path); i++ {
+		if strings.ContainsRune("MmLlHhVvQqTtCcSsAa", rune(path[i])) {
+			commands++
+		}
+	}
+	return commands >= 3
 }
 
 func (sheet qualityCSS) style(n *html.Node) (map[string]string, bool) {
