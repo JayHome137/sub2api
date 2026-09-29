@@ -17,10 +17,11 @@ func TestScheduledVisualMotionIgnoresPedalingCoordination(t *testing.T) {
 
 func TestScheduledVisualReviewUsesOverallImpression(t *testing.T) {
 	for _, criterion := range []string{
-		"Judge the overall impression",
-		"Minor anatomy inaccuracies, rough or stiff drawing, approximate or simplified pedaling",
-		"Exact foot-to-pedal contact is not required",
+		"different but comparable drawing that satisfies the criteria is accepted",
+		"Simplified frames, missing handlebars or pedals, stylized geometry",
+		"Exact foot-to-pedal contact is NOT required",
 		"Fail only when the bird is clearly not on the bicycle",
+		"Pedaling/foot/wheel coordination is not judged here",
 	} {
 		if !strings.Contains(scheduledVisualReviewPrompt, criterion) {
 			t.Errorf("visual review prompt is missing its lenient criterion %q", criterion)
@@ -28,11 +29,20 @@ func TestScheduledVisualReviewUsesOverallImpression(t *testing.T) {
 	}
 	for _, strictCriterion := range []string{
 		"Trace the actual foot endpoint",
-		"A single definite defect makes that criterion false",
+		"At least one visible foot must touch a pedal surface",
 	} {
 		if strings.Contains(scheduledVisualReviewPrompt, strictCriterion) {
 			t.Errorf("visual review prompt still applies detail-level criterion %q", strictCriterion)
 		}
+	}
+}
+
+func TestScheduledVisualReferenceIsEmbedded(t *testing.T) {
+	if !strings.Contains(scheduledVisualReferenceHTML, "<svg") {
+		t.Fatal("visual reference must contain an SVG scene")
+	}
+	if !strings.Contains(scheduledVisualReferenceHTML, "@keyframes") {
+		t.Fatal("visual reference must contain deterministic animation")
 	}
 }
 

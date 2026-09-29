@@ -19,7 +19,7 @@ func TestGroupQualityRepository_ListGroupEvents(t *testing.T) {
 	repo := repository.NewGroupQualityCheckRepository(db)
 	now := time.Now().UTC()
 	columns := []string{"id", "group_id", "account_id", "model_id", "status", "error_message", "created_at"}
-	mock.ExpectQuery("(?s)SELECT r.id, ag.group_id, p.account_id.*p.quality_check_enabled = TRUE").
+	mock.ExpectQuery("(?s)SELECT r.id, ag.group_id, p.account_id.*JOIN accounts a.*p.quality_check_enabled = TRUE.*a.schedulable IS TRUE").
 		WithArgs(int64(43), pq.Array(service.ScheduledTestQualityPrompts()), 30).
 		WillReturnRows(sqlmock.NewRows(columns).
 			AddRow(11, 43, 7, "claude-sonnet-5", "degraded", "feet do not plausibly contact crank pedals", now).
@@ -40,7 +40,7 @@ func TestGroupQualityRepository_ListGroupEventsClampsLimit(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 	repo := repository.NewGroupQualityCheckRepository(db)
-	mock.ExpectQuery("(?s)SELECT r.id, ag.group_id, p.account_id.*p.quality_check_enabled = TRUE").
+	mock.ExpectQuery("(?s)SELECT r.id, ag.group_id, p.account_id.*JOIN accounts a.*p.quality_check_enabled = TRUE.*a.schedulable IS TRUE").
 		WithArgs(int64(9), pq.Array(service.ScheduledTestQualityPrompts()), 100).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id", "account_id", "model_id", "status", "error_message", "created_at"}))
 
@@ -56,14 +56,14 @@ func TestGroupQualityRepository_GetGroupEventArtworkScoped(t *testing.T) {
 	defer func() { _ = db.Close() }()
 	repo := repository.NewGroupQualityCheckRepository(db)
 
-	mock.ExpectQuery("(?s)SELECT r.response_text.*p.quality_check_enabled = TRUE").
+	mock.ExpectQuery("(?s)SELECT r.response_text.*JOIN accounts a.*p.quality_check_enabled = TRUE.*a.schedulable IS TRUE").
 		WithArgs(int64(43), int64(11), pq.Array(service.ScheduledTestQualityPrompts())).
 		WillReturnRows(sqlmock.NewRows([]string{"response_text"}).AddRow("<html></html>"))
 	text, err := repo.GetGroupEventArtwork(context.Background(), 43, 11)
 	require.NoError(t, err)
 	require.Equal(t, "<html></html>", text)
 
-	mock.ExpectQuery("(?s)SELECT r.response_text.*p.quality_check_enabled = TRUE").
+	mock.ExpectQuery("(?s)SELECT r.response_text.*JOIN accounts a.*p.quality_check_enabled = TRUE.*a.schedulable IS TRUE").
 		WithArgs(int64(43), int64(999), pq.Array(service.ScheduledTestQualityPrompts())).
 		WillReturnRows(sqlmock.NewRows([]string{"response_text"}))
 	_, err = repo.GetGroupEventArtwork(context.Background(), 43, 999)
@@ -77,7 +77,7 @@ func TestGroupQualityRepository_ListGroupBucketsUsesPQArray(t *testing.T) {
 	defer func() { _ = db.Close() }()
 	repo := repository.NewGroupQualityCheckRepository(db)
 	now := time.Now().UTC()
-	mock.ExpectQuery("(?s)WITH latest AS.*p.quality_check_enabled = TRUE").
+	mock.ExpectQuery("(?s)WITH latest AS.*JOIN accounts a.*p.quality_check_enabled = TRUE.*a.schedulable IS TRUE").
 		WithArgs(pq.Array([]int64{43, 44}), sqlmock.AnyArg(), int64(300), pq.Array(service.ScheduledTestQualityPrompts())).
 		WillReturnRows(sqlmock.NewRows([]string{"group_id", "bucket_start", "checked", "degraded"}).
 			AddRow(43, now, 2, 1))
