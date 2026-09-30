@@ -5,6 +5,8 @@ export default {
       editPlan: '编辑计划',
       deletePlan: '删除计划',
       model: '模型',
+      prompt: '检测提示词',
+      promptPlaceholder: '输入每次定时检测发送给模型的完整提示词',
       cronExpression: 'Cron 表达式',
       enabled: '启用',
       lastRun: '上次运行',
@@ -18,8 +20,13 @@ export default {
       results: '测试结果',
       noResults: '暂无测试结果',
       responseText: '响应',
+      preview: '预览',
+      source: '源码',
+      noResponse: '没有可展示的响应内容',
       errorMessage: '错误',
       success: '成功',
+      degraded: '质量下降',
+      unknown: '无法判定',
       failed: '失败',
       running: '运行中',
       schedule: '定时测试',
@@ -37,7 +44,10 @@ export default {
       maxResultsTooltipExample: '例如填写 100，表示最多保存最近 100 次测试结果；第 101 次结果写入后，最早的一条会被清理。',
       maxResultsTooltipRange: '推荐填写范围：一般可填 20 到 200。只关注近期可用性时可填 20-50；需要回看较长时间的波动趋势时可填 100-200。',
       autoRecover: '自动恢复',
-      autoRecoverHelp: '测试成功后自动恢复异常状态的账号'
+      autoRecoverHelp: '测试成功后自动恢复异常状态的账号',
+      qualityCheck: '降智检测',
+      qualityCheckHelp: '开启后评估鹈鹕题目；连续两次退化时，多账号分组可自动暂停账号。单账号分组和上游转发账号不会自动暂停。',
+      promptHelp: '仅内置鹈鹕题目有质量判定；自定义题目仍会发送，但不会参与质量判定或自动暂停。关闭降智检测时使用官方默认连通性测试提示词。'
     },
 
     // Proxies Management

@@ -15,6 +15,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -49,6 +50,10 @@ type accountRepository struct {
 	// Used to proactively sync account snapshot to cache when status changes,
 	// ensuring sticky sessions can promptly detect unavailable accounts.
 	schedulerCache service.SchedulerCache
+}
+
+type sqlTransactionBeginner interface {
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
 }
 
 var schedulerNeutralExtraKeyPrefixes = []string{
@@ -2558,6 +2563,7 @@ func (r *accountRepository) ClearTempUnschedulable(ctx context.Context, id int64
 			updated_at = NOW()
 		WHERE id = $1
 			AND deleted_at IS NULL
+			AND COALESCE(temp_unschedulable_reason, '') NOT LIKE 'scheduled quality check:%'
 	`, id)
 	if err != nil {
 		return err
@@ -2673,10 +2679,20 @@ func (r *accountRepository) UpdateSessionWindowEnd(ctx context.Context, id int64
 }
 
 func (r *accountRepository) SetSchedulable(ctx context.Context, id int64, schedulable bool) error {
-	_, err := r.client.Account.Update().
-		Where(dbaccount.IDEQ(id)).
-		SetSchedulable(schedulable).
-		Save(ctx)
+	_, err := r.sql.ExecContext(ctx, `
+		UPDATE accounts
+		SET schedulable = $2,
+			temp_unschedulable_until = CASE
+				WHEN temp_unschedulable_reason LIKE 'scheduled quality check:%' THEN NULL
+				ELSE temp_unschedulable_until
+			END,
+			temp_unschedulable_reason = CASE
+				WHEN temp_unschedulable_reason LIKE 'scheduled quality check:%' THEN NULL
+				ELSE temp_unschedulable_reason
+			END,
+			updated_at = NOW()
+		WHERE id = $1
+	`, id, schedulable)
 	if err != nil {
 		return err
 	}
@@ -2687,6 +2703,302 @@ func (r *accountRepository) SetSchedulable(ctx context.Context, id int64, schedu
 		r.syncSchedulerAccountSnapshot(ctx, id)
 	}
 	return nil
+}
+
+// MarkScheduledQualityPause atomically claims an account only when its plan is
+// still running quality checks and every attached group has spare capacity.
+func (r *accountRepository) MarkScheduledQualityPause(ctx context.Context, planID, id int64, prompt string, groupIDs []int64, reason string) (bool, error) {
+	groupIDs = uniquePositiveGroupIDs(groupIDs)
+	if planID <= 0 || len(groupIDs) == 0 {
+		return false, nil
+	}
+
+	transactionalSQL, ok := r.sql.(sqlTransactionBeginner)
+	if !ok {
+		return false, errors.New("account repository SQL executor does not support transactions")
+	}
+	tx, err := transactionalSQL.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var currentPlanID int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT id
+		FROM scheduled_test_plans
+		WHERE id = $1
+			AND account_id = $2
+			AND enabled = TRUE
+			AND quality_check_enabled = TRUE
+			AND prompt_text = $3
+		FOR SHARE
+	`, planID, id, prompt).Scan(&currentPlanID); err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+
+	enabledGroupCount := 0
+	for _, groupID := range groupIDs {
+		var acquired bool
+		if err := tx.QueryRowContext(ctx, `
+			SELECT true FROM (
+				SELECT pg_advisory_xact_lock(hashtextextended('sub2api-quality-group:' || $1::text, 0))
+			) AS group_lock
+		`, groupID).Scan(&acquired); err != nil {
+			return false, err
+		}
+		var enabled bool
+		if err := tx.QueryRowContext(ctx, `
+			SELECT enabled FROM group_quality_check_settings WHERE group_id = $1
+		`, groupID).Scan(&enabled); err != nil || !enabled {
+			if err != nil && err != sql.ErrNoRows {
+				return false, err
+			}
+		} else {
+			enabledGroupCount++
+		}
+		var count int
+		if err := tx.QueryRowContext(ctx, `
+			SELECT COUNT(DISTINCT a.id)
+			FROM accounts a
+			JOIN account_groups ag ON ag.account_id = a.id
+			WHERE ag.group_id = $1
+				AND a.deleted_at IS NULL
+				AND a.status = $2
+				AND a.schedulable = TRUE
+				AND (a.temp_unschedulable_until IS NULL OR a.temp_unschedulable_until <= NOW())
+				AND (a.expires_at IS NULL OR a.expires_at > NOW() OR a.auto_pause_on_expired = FALSE)
+				AND (a.overload_until IS NULL OR a.overload_until <= NOW())
+				AND (a.rate_limit_reset_at IS NULL OR a.rate_limit_reset_at <= NOW())
+		`, groupID, service.StatusActive).Scan(&count); err != nil {
+			return false, err
+		}
+		if count <= 1 {
+			return false, nil
+		}
+	}
+	if enabledGroupCount == 0 {
+		return false, nil
+	}
+
+	result, err := tx.ExecContext(ctx, `
+		UPDATE accounts
+		SET schedulable = FALSE,
+			temp_unschedulable_until = NULL,
+			temp_unschedulable_reason = $1,
+			updated_at = NOW()
+		WHERE id = $2
+			AND deleted_at IS NULL
+			AND status = $5
+			AND schedulable = TRUE
+			AND (expires_at IS NULL OR expires_at > NOW() OR auto_pause_on_expired = FALSE)
+			AND (temp_unschedulable_until IS NULL OR temp_unschedulable_until <= NOW())
+			AND (overload_until IS NULL OR overload_until <= NOW())
+			AND (rate_limit_reset_at IS NULL OR rate_limit_reset_at <= NOW())
+			AND type <> $3
+			AND EXISTS (
+				SELECT 1 FROM account_groups ag
+				WHERE ag.account_id = accounts.id AND ag.group_id = ANY($4)
+			)
+	`, reason, id, service.AccountTypeUpstream, pq.Array(groupIDs), service.StatusActive)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected == 0 {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &id, nil, nil); err != nil {
+		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue scheduled quality pause failed: account=%d err=%v", id, err)
+	}
+	r.syncSchedulerAccountSnapshot(ctx, id)
+	return true, nil
+}
+
+// ClearScheduledQualityPause clears a quality pause owned by planID. A zero
+// planID is reserved for an explicit group-level disable and clears any owner.
+func (r *accountRepository) ClearScheduledQualityPause(ctx context.Context, id, planID int64) (bool, error) {
+	result, err := r.sql.ExecContext(ctx, `
+		UPDATE accounts
+		SET schedulable = TRUE,
+			temp_unschedulable_until = NULL,
+			temp_unschedulable_reason = NULL,
+			updated_at = NOW()
+		WHERE id = $1
+			AND deleted_at IS NULL
+			AND temp_unschedulable_reason LIKE CASE
+				WHEN $2 = 0 THEN 'scheduled quality check:%'
+				ELSE 'scheduled quality check: plan=' || $2::text || ':%'
+			END
+	`, id, planID)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected == 0 {
+		return false, err
+	}
+	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &id, nil, nil); err != nil {
+		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue scheduled quality recovery failed: account=%d err=%v", id, err)
+	}
+	r.syncSchedulerAccountSnapshot(ctx, id)
+	return true, nil
+}
+
+// ClearScheduledQualityPauseByPlan is idempotent and can retry cleanup after
+// the plan row has already been deleted.
+func (r *accountRepository) ClearScheduledQualityPauseByPlan(ctx context.Context, planID int64) error {
+	if planID <= 0 {
+		return nil
+	}
+	rows, err := r.sql.QueryContext(ctx, `
+		UPDATE accounts
+		SET schedulable = TRUE,
+			temp_unschedulable_until = NULL,
+			temp_unschedulable_reason = NULL,
+			updated_at = NOW()
+		WHERE deleted_at IS NULL
+			AND temp_unschedulable_reason LIKE 'scheduled quality check: plan=' || $1::text || ':%'
+		RETURNING id
+	`, planID)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+	var accountIDs []int64
+	for rows.Next() {
+		var accountID int64
+		if err := rows.Scan(&accountID); err != nil {
+			return err
+		}
+		accountIDs = append(accountIDs, accountID)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, accountID := range accountIDs {
+		if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &accountID, nil, nil); err != nil {
+			logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue scheduled quality recovery failed: account=%d err=%v", accountID, err)
+		}
+		r.syncSchedulerAccountSnapshot(ctx, accountID)
+	}
+	return nil
+}
+
+// ClearScheduledQualityPausesForDisabledGroup serializes cleanup with group
+// re-enables and new quality pauses. A stale disable request cannot clear a
+// pause created after the group was re-enabled.
+func (r *accountRepository) ClearScheduledQualityPausesForDisabledGroup(ctx context.Context, groupID int64) error {
+	if groupID <= 0 {
+		return nil
+	}
+	transactionalSQL, ok := r.sql.(sqlTransactionBeginner)
+	if !ok {
+		return errors.New("account repository SQL executor does not support transactions")
+	}
+	tx, err := transactionalSQL.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var acquired bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT true FROM (
+			SELECT pg_advisory_xact_lock(hashtextextended('sub2api-quality-group:' || $1::text, 0))
+		) AS group_lock
+	`, groupID).Scan(&acquired); err != nil {
+		return err
+	}
+	var enabled bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT enabled FROM group_quality_check_settings WHERE group_id = $1
+	`, groupID).Scan(&enabled); err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return err
+	}
+	if enabled {
+		return nil
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		UPDATE accounts AS a
+		SET schedulable = TRUE,
+			temp_unschedulable_until = NULL,
+			temp_unschedulable_reason = NULL,
+			updated_at = NOW()
+		WHERE a.deleted_at IS NULL
+			AND a.temp_unschedulable_reason LIKE 'scheduled quality check:%'
+			AND EXISTS (
+				SELECT 1 FROM account_groups target
+				WHERE target.account_id = a.id AND target.group_id = $1
+			)
+			AND NOT EXISTS (
+				SELECT 1
+				FROM account_groups other
+				JOIN group_quality_check_settings settings ON settings.group_id = other.group_id
+				WHERE other.account_id = a.id
+					AND other.group_id <> $1
+					AND settings.enabled = TRUE
+			)
+		RETURNING a.id
+	`, groupID)
+	if err != nil {
+		return err
+	}
+	var accountIDs []int64
+	for rows.Next() {
+		var accountID int64
+		if err := rows.Scan(&accountID); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		accountIDs = append(accountIDs, accountID)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	for _, accountID := range accountIDs {
+		if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &accountID, nil, nil); err != nil {
+			logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue disabled-group quality recovery failed: account=%d err=%v", accountID, err)
+		}
+		r.syncSchedulerAccountSnapshot(ctx, accountID)
+	}
+	return nil
+}
+
+func uniquePositiveGroupIDs(groupIDs []int64) []int64 {
+	seen := make(map[int64]struct{}, len(groupIDs))
+	unique := make([]int64, 0, len(groupIDs))
+	for _, groupID := range groupIDs {
+		if groupID <= 0 {
+			continue
+		}
+		if _, ok := seen[groupID]; ok {
+			continue
+		}
+		seen[groupID] = struct{}{}
+		unique = append(unique, groupID)
+	}
+	sort.Slice(unique, func(i, j int) bool { return unique[i] < unique[j] })
+	return unique
 }
 
 func (r *accountRepository) AutoPauseExpiredAccounts(ctx context.Context, now time.Time) (int64, error) {
