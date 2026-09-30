@@ -418,15 +418,11 @@ export function buildPlanTypeOptions(current: string, clearLabel: string): PlanT
     { value: 'free', label: 'Free' }
   ]
   const opts: PlanTypeOption[] = [{ value: '', label: clearLabel }]
-  for (const p of presets) {
-    if (cur && p.value !== cur.toLowerCase() && p.label === curLabel) {
-      // 当前值是该预设的别名：用 canonical 当前值占位，标签仍显示友好名
-      opts.push({ value: cur, label: p.label })
-    } else {
-      opts.push(p)
-    }
+  for (const preset of openAIPlanTypes) {
+    const value = cur && key === openAIPlanTypeKey(preset) ? cur : preset
+    opts.push({ value, label: planTypeDisplayLabel(value) })
   }
-  if (cur && !opts.some(o => o.value.toLowerCase() === cur.toLowerCase())) {
+  if (cur && !opts.some(option => option.value === cur)) {
     opts.push({ value: cur, label: planTypeDisplayLabel(cur) })
   }
   return opts

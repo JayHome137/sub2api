@@ -3,6 +3,8 @@ name: Sub2API custom full-stack release
 on:
   pull_request:
     branches: [sub2api-custom]
+  push:
+    branches: [sub2api-custom]
   workflow_dispatch:
     inputs:
       publish_release:
@@ -43,6 +45,32 @@ jobs:
             exit 1
           fi
           printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether to publish a release
+        id: publication
+        if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED: ${{ inputs.publish_release }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_tag="v${VERSION}"
+          if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$REQUESTED" = "true" ]; then
+              echo "Release $release_tag already exists" >&2
+              exit 1
+            fi
+            echo 'publish=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$EVENT_NAME" = "push" ] || [ "$REQUESTED" = "true" ]; then
+            echo 'publish=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'publish=false' >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: actions/setup-go@v6
         with:
@@ -93,7 +121,7 @@ jobs:
           (cd ../artifacts && sha256sum "sub2api_${VERSION}_linux_amd64.tar.gz" > checksums.txt)
 
       - name: Log in to GHCR for custom release
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release }}
+        if: ${{ steps.publication.outputs.publish == 'true' }}
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -109,7 +137,7 @@ jobs:
           context: .
           file: deploy/Dockerfile
           platforms: linux/amd64
-          push: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release }}
+          push: ${{ steps.publication.outputs.publish == 'true' }}
           tags: |
             ${{ env.IMAGE_REPOSITORY }}:${{ steps.version.outputs.version }}
             ${{ env.IMAGE_REPOSITORY }}:custom-latest
@@ -120,18 +148,18 @@ jobs:
           sbom: false
 
       - name: Publish custom release
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release }}
+        if: ${{ steps.publication.outputs.publish == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          release_tag="v${VERSION}-custom"
+          release_tag="v${VERSION}"
           gh release create "$release_tag" \
             "artifacts/sub2api_${VERSION}_linux_amd64.tar.gz" \
             artifacts/checksums.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Sub2API custom ${VERSION}" \
-            --notes "Custom full-stack release ${VERSION}: AIFoo frontend with the custom vendor classification and scheduled quality checks." \
-            --latest=false
+            --title "Sub2API ${VERSION}" \
+            --notes "AIFoo frontend with vendor classification and scheduled quality checks." \
+            --latest

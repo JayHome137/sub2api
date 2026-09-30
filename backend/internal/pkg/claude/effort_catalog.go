@@ -19,6 +19,7 @@ var effortFamilies = []struct {
 	{family: "claude-mythos-5", levels: effortLowMediumHighXHighMax},
 	{family: "claude-fable-5", levels: effortLowMediumHighXHighMax},
 	{family: "claude-sonnet-4-6", levels: effortLowMediumHighMax},
+	{family: "claude-sonnet-5-5", levels: effortLowMediumHighXHighMax},
 	{family: "claude-sonnet-5", levels: effortLowMediumHighXHighMax},
 	{family: "claude-opus-4-8", levels: effortLowMediumHighXHighMax},
 	{family: "claude-opus-4-7", levels: effortLowMediumHighXHighMax},
@@ -50,6 +51,9 @@ func normalizeEffortModelID(model string) string {
 	id = strings.TrimPrefix(id, "models/")
 	if slash := strings.IndexByte(id, '/'); slash >= 0 {
 		id = strings.TrimPrefix(strings.TrimSpace(id[slash+1:]), "models/")
+	}
+	for _, prefix := range []string{"us.", "eu.", "apac.", "jp.", "au.", "us-gov.", "global."} {
+		id = strings.TrimPrefix(id, prefix)
 	}
 	id = strings.TrimPrefix(id, "anthropic.")
 	id = strings.TrimSuffix(id, "-thinking")

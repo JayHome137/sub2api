@@ -2878,6 +2878,17 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 	upstreamErrCh := make(chan error, 1)
 	var channelSvc *service.ChannelService
 	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if tc.accountPlatform == service.PlatformGrok {
+			payload, err := io.ReadAll(r.Body)
+			if err != nil {
+				upstreamErrCh <- err
+				return
+			}
+			upstreamPayloadCh <- payload
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprintf(w, "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_grok_test\",\"model\":%q,\"usage\":{\"input_tokens\":2,\"output_tokens\":1}}}\n\n", gjson.GetBytes(payload, "model").String())
+			return
+		}
 		conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{
 			CompressionMode: coderws.CompressionContextTakeover,
 		})
@@ -2945,6 +2956,9 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 			"openai_apikey_responses_websockets_v2_mode":    service.OpenAIWSIngressModePassthrough,
 		},
 	}
+	if tc.accountPlatform != "" {
+		account.Platform = tc.accountPlatform
+	}
 	if strings.TrimSpace(tc.ingressMode) != "" {
 		account.Extra["openai_apikey_responses_websockets_v2_mode"] = tc.ingressMode
 	}
@@ -3000,7 +3014,7 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		service.NewBillingService(cfg, nil),
 		nil,
 		billingCacheSvc,
-		nil,
+		&compositeWSHTTPUpstream{},
 		&service.DeferredService{},
 		nil,
 		nil,
@@ -3069,6 +3083,12 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 	cancelWrite()
 	require.NoError(t, err)
 
+	if tc.closeReason == "" {
+		tc.closeReason = "not available for this group"
+	}
+	if tc.closeStatus == 0 {
+		tc.closeStatus = coderws.StatusPolicyViolation
+	}
 	if tc.firstFrameCloseExpected {
 		readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
 		_, _, readErr := clientConn.Read(readCtx)
@@ -3149,6 +3169,9 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		}
 	}
 
+	if tc.accountPlatform == service.PlatformGrok {
+		upstreamErrCh <- nil
+	}
 	select {
 	case upstreamErr := <-upstreamErrCh:
 		require.NoError(t, upstreamErr)

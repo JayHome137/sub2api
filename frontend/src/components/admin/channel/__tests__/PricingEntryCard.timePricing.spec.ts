@@ -1,7 +1,12 @@
-import { shallowMount } from '@vue/test-utils'
+import { flushPromises, shallowMount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import PricingEntryCard from '../PricingEntryCard.vue'
 import type { PricingFormEntry } from '../types'
+import channelsAPI from '@/api/admin/channels'
+
+vi.mock('@/api/admin/channels', () => ({
+  default: { getModelDefaultPricing: vi.fn() },
+}))
 
 vi.mock('vue-i18n', async importOriginal => ({
   ...await importOriginal<typeof import('vue-i18n')>(),
@@ -24,6 +29,7 @@ function createEntry(billingMode: PricingFormEntry['billing_mode'] = 'token'): P
     intervals: [],
     time_pricing: {
       timezone: 'Asia/Shanghai',
+      weekdays_only: false,
       periods: [{ start_time: '09:00', end_time: '12:00', multiplier: '2.00' }],
     },
   }
@@ -66,7 +72,7 @@ describe('PricingEntryCard time pricing visibility', () => {
       ...entry,
       billing_mode: 'image',
       intervals: [],
-      time_pricing: { timezone: 'Asia/Shanghai', periods: [] },
+      time_pricing: { timezone: 'Asia/Shanghai', weekdays_only: false, periods: [] },
     })
     expect(entry.time_pricing.periods).toHaveLength(1)
   })

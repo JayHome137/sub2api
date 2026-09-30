@@ -66,6 +66,7 @@ export default {
         logDetails: '日志详情',
         loadFailed: '加载系统日志失败',
         runtimeConfigActive: '运行时日志配置已生效',
+        runtimeConfigLoadFailed: '日志配置加载失败，请刷新后重试。',
         runtimeConfigSaveFailed: '保存日志配置失败',
         resetRuntimeConfigConfirm: '确定要重置为启动配置（env/yaml）并立即应用吗？',
         runtimeConfigReset: '已重置为启动日志配置',

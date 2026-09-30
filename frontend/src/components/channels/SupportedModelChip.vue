@@ -128,6 +128,14 @@
               :scale="1"
             />
 
+            <PricingRow
+              v-if="model.pricing.billing_mode === BILLING_MODE_VIDEO && model.pricing.per_request_price != null"
+              :label="t(prefixKey('videoPrice'))"
+              :value="model.pricing.per_request_price"
+              :unit="t(prefixKey('unitPerSecond'))"
+              :scale="1"
+            />
+
             <div
               v-if="model.pricing.intervals && model.pricing.intervals.length > 0"
               class="mt-2 border-t pt-2"
@@ -229,6 +237,8 @@ const billingModeLabel = computed(() => {
       return t(prefixKey('billingModePerRequest'))
     case BILLING_MODE_IMAGE:
       return t(prefixKey('billingModeImage'))
+    case BILLING_MODE_VIDEO:
+      return t(prefixKey('billingModeVideo'))
     default:
       return '-'
   }

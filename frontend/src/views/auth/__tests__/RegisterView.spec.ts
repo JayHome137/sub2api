@@ -47,11 +47,7 @@ vi.mock('vue-i18n', () => ({
 
 vi.mock('@/stores', () => ({
   useAuthStore: () => ({ register: (...args: unknown[]) => registerMock(...args) }),
-  useAppStore: () => ({
-    showError: (...args: unknown[]) => showErrorMock(...args),
-    showSuccess: vi.fn(),
-    showWarning: vi.fn()
-  })
+  useAppStore: () => appStoreMock
 }))
 
 vi.mock('@/api/auth', async () => {
