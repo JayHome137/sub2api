@@ -499,7 +499,9 @@ func parseBinaryVersion(output []byte) (string, error) {
 
 func (a *app) composeUp(ctx context.Context, service string) error {
 	args := append([]string(nil), a.compose[1:]...)
-	args = append(args, "-f", a.cfg.composeFile, "up", "-d", "--no-deps", "--force-recreate", service)
+	// Start declared dependencies as well: the full-stack release uses the
+	// isolated quality-renderer sidecar for scheduled visual checks.
+	args = append(args, "-f", a.cfg.composeFile, "up", "-d", "--force-recreate", service)
 	output, err := a.exec.Run(ctx, a.compose[0], args, nil)
 	if err != nil {
 		return fmt.Errorf("Compose activation failed: %w: %s", err, strings.TrimSpace(string(output)))

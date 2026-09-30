@@ -1,6 +1,13 @@
 package service
 
 import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
+	"image"
+	"image/png"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -62,6 +69,48 @@ func TestReviewRequestErrorIsCapabilityRecognizesResponsesAndChatCompletions(t *
 		t.Run(test.name, func(t *testing.T) {
 			if got := reviewRequestErrorIsCapability(test.message); got != test.want {
 				t.Fatalf("reviewRequestErrorIsCapability(%q) = %v, want %v", test.message, got, test.want)
+			}
+		})
+	}
+}
+
+func TestRenderScheduledVisualFramesHTTPValidatesSidecarResponse(t *testing.T) {
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 960, 640))); err != nil {
+		t.Fatal(err)
+	}
+	frames := make([]scheduledVisualFrame, 4)
+	for i := range frames {
+		frames[i] = scheduledVisualFrame{Time: float64(i), PNG: base64.StdEncoding.EncodeToString(encoded.Bytes())}
+	}
+	payload, err := json.Marshal(frames)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/render" {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(payload)
+	}))
+	defer server.Close()
+	t.Setenv("SUB2API_QUALITY_RENDERER_URL", server.URL+"/render")
+	got, err := renderScheduledVisualFramesHTTP(t.Context(), "<svg></svg>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 4 || got[3].Time != 3 {
+		t.Fatalf("frames = %#v", got)
+	}
+}
+
+func TestRenderScheduledVisualFramesHTTPRejectsUnsafeURL(t *testing.T) {
+	for _, value := range []string{"", "file:///tmp/render", "http://user:pass@example.test/render", "//example.test/render"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("SUB2API_QUALITY_RENDERER_URL", value)
+			if _, err := renderScheduledVisualFramesHTTP(t.Context(), "<svg></svg>"); err == nil {
+				t.Fatal("expected renderer URL validation error")
 			}
 		})
 	}

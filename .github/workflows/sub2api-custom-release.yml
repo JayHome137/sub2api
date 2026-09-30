@@ -22,6 +22,7 @@ permissions:
 
 env:
   IMAGE_REPOSITORY: ghcr.io/jayhome137/sub2api
+  QUALITY_RENDERER_IMAGE_REPOSITORY: ghcr.io/jayhome137/sub2api-quality-renderer
 
 jobs:
   validate-build-release:
@@ -177,6 +178,19 @@ jobs:
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
             COMMIT=${{ github.sha }}
+          provenance: false
+          sbom: false
+
+      - name: Build isolated quality-renderer image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend/scripts/quality-renderer-js
+          file: backend/scripts/quality-renderer-js/Dockerfile
+          platforms: linux/amd64
+          push: ${{ steps.publication.outputs.publish == 'true' }}
+          tags: |
+            ${{ env.QUALITY_RENDERER_IMAGE_REPOSITORY }}:${{ steps.version.outputs.version }}
+            ${{ env.QUALITY_RENDERER_IMAGE_REPOSITORY }}:custom-latest
           provenance: false
           sbom: false
 
