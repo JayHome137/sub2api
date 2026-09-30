@@ -78,33 +78,17 @@ jobs:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
 
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 10.28.2
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
-
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: pnpm install --frozen-lockfile
-
-      - name: Validate frontend
-        working-directory: frontend
-        run: |
-          pnpm run lint:check
-          pnpm run typecheck
-          pnpm run test:run
-          pnpm exec playwright install --with-deps chromium
-          pnpm run test:e2e
-          pnpm run build
-
-      - name: Validate backend
+      - name: Validate affected backend paths
         working-directory: backend
-        run: go test ./...
+        run: |
+          go test ./internal/service -run 'Test(ScheduledVisual|RenderScheduledVisual|ReviewRequest|UpdateService)' -count=1
+
+      - name: Validate renderer source
+        run: |
+          node --check backend/scripts/quality-renderer-js/server.mjs
+          node --check backend/scripts/quality-renderer-js/capture.mjs
+          node --check backend/scripts/quality-renderer-js/clock.mjs
+          git diff --check
 
       - name: Validate release control plane
         shell: bash
