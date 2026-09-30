@@ -209,5 +209,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "Sub2API ${VERSION}" \
-            --notes "AIFoo full-stack release with vendor classification, scheduled quality checks, and the version-matched Linux update control plane." \
+            --notes "修复隔离渲染器缺少 Playwright 运行依赖的问题，确保定时降智检测可以完成 SVG 四帧渲染与判定；同步发布版本匹配的全栈镜像、渲染器镜像和 Linux 更新控制面。" \
             --latest

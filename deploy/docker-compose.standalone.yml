@@ -12,7 +12,7 @@
 
 services:
   sub2api:
-    image: ${SUB2API_IMAGE:-ghcr.io/jayhome137/sub2api:0.2.12}
+    image: ${SUB2API_IMAGE:-ghcr.io/jayhome137/sub2api:0.2.13}
     container_name: sub2api
     restart: unless-stopped
     security_opt:
@@ -164,7 +164,7 @@ services:
         condition: service_healthy
 
   quality-renderer:
-    image: ${SUB2API_QUALITY_RENDERER_IMAGE:-ghcr.io/jayhome137/sub2api-quality-renderer:0.2.12}
+    image: ${SUB2API_QUALITY_RENDERER_IMAGE:-ghcr.io/jayhome137/sub2api-quality-renderer:0.2.13}
     container_name: sub2api-quality-renderer
     restart: unless-stopped
     security_opt:
