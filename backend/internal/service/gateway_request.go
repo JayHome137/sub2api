@@ -598,8 +598,8 @@ func validateClaudeOpus55Request(body []byte, model string) error {
 //
 // 策略 (anthropic-strict only)：
 //   - 当 thinking.type 不是 "enabled"/"adaptive"：移除所有 thinking 相关块
-//   - 当 thinking.type 是 "enabled"/"adaptive"：仅移除缺失/无效 signature 的 thinking 块（避免 400）
-//     (blocks with missing/empty/dummy signatures that would cause 400 errors)
+//   - 当 thinking.type 是 "enabled"/"adaptive"：移除缺失/无效 signature 的 thinking 块（避免 400）
+//   - 对要求签名历史完整的 5.5 模型，一旦有无效块，移除历史中的全部 thinking 块
 func FilterThinkingBlocks(body []byte, mappedModel string) []byte {
 	if !ShouldPreFilterThinkingBlocks(mappedModel) {
 		return body
@@ -675,6 +675,9 @@ func FilterThinkingBlocksForRetry(body []byte, mappedModel string) []byte {
 		bytes.Contains(body, patternThinkingFieldSpaced)
 	if !hasEmptyContent && !hasEmptyTextBlock && !containsThinkingBlocks {
 		if topThinking := gjson.Get(jsonStr, "thinking"); topThinking.Exists() {
+			if claude.IsSonnet55(mappedModel) && topThinking.Get("type").String() == "between_tools" {
+				return body
+			}
 			if out, err := sjson.DeleteBytes(body, "thinking"); err == nil {
 				out = removeThinkingDependentContextStrategies(out)
 				return out
@@ -692,7 +695,9 @@ func FilterThinkingBlocksForRetry(body []byte, mappedModel string) []byte {
 	modified := false
 
 	// Disable top-level thinking mode for retry to avoid structural/signature constraints upstream.
-	deleteTopLevelThinking := gjson.Get(jsonStr, "thinking").Exists()
+	thinkingMode := gjson.Get(jsonStr, "thinking.type").String()
+	deleteTopLevelThinking := gjson.Get(jsonStr, "thinking").Exists() &&
+		(!claude.IsSonnet55(mappedModel) || thinkingMode != "between_tools")
 
 	for i := 0; i < len(messages); i++ {
 		msgMap, ok := messages[i].(map[string]any)
@@ -1435,6 +1440,44 @@ func filterThinkingBlocksInternal(body []byte, alwaysThinking bool) []byte {
 
 	if !filtered {
 		return body
+	}
+	if alwaysThinking {
+		for _, msg := range messages {
+			msgMap, ok := msg.(map[string]any)
+			if !ok {
+				continue
+			}
+			content, ok := msgMap["content"].([]any)
+			if !ok {
+				continue
+			}
+			cleaned := make([]any, 0, len(content))
+			for _, block := range content {
+				blockMap, ok := block.(map[string]any)
+				if !ok {
+					cleaned = append(cleaned, block)
+					continue
+				}
+				blockType, _ := blockMap["type"].(string)
+				if blockType == "thinking" || blockType == "redacted_thinking" {
+					continue
+				}
+				if blockType == "" {
+					if _, hasThinking := blockMap["thinking"]; hasThinking {
+						continue
+					}
+				}
+				cleaned = append(cleaned, block)
+			}
+			if len(cleaned) == 0 {
+				placeholder := "(content removed)"
+				if role, _ := msgMap["role"].(string); role == "assistant" {
+					placeholder = "(assistant content removed)"
+				}
+				cleaned = append(cleaned, map[string]any{"type": "text", "text": placeholder})
+			}
+			msgMap["content"] = cleaned
+		}
 	}
 
 	newBody, err := json.Marshal(req)

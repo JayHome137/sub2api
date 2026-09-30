@@ -447,7 +447,9 @@ export default {
       antigravity: 'Antigravity',
       kimi: 'Kimi',
       zhipu: 'Zhipu GLM',
-      deepseek: 'DeepSeek'
+      deepseek: 'DeepSeek',
+      minimax: 'MiniMax',
+      opencode_go: 'OpenCode'
     },
     // Check modes (how a monitor performs its checks)
     checkMode: {
@@ -580,6 +582,8 @@ export default {
       billingModePerRequest: 'Per Request',
       billingModeImage: 'Per Image',
       billingModeVideo: 'Per Video',
+      videoPrice: 'Video Price',
+      unitPerSecond: '/ second',
       inputPrice: 'Input',
       outputPrice: 'Output',
       cacheWritePrice: 'Cache Write',

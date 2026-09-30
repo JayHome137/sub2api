@@ -452,7 +452,9 @@ export default {
       antigravity: 'Antigravity',
       kimi: 'Kimi',
       zhipu: '智谱 GLM',
-      deepseek: 'DeepSeek'
+      deepseek: 'DeepSeek',
+      minimax: 'MiniMax',
+      opencode_go: 'OpenCode'
     },
     // 检查模式（监控条目的工作方式）
     checkMode: {
@@ -585,6 +587,8 @@ export default {
       billingModePerRequest: '按次',
       billingModeImage: '按图片',
       billingModeVideo: '按视频',
+      videoPrice: '视频单价',
+      unitPerSecond: '/ 秒',
       inputPrice: '输入',
       outputPrice: '输出',
       cacheWritePrice: '缓存写入',

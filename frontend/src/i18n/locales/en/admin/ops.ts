@@ -66,6 +66,7 @@ export default {
         logDetails: 'Log Details',
         loadFailed: 'Failed to load system logs',
         runtimeConfigActive: 'Runtime log configuration is active',
+        runtimeConfigLoadFailed: 'Failed to load log configuration. Refresh and try again.',
         runtimeConfigSaveFailed: 'Failed to save log configuration',
         resetRuntimeConfigConfirm: 'Reset to startup configuration (env/yaml) and apply immediately?',
         runtimeConfigReset: 'Reset to startup log configuration',

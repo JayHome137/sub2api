@@ -2,11 +2,19 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import RegisterView from '@/views/auth/RegisterView.vue'
 
-const { getPublicSettingsMock, registerMock, showErrorMock } = vi.hoisted(() => ({
-  getPublicSettingsMock: vi.fn(),
-  registerMock: vi.fn(),
-  showErrorMock: vi.fn()
-}))
+const { appStoreMock, getPublicSettingsMock, registerMock, showErrorMock } = vi.hoisted(() => {
+  const showErrorMock = vi.fn()
+  return {
+    getPublicSettingsMock: vi.fn(),
+    registerMock: vi.fn(),
+    showErrorMock,
+    appStoreMock: {
+      showError: (...args: unknown[]) => showErrorMock(...args),
+      showSuccess: vi.fn(),
+      showWarning: vi.fn()
+    }
+  }
+})
 
 const publicSettings = {
   registration_enabled: true,
@@ -47,11 +55,7 @@ vi.mock('vue-i18n', () => ({
 
 vi.mock('@/stores', () => ({
   useAuthStore: () => ({ register: (...args: unknown[]) => registerMock(...args) }),
-  useAppStore: () => ({
-    showError: (...args: unknown[]) => showErrorMock(...args),
-    showSuccess: vi.fn(),
-    showWarning: vi.fn()
-  })
+  useAppStore: () => appStoreMock
 }))
 
 vi.mock('@/api/auth', async () => {
