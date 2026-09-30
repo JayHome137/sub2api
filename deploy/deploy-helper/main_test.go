@@ -13,14 +13,15 @@ import (
 )
 
 type fakeRuntime struct {
-	composeFile string
-	service     string
-	activeImage string
-	versions    map[string]string
-	imageIDs    map[string]string
-	imageList   string
-	removed     []string
-	failImage   string
+	composeFile  string
+	service      string
+	activeImage  string
+	composeImage string
+	versions     map[string]string
+	imageIDs     map[string]string
+	imageList    string
+	removed      []string
+	failImage    string
 }
 
 func (f *fakeRuntime) Run(_ context.Context, name string, args []string, _ io.Reader) ([]byte, error) {
@@ -29,7 +30,11 @@ func (f *fakeRuntime) Run(_ context.Context, name string, args []string, _ io.Re
 		if err != nil {
 			return nil, err
 		}
-		f.activeImage = image
+		if f.composeImage != "" {
+			f.activeImage = f.composeImage
+		} else {
+			f.activeImage = image
+		}
 		return []byte("started"), nil
 	}
 	if name != "docker" || len(args) == 0 {
@@ -82,26 +87,26 @@ func TestComposeImageRewriteChangesOnlySelectedService(t *testing.T) {
 	path := filepath.Join(directory, "docker-compose.yml")
 	original := `services:
   sub2api:
-    image: weishaw/sub2api:0.1.182
+    image: ghcr.io/jayhome137/sub2api:0.1.182
     environment:
       - VALUE=${VALUE:-unchanged}
-  frontend:
-    image: ghcr.io/jayhome137/sub2api-frontend@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  postgres:
+    image: postgres:18-alpine
 `
 	if err := os.WriteFile(path, []byte(original), 0640); err != nil {
 		t.Fatal(err)
 	}
-	target := "weishaw/sub2api@sha256:" + strings.Repeat("b", 64)
+	target := appRepository + "@sha256:" + strings.Repeat("b", 64)
 	if err := rewriteComposeImage(path, "sub2api", target); err != nil {
 		t.Fatal(err)
 	}
-	backend, _, err := readComposeImage(path, "sub2api")
-	if err != nil || backend != target {
-		t.Fatalf("backend = %q, err = %v", backend, err)
+	appImage, _, err := readComposeImage(path, "sub2api")
+	if err != nil || appImage != target {
+		t.Fatalf("app image = %q, err = %v", appImage, err)
 	}
-	frontend, _, err := readComposeImage(path, "frontend")
-	if err != nil || !strings.Contains(frontend, strings.Repeat("a", 64)) {
-		t.Fatalf("frontend = %q, err = %v", frontend, err)
+	postgres, _, err := readComposeImage(path, "postgres")
+	if err != nil || postgres != "postgres:18-alpine" {
+		t.Fatalf("postgres = %q, err = %v", postgres, err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -117,16 +122,16 @@ func TestComposeImageRewriteChangesOnlySelectedService(t *testing.T) {
 }
 
 func TestImageReferenceValidation(t *testing.T) {
-	valid := frontendRepository + "@sha256:" + strings.Repeat("a", 64)
-	if !isDigestReference(valid, frontendRepository) {
-		t.Fatal("expected exact frontend digest to be accepted")
+	valid := appRepository + "@sha256:" + strings.Repeat("a", 64)
+	if !isDigestReference(valid, appRepository) {
+		t.Fatal("expected exact app digest to be accepted")
 	}
 	for _, value := range []string{
-		frontendRepository + ":latest",
+		appRepository + ":latest",
 		"ghcr.io/other/repository@sha256:" + strings.Repeat("a", 64),
-		frontendRepository + "@sha256:" + strings.Repeat("A", 64),
+		appRepository + "@sha256:" + strings.Repeat("A", 64),
 	} {
-		if isDigestReference(value, frontendRepository) {
+		if isDigestReference(value, appRepository) {
 			t.Fatalf("unexpected accepted reference %q", value)
 		}
 	}
@@ -146,10 +151,10 @@ func TestComposeServiceMustExist(t *testing.T) {
 	}
 }
 
-func TestBackendActivationUsesPreparedDigest(t *testing.T) {
+func TestAppActivationUsesPreparedDigest(t *testing.T) {
 	application, runtime, state, composePath := newActivationTestApp(t)
 
-	result, err := application.activateBackend(context.Background())
+	result, err := application.activateApp(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,41 +168,63 @@ func TestBackendActivationUsesPreparedDigest(t *testing.T) {
 	if _, err := os.Stat(application.preparedPath()); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("prepared state still exists: %v", err)
 	}
-	if len(runtime.removed) != 1 || runtime.removed[0] != backendRepository+":0.1.181" {
+	if len(runtime.removed) != 1 || runtime.removed[0] != appRepository+":0.1.181" {
 		t.Fatalf("removed images = %v", runtime.removed)
 	}
 }
 
-func TestCleanupStaleBackendImagesKeepsEveryTagForCurrentAndPreviousIDs(t *testing.T) {
-	current := backendRepository + "@sha256:" + strings.Repeat("a", 64)
-	previous := backendRepository + "@sha256:" + strings.Repeat("b", 64)
+func TestAppActivationAcceptsInterpolatedComposeImage(t *testing.T) {
+	application, runtime, state, composePath := newActivationTestApp(t)
+	previousComposeImage := "${SUB2API_IMAGE:-" + state.PreviousImage + "}"
+	compose := "services:\n  sub2api:\n    image: " + previousComposeImage + "\n"
+	if err := os.WriteFile(composePath, []byte(compose), 0640); err != nil {
+		t.Fatal(err)
+	}
+	state.PreviousComposeImage = previousComposeImage
+	if err := writeJSONAtomic(application.preparedPath(), state); err != nil {
+		t.Fatal(err)
+	}
+	runtime.composeImage = state.TargetImage
+
+	if _, err := application.activateApp(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	image, _, err := readComposeImage(composePath, "sub2api")
+	if err != nil || image != state.TargetImage || runtime.activeImage != state.TargetImage {
+		t.Fatalf("compose = %q, runtime = %q, err = %v", image, runtime.activeImage, err)
+	}
+}
+
+func TestCleanupStaleAppImagesKeepsEveryTagForCurrentAndPreviousIDs(t *testing.T) {
+	current := appRepository + "@sha256:" + strings.Repeat("a", 64)
+	previous := appRepository + "@sha256:" + strings.Repeat("b", 64)
 	currentID := "sha256:" + strings.Repeat("1", 64)
 	previousID := "sha256:" + strings.Repeat("2", 64)
 	runtime := &fakeRuntime{
 		imageIDs: map[string]string{current: currentID, previous: previousID},
 		imageList: strings.Join([]string{
-			backendRepository + "|0.1.183|" + currentID,
-			backendRepository + "|stable|" + currentID,
-			backendRepository + "|0.1.182|" + previousID,
-			backendRepository + "|0.1.181|sha256:" + strings.Repeat("3", 64),
+			appRepository + "|0.1.183|" + currentID,
+			appRepository + "|stable|" + currentID,
+			appRepository + "|0.1.182|" + previousID,
+			appRepository + "|0.1.181|sha256:" + strings.Repeat("3", 64),
 		}, "\n") + "\n",
 	}
 	application := &app{exec: runtime, docker: "docker"}
 
-	if err := application.cleanupStaleBackendImages(context.Background(), current, previous); err != nil {
+	if err := application.cleanupStaleAppImages(context.Background(), current, previous); err != nil {
 		t.Fatal(err)
 	}
-	if len(runtime.removed) != 1 || runtime.removed[0] != backendRepository+":0.1.181" {
+	if len(runtime.removed) != 1 || runtime.removed[0] != appRepository+":0.1.181" {
 		t.Fatalf("removed images = %v", runtime.removed)
 	}
 }
 
-func TestBackendActivationRestoresPreviousImageOnHealthFailure(t *testing.T) {
+func TestAppActivationRestoresPreviousImageOnHealthFailure(t *testing.T) {
 	application, runtime, state, composePath := newActivationTestApp(t)
 	runtime.failImage = state.TargetImage
 
-	_, err := application.activateBackend(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "previous backend was restored") {
+	_, err := application.activateApp(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "previous app was restored") {
 		t.Fatalf("activation error = %v", err)
 	}
 	image, _, readErr := readComposeImage(composePath, "sub2api")
@@ -213,29 +240,28 @@ func newActivationTestApp(t *testing.T) (*app, *fakeRuntime, preparedState, stri
 	t.Helper()
 	directory := t.TempDir()
 	composePath := filepath.Join(directory, "docker-compose.yml")
-	previousImage := backendRepository + "@sha256:" + strings.Repeat("a", 64)
-	targetImage := backendRepository + "@sha256:" + strings.Repeat("b", 64)
+	previousImage := appRepository + "@sha256:" + strings.Repeat("a", 64)
+	targetImage := appRepository + "@sha256:" + strings.Repeat("b", 64)
 	compose := "services:\n  sub2api:\n    image: " + previousImage + "\n"
 	if err := os.WriteFile(composePath, []byte(compose), 0640); err != nil {
 		t.Fatal(err)
 	}
 	cfg := configuration{
-		composeFile:       composePath,
-		stateDir:          filepath.Join(directory, "state"),
-		backendService:    "sub2api",
-		backendContainer:  "sub2api",
-		frontendService:   "frontend",
-		frontendContainer: "sub2api-frontend",
-		healthTimeout:     50 * time.Millisecond,
+		composeFile:   composePath,
+		stateDir:      filepath.Join(directory, "state"),
+		appService:    "sub2api",
+		appContainer:  "sub2api",
+		healthTimeout: 50 * time.Millisecond,
 	}
 	state := preparedState{
-		TargetVersion:   "v0.1.183",
-		TargetImage:     targetImage,
-		PreviousVersion: "v0.1.182",
-		PreviousImage:   previousImage,
-		PreparedAt:      time.Now().UTC(),
+		TargetVersion:        "v0.1.183",
+		TargetImage:          targetImage,
+		PreviousVersion:      "v0.1.182",
+		PreviousImage:        previousImage,
+		PreviousComposeImage: previousImage,
+		PreparedAt:           time.Now().UTC(),
 	}
-	if err := writeJSONAtomic(filepath.Join(cfg.stateDir, "prepared-backend.json"), state); err != nil {
+	if err := writeJSONAtomic(filepath.Join(cfg.stateDir, "prepared-app.json"), state); err != nil {
 		t.Fatal(err)
 	}
 	runtime := &fakeRuntime{
@@ -250,9 +276,9 @@ func newActivationTestApp(t *testing.T) (*app, *fakeRuntime, preparedState, stri
 			previousImage: "sha256:" + strings.Repeat("1", 64),
 			targetImage:   "sha256:" + strings.Repeat("2", 64),
 		},
-		imageList: backendRepository + "|0.1.183|sha256:" + strings.Repeat("2", 64) + "\n" +
-			backendRepository + "|0.1.182|sha256:" + strings.Repeat("1", 64) + "\n" +
-			backendRepository + "|0.1.181|sha256:" + strings.Repeat("3", 64) + "\n",
+		imageList: appRepository + "|0.1.183|sha256:" + strings.Repeat("2", 64) + "\n" +
+			appRepository + "|0.1.182|sha256:" + strings.Repeat("1", 64) + "\n" +
+			appRepository + "|0.1.181|sha256:" + strings.Repeat("3", 64) + "\n",
 	}
 	application := &app{
 		cfg:     cfg,

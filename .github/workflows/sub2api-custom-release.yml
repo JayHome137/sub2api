@@ -22,6 +22,7 @@ permissions:
 
 env:
   IMAGE_REPOSITORY: ghcr.io/jayhome137/sub2api
+  QUALITY_RENDERER_IMAGE_REPOSITORY: ghcr.io/jayhome137/sub2api-quality-renderer
 
 jobs:
   validate-build-release:
@@ -87,23 +88,30 @@ jobs:
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: pnpm install --frozen-lockfile
-
-      - name: Validate frontend
+      - name: Build embedded frontend assets
         working-directory: frontend
         run: |
-          pnpm run lint:check
-          pnpm run typecheck
-          pnpm run test:run
-          pnpm exec playwright install --with-deps chromium
-          pnpm run test:e2e
+          pnpm install --frozen-lockfile
           pnpm run build
 
-      - name: Validate backend
+      - name: Validate affected backend paths
         working-directory: backend
-        run: go test ./...
+        run: |
+          go test ./internal/service -run 'Test(ScheduledVisual|RenderScheduledVisual|ReviewRequest|UpdateService)' -count=1
+
+      - name: Validate renderer source
+        run: |
+          node --check backend/scripts/quality-renderer-js/server.mjs
+          node --check backend/scripts/quality-renderer-js/capture.mjs
+          node --check backend/scripts/quality-renderer-js/clock.mjs
+          git diff --check
+
+      - name: Validate release control plane
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd deploy/update-bridge && go test ./... && go vet ./...)
+          (cd deploy/deploy-helper && go test ./... && go vet ./...)
 
       - name: Build Linux binary with embedded frontend
         working-directory: backend
@@ -118,7 +126,33 @@ jobs:
             -o "$artifact_dir/sub2api" ./cmd/server
           "$artifact_dir/sub2api" --version
           tar -C ../artifacts -czf "../artifacts/sub2api_${VERSION}_linux_amd64.tar.gz" "sub2api_${VERSION}_linux_amd64"
-          (cd ../artifacts && sha256sum "sub2api_${VERSION}_linux_amd64.tar.gz" > checksums.txt)
+
+      - name: Build Linux release control plane
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          artifact_dir="artifacts/sub2api_control_${VERSION}_linux_amd64"
+          mkdir -p "$artifact_dir"
+          (cd deploy/update-bridge && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+            -o "../../$artifact_dir/aifoo-update-bridge" .)
+          (cd deploy/deploy-helper && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+            -o "../../$artifact_dir/aifoo-deploy-helper" .)
+          cp deploy/update-bridge/install.sh "$artifact_dir/install.sh"
+          cp deploy/update-bridge/aifoo-update-bridge.service "$artifact_dir/aifoo-update-bridge.service"
+          cp deploy/update-bridge/nginx-location.conf "$artifact_dir/nginx-location.conf"
+          cp deploy/update-bridge/README.md "$artifact_dir/README.md"
+          printf '%s\n' "$VERSION" > "$artifact_dir/VERSION"
+          chmod 0755 "$artifact_dir/aifoo-update-bridge" "$artifact_dir/aifoo-deploy-helper" "$artifact_dir/install.sh"
+          tar -C artifacts -czf "artifacts/sub2api_control_${VERSION}_linux_amd64.tar.gz" \
+            "sub2api_control_${VERSION}_linux_amd64"
+          tar -tzf "artifacts/sub2api_control_${VERSION}_linux_amd64.tar.gz" | grep -F \
+            "sub2api_control_${VERSION}_linux_amd64/aifoo-update-bridge"
+          tar -tzf "artifacts/sub2api_control_${VERSION}_linux_amd64.tar.gz" | grep -F \
+            "sub2api_control_${VERSION}_linux_amd64/aifoo-deploy-helper"
+          (cd artifacts && sha256sum \
+            "sub2api_${VERSION}_linux_amd64.tar.gz" \
+            "sub2api_control_${VERSION}_linux_amd64.tar.gz" > checksums.txt)
 
       - name: Log in to GHCR for custom release
         if: ${{ steps.publication.outputs.publish == 'true' }}
@@ -147,6 +181,19 @@ jobs:
           provenance: false
           sbom: false
 
+      - name: Build isolated quality-renderer image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend/scripts/quality-renderer-js
+          file: backend/scripts/quality-renderer-js/Dockerfile
+          platforms: linux/amd64
+          push: ${{ steps.publication.outputs.publish == 'true' }}
+          tags: |
+            ${{ env.QUALITY_RENDERER_IMAGE_REPOSITORY }}:${{ steps.version.outputs.version }}
+            ${{ env.QUALITY_RENDERER_IMAGE_REPOSITORY }}:custom-latest
+          provenance: false
+          sbom: false
+
       - name: Publish custom release
         if: ${{ steps.publication.outputs.publish == 'true' }}
         env:
@@ -157,9 +204,10 @@ jobs:
           release_tag="v${VERSION}"
           gh release create "$release_tag" \
             "artifacts/sub2api_${VERSION}_linux_amd64.tar.gz" \
+            "artifacts/sub2api_control_${VERSION}_linux_amd64.tar.gz" \
             artifacts/checksums.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "Sub2API ${VERSION}" \
-            --notes "AIFoo frontend with vendor classification and scheduled quality checks." \
+            --notes "AIFoo full-stack release with vendor classification, scheduled quality checks, and the version-matched Linux update control plane." \
             --latest

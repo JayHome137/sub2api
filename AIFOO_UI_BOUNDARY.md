@@ -1,27 +1,27 @@
 # AIFoo UI Boundary
 
-This private repository has one maintained fork boundary: the AIFoo frontend.
+This private repository maintains the AIFoo frontend inside the versioned full-stack release.
 
 ## Runtime ownership
 
-- The production backend runs the official `weishaw/sub2api` image at an immutable digest.
-- Backend releases are not merged, rebuilt, or republished by this repository.
-- The checked-in backend and standard deployment files remain an unmodified snapshot of the official stable release for reference.
-- AIFoo owns `frontend/`, `deploy/frontend/`, the local update bridge, the restricted deploy helper, and the manual UI workflow.
+- The production app runs `ghcr.io/jayhome137/sub2api` at an immutable digest.
+- The release workflow builds the backend and embeds the AIFoo frontend into the same image and Linux binary.
+- The local update bridge and restricted deploy helper are versioned control-plane assets published with each release.
+- `deploy/frontend/` is retained only for historical V3 test fixtures; it is not a production deployment path.
 
 ## Backend updates
 
-The official version panel still checks releases and lists rollback versions through the official backend API. Its three Docker mutations are routed to the VPS-local bridge:
+The version panel still checks releases and lists rollback versions through the application API. Its three Docker mutations are routed to the VPS-local bridge:
 
-1. Update or rollback pulls the selected official image and records its exact digest.
-2. The official restart confirmation activates only the prepared `sub2api` image.
+1. Update or rollback pulls the selected self-owned full-stack image and records its exact digest.
+2. The restart confirmation activates only the prepared app service image.
 3. Health and binary-version checks must pass; otherwise the previous Compose file and image are restored.
 
-This path does not use GitHub Actions, the self-hosted VM, private-repository Issues, pull requests, labels, or artifacts.
+The production host does not build source or mount a working checkout. It consumes the published Release and GHCR image only.
 
 ## UI updates
 
-The AIFoo UI stays fixed until it is intentionally changed. A new upstream backend release alone is not a UI rebuild trigger. When upstream adds a user-visible route, API contract, or page that AIFoo needs, compatibility is handled manually and the `AIFoo UI` workflow is dispatched once for VM validation, image publication, and optional frontend-only deployment.
+The AIFoo UI stays fixed until it is intentionally changed. A new upstream backend release alone is not a UI rebuild trigger. When upstream adds a user-visible route, API contract, or page that AIFoo needs, compatibility is handled on a feature branch and published through the full-stack release workflow. There is no separate frontend image or frontend-only production deployment.
 
 The V3 channel-monitor presentation is part of this retained frontend. It uses
 the official V2 snapshot/matrix APIs and the existing V2 monitoring mode; no
@@ -41,5 +41,6 @@ conflicts in favor of the custom branch, and opens or updates a PR targeting
 
 The custom release workflow runs validation on the PR and after a merge to
 `sub2api-custom`; after a successful merge it publishes the matching upstream
-version tag without a `custom` prefix. The VM remains available only for
-deliberate AIFoo UI work.
+version tag without a `custom` prefix, together with the matching Linux
+control-plane package. The test host remains available for deliberate
+validation before production rollout.

@@ -12,6 +12,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -269,6 +270,50 @@ func runScheduledRenderer(ctx context.Context, runner, script, document string) 
 	return parseScheduledVisualFrames(output.Bytes())
 }
 
+// renderScheduledVisualFramesHTTP sends the artwork to the isolated renderer
+// sidecar used by the full-stack Docker deployment. The URL is operator
+// configured and the sidecar remains responsible for browser isolation.
+func renderScheduledVisualFramesHTTP(ctx context.Context, document string) ([]scheduledVisualFrame, error) {
+	rawURL := strings.TrimSpace(os.Getenv("SUB2API_QUALITY_RENDERER_URL"))
+	if rawURL == "" {
+		return nil, errors.New("HTTP renderer not configured")
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil {
+		return nil, errors.New("HTTP renderer URL is invalid")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, parsed.String(), strings.NewReader(document))
+	if err != nil {
+		return nil, errors.New("HTTP renderer request is invalid")
+	}
+	request.Header.Set("Content-Type", "text/html; charset=utf-8")
+	client := &http.Client{
+		Timeout: 260 * time.Second,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, errors.New("HTTP renderer request failed")
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("HTTP renderer returned status %d", response.StatusCode)
+	}
+	if response.ContentLength > scheduledVisualFrameLimit {
+		return nil, errors.New("HTTP renderer response too large")
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, scheduledVisualFrameLimit+1))
+	if err != nil {
+		return nil, errors.New("HTTP renderer response unreadable")
+	}
+	if len(body) > scheduledVisualFrameLimit {
+		return nil, errors.New("HTTP renderer response too large")
+	}
+	return parseScheduledVisualFrames(body)
+}
+
 // renderScheduledVisualFrames 内进程渲染器（拒绝作品自带脚本）。
 func renderScheduledVisualFrames(ctx context.Context, document string) ([]scheduledVisualFrame, error) {
 	if len(document) > scheduledVisualDocumentLimit {
@@ -325,6 +370,14 @@ func renderScheduledVisualFramesWithFallback(ctx context.Context, document strin
 	frames, inProcessErr := renderScheduledVisualFrames(ctx, document)
 	if inProcessErr == nil {
 		return frames, nil
+	}
+	if strings.TrimSpace(os.Getenv("SUB2API_QUALITY_RENDERER_URL")) != "" {
+		frames, sidecarErr := renderScheduledVisualFramesHTTP(ctx, document)
+		if sidecarErr == nil {
+			logger.LegacyPrintf("service.quality", "visual review: in-process renderer failed (%v), sidecar renderer succeeded", inProcessErr)
+			return frames, nil
+		}
+		logger.LegacyPrintf("service.quality", "visual review: sidecar renderer failed: %v", sidecarErr)
 	}
 	frames, containerErr := renderScheduledVisualFramesContainer(ctx, document)
 	if containerErr == nil {

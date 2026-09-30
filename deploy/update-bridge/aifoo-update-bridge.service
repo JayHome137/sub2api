@@ -1,5 +1,5 @@
 [Unit]
-Description=AIFoo local backend update bridge
+Description=AIFoo Sub2API release update bridge
 After=network-online.target docker.service
 Wants=network-online.target docker.service
 

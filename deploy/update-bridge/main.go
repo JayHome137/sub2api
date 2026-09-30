@@ -217,17 +217,17 @@ func (s *bridgeServer) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	info, err := s.checkUpdates(r)
 	if err != nil {
-		log.Printf("official update check failed: %v", err)
-		writeError(w, http.StatusBadGateway, "official update check unavailable")
+		log.Printf("custom release update check failed: %v", err)
+		writeError(w, http.StatusBadGateway, "custom release update check unavailable")
 		return
 	}
 	if !info.HasUpdate {
-		writeError(w, http.StatusConflict, "the official backend is already up to date")
+		writeError(w, http.StatusConflict, "the custom full-stack release is already up to date")
 		return
 	}
 	target, err := normalizeVersion(info.LatestVersion)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "official update check returned an invalid version")
+		writeError(w, http.StatusBadGateway, "custom release update check returned an invalid version")
 		return
 	}
 	s.runPreparation(w, r, target)
@@ -289,10 +289,10 @@ func (s *bridgeServer) handleRollback(w http.ResponseWriter, r *http.Request) {
 func (s *bridgeServer) runPreparation(w http.ResponseWriter, r *http.Request, target string) {
 	ctx, cancel := context.WithTimeout(r.Context(), operationTimeout)
 	defer cancel()
-	result, err := s.helper.Run(ctx, "backend-prepare", target)
+	result, err := s.helper.Run(ctx, "app-prepare", target)
 	if err != nil {
-		log.Printf("backend preparation failed: %v", err)
-		writeError(w, http.StatusBadGateway, "unable to prepare the official backend image")
+		log.Printf("full-stack preparation failed: %v", err)
+		writeError(w, http.StatusBadGateway, "unable to prepare the custom full-stack image")
 		return
 	}
 	writeJSON(w, http.StatusOK, updateResult{Message: result.Message, NeedRestart: true})
@@ -305,10 +305,10 @@ func (s *bridgeServer) handleRestart(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), operationTimeout)
 	defer cancel()
-	result, err := s.helper.Run(ctx, "backend-activate")
+	result, err := s.helper.Run(ctx, "app-activate")
 	if err != nil {
-		log.Printf("backend activation failed: %v", err)
-		writeError(w, http.StatusBadGateway, "backend activation failed; the previous image remains active or was restored")
+		log.Printf("full-stack activation failed: %v", err)
+		writeError(w, http.StatusBadGateway, "full-stack activation failed; the previous image remains active or was restored")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": result.Message})

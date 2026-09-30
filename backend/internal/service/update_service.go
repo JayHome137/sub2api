@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -25,12 +26,13 @@ import (
 var (
 	ErrNoUpdateAvailable         = infraerrors.Conflict("ALREADY_UP_TO_DATE", "no update available; current version is latest")
 	ErrRollbackVersionNotAllowed = infraerrors.BadRequest("ROLLBACK_VERSION_NOT_ALLOWED", "version is not in the allowed rollback list")
+	releaseTagPattern            = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
 )
 
 const (
 	updateCacheKey = "update_check_cache"
 	updateCacheTTL = 1200 // 20 minutes
-	githubRepo     = "Wei-Shaw/sub2api"
+	githubRepo     = "JayHome137/sub2api"
 
 	// Security: allowed download domains for updates
 	allowedDownloadHost = "github.com"
@@ -185,7 +187,7 @@ func (s *UpdateService) applyReleaseAssets(ctx context.Context, releaseAssets []
 	var checksumURL string
 
 	for _, asset := range releaseAssets {
-		if strings.Contains(asset.Name, archiveName) && !strings.HasSuffix(asset.Name, ".txt") {
+		if isApplicationArchiveName(asset.Name, archiveName) {
 			downloadURL = asset.DownloadURL
 		}
 		if asset.Name == "checksums.txt" {
@@ -277,6 +279,16 @@ func (s *UpdateService) applyReleaseAssets(ctx context.Context, releaseAssets []
 	// Success - backup file is kept for rollback capability
 	// It will be cleaned up on next successful update
 	return nil
+}
+
+func isApplicationArchiveName(name, archiveName string) bool {
+	prefix := "sub2api_"
+	suffix := "_" + archiveName + ".tar.gz"
+	if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, suffix) {
+		return false
+	}
+	version := strings.TrimSuffix(strings.TrimPrefix(name, prefix), suffix)
+	return releaseTagPattern.MatchString("v" + version)
 }
 
 // Rollback restores the previous version
@@ -374,6 +386,9 @@ func (s *UpdateService) fetchRollbackCandidates(ctx context.Context) ([]*GitHubR
 		if r == nil || r.Draft || r.Prerelease {
 			continue
 		}
+		if !releaseTagPattern.MatchString(r.TagName) {
+			continue
+		}
 		v := strings.TrimPrefix(r.TagName, "v")
 		if v == "" || seen[v] {
 			continue
@@ -403,6 +418,9 @@ func (s *UpdateService) fetchLatestRelease(ctx context.Context) (*UpdateInfo, er
 	release, err := s.githubClient.FetchLatestRelease(ctx, githubRepo)
 	if err != nil {
 		return nil, err
+	}
+	if release == nil || !releaseTagPattern.MatchString(release.TagName) {
+		return nil, fmt.Errorf("latest release has an unsupported tag")
 	}
 
 	latestVersion := strings.TrimPrefix(release.TagName, "v")
