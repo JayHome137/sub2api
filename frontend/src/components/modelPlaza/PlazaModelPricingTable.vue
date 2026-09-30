@@ -99,6 +99,15 @@
               >
                 {{ t('modelPlaza.table.marginalBadge') }}
               </span>
+              <span
+                v-for="([effort, multiplier]) in reasoningEffortMultipliers(m)"
+                :key="effort"
+                class="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+                :title="t('modelPlaza.table.reasoningMultiplierHint', { effort, multiplier })"
+                :data-reasoning-effort="effort"
+              >
+                {{ t('modelPlaza.table.reasoningMultiplierBadge', { effort, multiplier }) }}
+              </span>
             </div>
           </td>
 

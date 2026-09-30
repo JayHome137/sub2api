@@ -191,7 +191,7 @@ async function load() {
     quotas.value = normalize(data.platform_quotas || [])
   } catch {
     appStore.showError(t('admin.users.platformQuota.loadFailed'))
-    quotas.value = PLATFORMS.map(emptyRow)
+    quotas.value = PLATFORM_QUOTA_PLATFORMS.map(emptyRow)
   } finally {
     loading.value = false
   }

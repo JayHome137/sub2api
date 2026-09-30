@@ -1,0 +1,146 @@
+name: Sync Sub2API upstream baseline
+
+on:
+  schedule:
+    # 00:30 Asia/Singapore (UTC+8) every day.
+    - cron: '30 16 * * *'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Optional upstream release tag, for example v0.2.11. Empty uses the latest release.
+        required: false
+        type: string
+        default: ''
+
+concurrency:
+  group: sub2api-upstream-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  UPSTREAM_REPOSITORY: Wei-Shaw/sub2api
+  BASELINE_BRANCH: sub2api-custom-upstream
+  CUSTOM_BRANCH: sub2api-custom
+  INTEGRATION_BRANCH: sub2api-custom-upstream-merge
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Resolve upstream release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ inputs.release_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch --no-tags upstream '+refs/heads/*:refs/remotes/upstream/*'
+          git fetch --tags upstream
+
+          tag="${REQUESTED_TAG}"
+          if [ -z "$tag" ]; then
+            tag="$(gh release view --repo "$UPSTREAM_REPOSITORY" --json tagName --jq .tagName)"
+          fi
+          if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Upstream release tag must be vMAJOR.MINOR.PATCH: $tag" >&2
+            exit 1
+          fi
+          git rev-parse --verify "$tag^{commit}" >/dev/null
+          version="${tag#v}"
+          source_version="$(git show "$tag:backend/cmd/server/VERSION" 2>/dev/null | tr -d '\r\n')"
+          if [ "$source_version" != "$version" ]; then
+            echo "Release tag $tag contains VERSION $source_version" >&2
+            exit 1
+          fi
+          printf 'tag=%s\nversion=%s\n' "$tag" "$version" >> "$GITHUB_OUTPUT"
+
+      - name: Update upstream baseline branch
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin "$BASELINE_BRANCH" "$CUSTOM_BRANCH" || true
+          git branch -f "$BASELINE_BRANCH" "$TAG"
+          git push origin "$BASELINE_BRANCH:$BASELINE_BRANCH" --force-with-lease
+
+      - name: Build integration branch with custom precedence
+        id: integration
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "$CUSTOM_BRANCH"
+          git checkout -B "$INTEGRATION_BRANCH" "origin/$CUSTOM_BRANCH"
+          if ! git merge --no-ff --no-edit -X ours "$TAG"; then
+            git merge --abort || true
+            echo 'The upstream merge still has unresolved conflicts after custom precedence.' >&2
+            exit 1
+          fi
+          if git ls-files --unmerged --error-unmatch . >/dev/null 2>&1; then
+            echo 'The integration branch contains unresolved merge entries.' >&2
+            exit 1
+          fi
+          if ! git diff --quiet "origin/$CUSTOM_BRANCH" HEAD; then
+            printf 'changed=true\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'changed=false\n' >> "$GITHUB_OUTPUT"
+          fi
+          git push origin "$INTEGRATION_BRANCH:$INTEGRATION_BRANCH" --force-with-lease
+
+      - name: Open or update integration PR
+        if: ${{ steps.integration.outputs.changed == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          title="chore(custom): sync upstream ${TAG}"
+          body=$(cat <<EOF
+          ## Upstream sync
+
+          - Upstream release: `${TAG}`
+          - Baseline branch: `${BASELINE_BRANCH}`
+          - Target branch: `${CUSTOM_BRANCH}`
+          - Application version: `${VERSION}`
+
+          This branch was created from `${CUSTOM_BRANCH}` and merged with the
+          upstream baseline using Git's `ours` conflict strategy. Existing custom
+          code remains authoritative where a textual conflict exists; all
+          non-conflicting upstream changes are included. The release workflow
+          validates the PR. Merge only after the checks pass and the custom
+          monitor/degradation behavior is reviewed.
+          EOF
+          )
+          pr_number="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --base "$CUSTOM_BRANCH" --head "${GITHUB_REPOSITORY_OWNER}:${INTEGRATION_BRANCH}" \
+            --json number --jq '.[0].number // empty')"
+          if [ -n "$pr_number" ]; then
+            gh pr edit "$pr_number" --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          else
+            gh pr create --repo "$GITHUB_REPOSITORY" --base "$CUSTOM_BRANCH" \
+              --head "$INTEGRATION_BRANCH" --title "$title" --body "$body"
+          fi
+
+      - name: Report unchanged baseline
+        if: ${{ steps.integration.outputs.changed != 'true' }}
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: echo "Upstream ${TAG} is already represented by ${CUSTOM_BRANCH}."

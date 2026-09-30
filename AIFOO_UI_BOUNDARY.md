@@ -7,7 +7,7 @@ This private repository has one maintained fork boundary: the AIFoo frontend.
 - The production backend runs the official `weishaw/sub2api` image at an immutable digest.
 - Backend releases are not merged, rebuilt, or republished by this repository.
 - The checked-in backend and standard deployment files remain an unmodified snapshot of the official stable release for reference.
-- AIFoo owns `frontend/`, `deploy/frontend/`, the local update bridge, the restricted deploy helper, and the single manual UI workflow.
+- AIFoo owns `frontend/`, `deploy/frontend/`, the local update bridge, the restricted deploy helper, and the manual UI workflow.
 
 ## Backend updates
 
@@ -32,4 +32,14 @@ syncs; check API compatibility rather than overwriting the frontend. The initial
 presentation was ported from kiss-kedaya/sub2api commit
 `25f896f712ce99745decba6f817e794e1fb8e00d`.
 
-There are no scheduled, push, pull-request, release, or Issue workflows. The VM remains available only for deliberate AIFoo UI work.
+The `sub2api-custom-upstream` branch is the official upstream baseline. The
+upstream sync workflow runs daily at 00:30 Singapore time and can also be
+started manually. It updates that baseline to the latest upstream release,
+creates an integration branch from `sub2api-custom`, resolves textual
+conflicts in favor of the custom branch, and opens or updates a PR targeting
+`sub2api-custom`. The PR validation workflow must pass before the PR is merged.
+
+The custom release workflow runs validation on the PR and after a merge to
+`sub2api-custom`; after a successful merge it publishes the matching upstream
+version tag without a `custom` prefix. The VM remains available only for
+deliberate AIFoo UI work.

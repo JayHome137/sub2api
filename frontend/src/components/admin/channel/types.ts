@@ -10,6 +10,7 @@ export interface IntervalFormEntry {
   input_price: number | string | null
   output_price: number | string | null
   cache_write_price: number | string | null
+  cache_write_1h_price?: number | string | null
   cache_read_price: number | string | null
   input_multiplier: number | string | null
   output_multiplier: number | string | null
@@ -25,9 +26,11 @@ export interface PricingFormEntry {
   input_price: number | string | null
   output_price: number | string | null
   cache_write_price: number | string | null
+  cache_write_1h_price?: number | string | null
   cache_read_price: number | string | null
   fast_multiplier?: number | string | null
   flex_multiplier?: number | string | null
+  reasoning_effort_multipliers?: Record<string, number | string> | null
   image_input_price: number | string | null
   image_output_price: number | string | null
   per_request_price: number | string | null
