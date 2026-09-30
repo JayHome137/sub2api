@@ -69,6 +69,23 @@ func TestUpdateServicePerformUpdateNoUpdateReturnsSentinel(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoUpdateAvailable)
 }
 
+func TestUpdateServiceRejectsCustomLatestReleaseTag(t *testing.T) {
+	svc := NewUpdateService(
+		&updateServiceCacheStub{},
+		&updateServiceGitHubClientStub{
+			release: &GitHubRelease{TagName: "v0.2.9-custom"},
+		},
+		"0.2.9",
+		"release",
+	)
+
+	info, err := svc.CheckUpdate(context.Background(), true)
+
+	require.NoError(t, err)
+	require.False(t, info.HasUpdate)
+	require.Contains(t, info.Warning, "unsupported tag")
+}
+
 func newRollbackTestService(current string, releases []*GitHubRelease) *UpdateService {
 	return NewUpdateService(
 		&updateServiceCacheStub{},
@@ -82,6 +99,7 @@ func TestUpdateServiceListRollbackVersionsFiltersAndCaps(t *testing.T) {
 	releases := []*GitHubRelease{
 		{TagName: "v0.1.148", PublishedAt: "2026-07-09T00:00:00Z"},                       // newer than current: excluded
 		{TagName: "v0.1.147", PublishedAt: "2026-07-08T00:00:00Z"},                       // current: excluded
+		{TagName: "v0.1.146-custom", PublishedAt: "2026-07-07T18:00:00Z"},                // custom tag: excluded
 		{TagName: "v0.1.146-rc1", PublishedAt: "2026-07-07T12:00:00Z", Prerelease: true}, // prerelease: excluded
 		{TagName: "v0.1.146", PublishedAt: "2026-07-07T00:00:00Z"},
 		{TagName: "v0.1.145", PublishedAt: "2026-07-06T00:00:00Z", Draft: true}, // draft: excluded

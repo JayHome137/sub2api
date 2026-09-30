@@ -19,8 +19,7 @@ import (
 )
 
 const (
-	backendRepository  = "weishaw/sub2api"
-	frontendRepository = "ghcr.io/jayhome137/sub2api-frontend"
+	appRepository = "ghcr.io/jayhome137/sub2api"
 )
 
 var (
@@ -31,22 +30,21 @@ var (
 )
 
 type configuration struct {
-	composeFile       string
-	stateDir          string
-	lockFile          string
-	backendService    string
-	backendContainer  string
-	frontendService   string
-	frontendContainer string
-	healthTimeout     time.Duration
+	composeFile   string
+	stateDir      string
+	lockFile      string
+	appService    string
+	appContainer  string
+	healthTimeout time.Duration
 }
 
 type preparedState struct {
-	TargetVersion   string    `json:"target_version"`
-	TargetImage     string    `json:"target_image"`
-	PreviousVersion string    `json:"previous_version"`
-	PreviousImage   string    `json:"previous_image"`
-	PreparedAt      time.Time `json:"prepared_at"`
+	TargetVersion        string    `json:"target_version"`
+	TargetImage          string    `json:"target_image"`
+	PreviousVersion      string    `json:"previous_version"`
+	PreviousImage        string    `json:"previous_image"`
+	PreviousComposeImage string    `json:"previous_compose_image"`
+	PreparedAt           time.Time `json:"prepared_at"`
 }
 
 type commandResult struct {
@@ -147,14 +145,12 @@ func loadConfiguration() (configuration, error) {
 	appDir := envOr("AIFOO_APP_DIR", "/opt/sub2api")
 	stateDir := envOr("AIFOO_STATE_DIR", "/var/lib/aifoo-deploy-helper")
 	return configuration{
-		composeFile:       envOr("AIFOO_COMPOSE_FILE", filepath.Join(appDir, "docker-compose.yml")),
-		stateDir:          stateDir,
-		lockFile:          envOr("AIFOO_LOCK_FILE", "/run/lock/aifoo-deploy-helper.lock"),
-		backendService:    envOr("AIFOO_BACKEND_SERVICE", "sub2api"),
-		backendContainer:  envOr("AIFOO_BACKEND_CONTAINER", "sub2api"),
-		frontendService:   envOr("AIFOO_FRONTEND_SERVICE", "frontend"),
-		frontendContainer: envOr("AIFOO_FRONTEND_CONTAINER", "sub2api-frontend"),
-		healthTimeout:     healthTimeout,
+		composeFile:   envOr("AIFOO_COMPOSE_FILE", filepath.Join(appDir, "docker-compose.yml")),
+		stateDir:      stateDir,
+		lockFile:      envOr("AIFOO_LOCK_FILE", "/run/lock/aifoo-deploy-helper.lock"),
+		appService:    envOr("AIFOO_APP_SERVICE", "sub2api"),
+		appContainer:  strings.TrimSpace(os.Getenv("AIFOO_APP_CONTAINER")),
+		healthTimeout: healthTimeout,
 	}, nil
 }
 
@@ -213,63 +209,66 @@ func detectCompose() ([]string, error) {
 
 func (a *app) run(ctx context.Context, args []string) (commandResult, error) {
 	if len(args) == 0 {
-		return commandResult{}, errors.New("expected backend-prepare, backend-activate, frontend-login, frontend-activate, or frontend-logout")
+		return commandResult{}, errors.New("expected app-prepare, app-activate, registry-login, or registry-logout")
 	}
 	switch args[0] {
-	case "backend-prepare":
+	case "app-prepare":
 		if len(args) != 2 {
-			return commandResult{}, errors.New("backend-prepare requires vX.Y.Z")
+			return commandResult{}, errors.New("app-prepare requires vX.Y.Z")
 		}
-		return a.prepareBackend(ctx, args[1])
-	case "backend-activate":
+		return a.prepareApp(ctx, args[1])
+	case "app-activate":
 		if len(args) != 1 {
-			return commandResult{}, errors.New("backend-activate accepts no arguments")
+			return commandResult{}, errors.New("app-activate accepts no arguments")
 		}
-		return a.activateBackend(ctx)
-	case "frontend-login":
+		return a.activateApp(ctx)
+	case "registry-login":
 		if len(args) != 2 || !usernamePattern.MatchString(args[1]) {
-			return commandResult{}, errors.New("frontend-login requires a valid registry username")
+			return commandResult{}, errors.New("registry-login requires a valid registry username")
 		}
-		return a.frontendLogin(ctx, args[1])
-	case "frontend-activate":
-		if len(args) != 2 {
-			return commandResult{}, errors.New("frontend-activate requires an immutable image digest")
-		}
-		return a.activateFrontend(ctx, args[1])
-	case "frontend-logout":
+		return a.registryLogin(ctx, args[1])
+	case "registry-logout":
 		if len(args) != 1 {
-			return commandResult{}, errors.New("frontend-logout accepts no arguments")
+			return commandResult{}, errors.New("registry-logout accepts no arguments")
 		}
-		return a.frontendLogout(ctx)
+		return a.registryLogout(ctx)
 	default:
 		return commandResult{}, errors.New("unsupported deployment operation")
 	}
 }
 
-func (a *app) prepareBackend(ctx context.Context, version string) (commandResult, error) {
+func (a *app) prepareApp(ctx context.Context, version string) (commandResult, error) {
 	if !versionPattern.MatchString(version) {
-		return commandResult{}, errors.New("backend version must be vX.Y.Z")
+		return commandResult{}, errors.New("app version must be vX.Y.Z")
 	}
-	currentImage, _, err := readComposeImage(a.cfg.composeFile, a.cfg.backendService)
+	composeImage, _, err := readComposeImage(a.cfg.composeFile, a.cfg.appService)
 	if err != nil {
 		return commandResult{}, err
 	}
-	if !isRepositoryReference(currentImage, backendRepository) {
-		return commandResult{}, fmt.Errorf("backend service is not using %s", backendRepository)
-	}
-	currentVersion, err := a.containerVersion(ctx, a.cfg.backendContainer)
+	container, err := a.activeContainer(ctx)
 	if err != nil {
-		return commandResult{}, fmt.Errorf("read active backend version: %w", err)
+		return commandResult{}, fmt.Errorf("resolve active app container: %w", err)
+	}
+	currentImage, err := a.containerImage(ctx, container)
+	if err != nil {
+		return commandResult{}, fmt.Errorf("read active app image: %w", err)
+	}
+	if !isRepositoryReference(currentImage, appRepository) {
+		return commandResult{}, fmt.Errorf("active app is not using %s; migrate the Compose file to the full-stack image first", appRepository)
+	}
+	currentVersion, err := a.containerVersion(ctx, container)
+	if err != nil {
+		return commandResult{}, fmt.Errorf("read active app version: %w", err)
 	}
 	if currentVersion == version {
-		return commandResult{}, fmt.Errorf("backend %s is already active", version)
+		return commandResult{}, fmt.Errorf("app %s is already active", version)
 	}
 
-	taggedImage := backendRepository + ":" + strings.TrimPrefix(version, "v")
+	taggedImage := appRepository + ":" + strings.TrimPrefix(version, "v")
 	if _, err := a.runDocker(ctx, nil, "pull", taggedImage); err != nil {
 		return commandResult{}, err
 	}
-	digestImage, err := a.resolveDigest(ctx, taggedImage, backendRepository)
+	digestImage, err := a.resolveDigest(ctx, taggedImage, appRepository)
 	if err != nil {
 		return commandResult{}, err
 	}
@@ -278,86 +277,102 @@ func (a *app) prepareBackend(ctx context.Context, version string) (commandResult
 		return commandResult{}, err
 	}
 	if imageVersion != version {
-		return commandResult{}, fmt.Errorf("official image reports %s, expected %s", imageVersion, version)
+		return commandResult{}, fmt.Errorf("full-stack image reports %s, expected %s", imageVersion, version)
 	}
 
 	state := preparedState{
-		TargetVersion:   version,
-		TargetImage:     digestImage,
-		PreviousVersion: currentVersion,
-		PreviousImage:   currentImage,
-		PreparedAt:      time.Now().UTC(),
+		TargetVersion:        version,
+		TargetImage:          digestImage,
+		PreviousVersion:      currentVersion,
+		PreviousImage:        currentImage,
+		PreviousComposeImage: composeImage,
+		PreparedAt:           time.Now().UTC(),
 	}
 	if err := writeJSONAtomic(a.preparedPath(), state); err != nil {
 		return commandResult{}, err
 	}
 	return commandResult{
-		Message:       fmt.Sprintf("Official backend %s is ready. Restart to activate it.", version),
+		Message:       fmt.Sprintf("Sub2API full-stack %s is ready. Restart to activate it.", version),
 		TargetVersion: version,
 		Image:         digestImage,
 	}, nil
 }
 
-func (a *app) activateBackend(ctx context.Context) (commandResult, error) {
+func (a *app) activateApp(ctx context.Context) (commandResult, error) {
 	var state preparedState
 	if err := readJSON(a.preparedPath(), &state); err != nil {
-		return commandResult{}, fmt.Errorf("read prepared backend state: %w", err)
+		return commandResult{}, fmt.Errorf("read prepared app state: %w", err)
 	}
-	if !versionPattern.MatchString(state.TargetVersion) || !isDigestReference(state.TargetImage, backendRepository) {
-		return commandResult{}, errors.New("prepared backend state is invalid")
+	if !versionPattern.MatchString(state.TargetVersion) ||
+		!isDigestReference(state.TargetImage, appRepository) ||
+		!isRepositoryReference(state.PreviousImage, appRepository) ||
+		strings.TrimSpace(state.PreviousComposeImage) == "" {
+		return commandResult{}, errors.New("prepared app state is invalid")
 	}
-	currentImage, original, err := readComposeImage(a.cfg.composeFile, a.cfg.backendService)
+	currentImage, original, err := readComposeImage(a.cfg.composeFile, a.cfg.appService)
 	if err != nil {
 		return commandResult{}, err
 	}
-	if currentImage != state.PreviousImage && currentImage != state.TargetImage {
-		return commandResult{}, errors.New("Compose backend image changed after preparation; prepare again")
+	if currentImage != state.PreviousComposeImage && currentImage != state.TargetImage {
+		return commandResult{}, errors.New("Compose app image changed after preparation; prepare again")
 	}
-	if currentImage == state.PreviousImage {
-		currentVersion, err := a.containerVersion(ctx, a.cfg.backendContainer)
-		if err != nil || currentVersion != state.PreviousVersion {
-			return commandResult{}, errors.New("active backend changed after preparation; prepare again")
+	if currentImage == state.PreviousComposeImage {
+		container, err := a.activeContainer(ctx)
+		if err != nil {
+			return commandResult{}, fmt.Errorf("resolve active app container: %w", err)
 		}
-		if err := writeFileAtomic(a.backendBackupPath(), original, 0600); err != nil {
+		activeImage, err := a.containerImage(ctx, container)
+		if err != nil || activeImage != state.PreviousImage {
+			return commandResult{}, errors.New("active app image changed after preparation; prepare again")
+		}
+		currentVersion, err := a.containerVersion(ctx, container)
+		if err != nil || currentVersion != state.PreviousVersion {
+			return commandResult{}, errors.New("active app changed after preparation; prepare again")
+		}
+		if err := writeFileAtomic(a.appBackupPath(), original, 0600); err != nil {
 			return commandResult{}, err
 		}
-		if err := rewriteComposeImage(a.cfg.composeFile, a.cfg.backendService, state.TargetImage); err != nil {
+		if err := rewriteComposeImage(a.cfg.composeFile, a.cfg.appService, state.TargetImage); err != nil {
 			return commandResult{}, err
 		}
 	}
 
-	activationErr := a.composeUp(ctx, a.cfg.backendService)
+	activationErr := a.composeUp(ctx, a.cfg.appService)
+	var activeContainer string
 	if activationErr == nil {
-		activationErr = a.waitHealthy(ctx, a.cfg.backendContainer)
+		activeContainer, activationErr = a.activeContainer(ctx)
+	}
+	if activationErr == nil {
+		activationErr = a.waitHealthy(ctx, activeContainer)
 	}
 	if activationErr == nil {
 		var activeImage string
-		activeImage, activationErr = a.containerImage(ctx, a.cfg.backendContainer)
+		activeImage, activationErr = a.containerImage(ctx, activeContainer)
 		if activationErr == nil && activeImage != state.TargetImage {
-			activationErr = fmt.Errorf("active backend image is %s, expected %s", activeImage, state.TargetImage)
+			activationErr = fmt.Errorf("active app image is %s, expected %s", activeImage, state.TargetImage)
 		}
 	}
 	if activationErr == nil {
 		var activeVersion string
-		activeVersion, activationErr = a.containerVersion(ctx, a.cfg.backendContainer)
+		activeVersion, activationErr = a.containerVersion(ctx, activeContainer)
 		if activationErr == nil && activeVersion != state.TargetVersion {
-			activationErr = fmt.Errorf("active backend reports %s, expected %s", activeVersion, state.TargetVersion)
+			activationErr = fmt.Errorf("active app reports %s, expected %s", activeVersion, state.TargetVersion)
 		}
 	}
 	if activationErr != nil {
-		rollbackErr := a.restoreBackend(ctx, state)
+		rollbackErr := a.restoreApp(ctx, state)
 		if rollbackErr != nil {
 			return commandResult{}, fmt.Errorf("activation failed: %v; automatic restore also failed: %w", activationErr, rollbackErr)
 		}
-		return commandResult{}, fmt.Errorf("activation failed and previous backend was restored: %w", activationErr)
+		return commandResult{}, fmt.Errorf("activation failed and previous app was restored: %w", activationErr)
 	}
 
-	message := fmt.Sprintf("Official backend %s is active and healthy.", state.TargetVersion)
+	message := fmt.Sprintf("Sub2API full-stack %s is active and healthy.", state.TargetVersion)
 	if err := os.Remove(a.preparedPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
 		message += " Prepared-state cleanup needs operator attention."
 	}
-	if err := a.cleanupStaleBackendImages(ctx, state.TargetImage, state.PreviousImage); err != nil {
-		message += " Old backend image cleanup needs operator attention."
+	if err := a.cleanupStaleAppImages(ctx, state.TargetImage, state.PreviousImage); err != nil {
+		message += " Old app image cleanup needs operator attention."
 	}
 	return commandResult{
 		Message:       message,
@@ -366,8 +381,8 @@ func (a *app) activateBackend(ctx context.Context) (commandResult, error) {
 	}, nil
 }
 
-func (a *app) restoreBackend(ctx context.Context, state preparedState) error {
-	backup, err := os.ReadFile(a.backendBackupPath())
+func (a *app) restoreApp(ctx context.Context, state preparedState) error {
+	backup, err := os.ReadFile(a.appBackupPath())
 	if err != nil {
 		return err
 	}
@@ -378,30 +393,34 @@ func (a *app) restoreBackend(ctx context.Context, state preparedState) error {
 	if err := writeFileAtomic(a.cfg.composeFile, backup, info.Mode().Perm()); err != nil {
 		return err
 	}
-	if err := a.composeUp(ctx, a.cfg.backendService); err != nil {
+	if err := a.composeUp(ctx, a.cfg.appService); err != nil {
 		return err
 	}
-	if err := a.waitHealthy(ctx, a.cfg.backendContainer); err != nil {
+	container, err := a.activeContainer(ctx)
+	if err != nil {
 		return err
 	}
-	image, err := a.containerImage(ctx, a.cfg.backendContainer)
+	if err := a.waitHealthy(ctx, container); err != nil {
+		return err
+	}
+	image, err := a.containerImage(ctx, container)
 	if err != nil {
 		return err
 	}
 	if image != state.PreviousImage {
-		return fmt.Errorf("restored backend image is %s, expected %s", image, state.PreviousImage)
+		return fmt.Errorf("restored app image is %s, expected %s", image, state.PreviousImage)
 	}
-	version, err := a.containerVersion(ctx, a.cfg.backendContainer)
+	version, err := a.containerVersion(ctx, container)
 	if err != nil {
 		return err
 	}
 	if version != state.PreviousVersion {
-		return fmt.Errorf("restored backend reports %s, expected %s", version, state.PreviousVersion)
+		return fmt.Errorf("restored app reports %s, expected %s", version, state.PreviousVersion)
 	}
 	return nil
 }
 
-func (a *app) frontendLogin(ctx context.Context, username string) (commandResult, error) {
+func (a *app) registryLogin(ctx context.Context, username string) (commandResult, error) {
 	token, err := io.ReadAll(io.LimitReader(os.Stdin, 16*1024))
 	if err != nil || strings.TrimSpace(string(token)) == "" {
 		return commandResult{}, errors.New("registry token is required on stdin")
@@ -417,78 +436,11 @@ func (a *app) frontendLogin(ctx context.Context, username string) (commandResult
 	return commandResult{Message: "Registry login succeeded."}, nil
 }
 
-func (a *app) frontendLogout(ctx context.Context) (commandResult, error) {
+func (a *app) registryLogout(ctx context.Context) (commandResult, error) {
 	if _, err := a.runDocker(ctx, nil, "logout", "ghcr.io"); err != nil {
 		return commandResult{}, err
 	}
 	return commandResult{Message: "Registry credentials removed."}, nil
-}
-
-func (a *app) activateFrontend(ctx context.Context, image string) (commandResult, error) {
-	if !isDigestReference(image, frontendRepository) {
-		return commandResult{}, errors.New("frontend image must be the AIFoo GHCR repository at an exact sha256 digest")
-	}
-	if _, err := a.runDocker(ctx, nil, "pull", image); err != nil {
-		return commandResult{}, err
-	}
-	currentImage, original, err := readComposeImage(a.cfg.composeFile, a.cfg.frontendService)
-	if err != nil {
-		return commandResult{}, err
-	}
-	if !isRepositoryReference(currentImage, frontendRepository) {
-		return commandResult{}, fmt.Errorf("frontend service is not using %s", frontendRepository)
-	}
-	if currentImage == image {
-		if err := a.waitHealthy(ctx, a.cfg.frontendContainer); err != nil {
-			return commandResult{}, err
-		}
-		activeImage, err := a.containerImage(ctx, a.cfg.frontendContainer)
-		if err != nil || activeImage != image {
-			return commandResult{}, errors.New("frontend Compose image is not active")
-		}
-		return commandResult{Message: "AIFoo frontend is already active and healthy.", Image: image}, nil
-	}
-	if err := writeFileAtomic(a.frontendBackupPath(), original, 0600); err != nil {
-		return commandResult{}, err
-	}
-	if err := rewriteComposeImage(a.cfg.composeFile, a.cfg.frontendService, image); err != nil {
-		return commandResult{}, err
-	}
-	activationErr := a.composeUp(ctx, a.cfg.frontendService)
-	if activationErr == nil {
-		activationErr = a.waitHealthy(ctx, a.cfg.frontendContainer)
-	}
-	if activationErr == nil {
-		var activeImage string
-		activeImage, activationErr = a.containerImage(ctx, a.cfg.frontendContainer)
-		if activationErr == nil && activeImage != image {
-			activationErr = fmt.Errorf("active frontend image is %s, expected %s", activeImage, image)
-		}
-	}
-	if activationErr != nil {
-		info, statErr := os.Stat(a.cfg.composeFile)
-		if statErr == nil {
-			statErr = writeFileAtomic(a.cfg.composeFile, original, info.Mode().Perm())
-		}
-		if statErr == nil {
-			statErr = a.composeUp(ctx, a.cfg.frontendService)
-		}
-		if statErr == nil {
-			statErr = a.waitHealthy(ctx, a.cfg.frontendContainer)
-		}
-		if statErr == nil {
-			var restoredImage string
-			restoredImage, statErr = a.containerImage(ctx, a.cfg.frontendContainer)
-			if statErr == nil && restoredImage != currentImage {
-				statErr = fmt.Errorf("restored frontend image is %s, expected %s", restoredImage, currentImage)
-			}
-		}
-		if statErr != nil {
-			return commandResult{}, fmt.Errorf("frontend activation failed: %v; automatic restore also failed: %w", activationErr, statErr)
-		}
-		return commandResult{}, fmt.Errorf("frontend activation failed and previous image was restored: %w", activationErr)
-	}
-	return commandResult{Message: "AIFoo frontend is active and healthy.", Image: image}, nil
 }
 
 func (a *app) resolveDigest(ctx context.Context, taggedImage, repository string) (string, error) {
@@ -587,21 +539,21 @@ func (a *app) runDocker(ctx context.Context, stdin io.Reader, args ...string) ([
 	return output, nil
 }
 
-func (a *app) cleanupStaleBackendImages(ctx context.Context, keepReferences ...string) error {
+func (a *app) cleanupStaleAppImages(ctx context.Context, keepReferences ...string) error {
 	keepIDs := make(map[string]struct{}, len(keepReferences))
 	for _, reference := range keepReferences {
 		output, err := a.runDocker(ctx, nil, "image", "inspect", "--format", "{{.Id}}", reference)
 		if err != nil {
-			return fmt.Errorf("inspect retained backend image: %w", err)
+			return fmt.Errorf("inspect retained app image: %w", err)
 		}
 		imageID := strings.TrimSpace(string(output))
 		if !digestPattern.MatchString(imageID) {
-			return errors.New("retained backend image has an invalid image ID")
+			return errors.New("retained app image has an invalid image ID")
 		}
 		keepIDs[imageID] = struct{}{}
 	}
 
-	output, err := a.runDocker(ctx, nil, "image", "ls", "--no-trunc", "--format", "{{.Repository}}|{{.Tag}}|{{.ID}}", backendRepository)
+	output, err := a.runDocker(ctx, nil, "image", "ls", "--no-trunc", "--format", "{{.Repository}}|{{.Tag}}|{{.ID}}", appRepository)
 	if err != nil {
 		return err
 	}
@@ -611,8 +563,8 @@ func (a *app) cleanupStaleBackendImages(ctx context.Context, keepReferences ...s
 			continue
 		}
 		parts := strings.Split(line, "|")
-		if len(parts) != 3 || parts[0] != backendRepository || !digestPattern.MatchString(parts[2]) {
-			return errors.New("Docker returned an invalid backend image listing")
+		if len(parts) != 3 || parts[0] != appRepository || !digestPattern.MatchString(parts[2]) {
+			return errors.New("Docker returned an invalid app image listing")
 		}
 		if parts[1] == "<none>" {
 			continue
@@ -630,15 +582,31 @@ func (a *app) cleanupStaleBackendImages(ctx context.Context, keepReferences ...s
 }
 
 func (a *app) preparedPath() string {
-	return filepath.Join(a.cfg.stateDir, "prepared-backend.json")
+	return filepath.Join(a.cfg.stateDir, "prepared-app.json")
 }
 
-func (a *app) backendBackupPath() string {
-	return filepath.Join(a.cfg.stateDir, "compose-before-backend.yml")
+func (a *app) appBackupPath() string {
+	return filepath.Join(a.cfg.stateDir, "compose-before-app.yml")
 }
 
-func (a *app) frontendBackupPath() string {
-	return filepath.Join(a.cfg.stateDir, "compose-before-frontend.yml")
+func (a *app) activeContainer(ctx context.Context) (string, error) {
+	if a.cfg.appContainer != "" {
+		return a.cfg.appContainer, nil
+	}
+	args := append([]string(nil), a.compose[1:]...)
+	args = append(args, "-f", a.cfg.composeFile, "ps", "-q", a.cfg.appService)
+	output, err := a.exec.Run(ctx, a.compose[0], args, nil)
+	if err != nil {
+		return "", fmt.Errorf("resolve Compose app container: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	containers := strings.Fields(string(output))
+	if len(containers) == 1 {
+		return containers[0], nil
+	}
+	if len(containers) > 1 {
+		return "", fmt.Errorf("Compose service %q has %d active containers; refusing ambiguous activation", a.cfg.appService, len(containers))
+	}
+	return "", fmt.Errorf("Compose service %q has no active container", a.cfg.appService)
 }
 
 func isRepositoryReference(image, repository string) bool {

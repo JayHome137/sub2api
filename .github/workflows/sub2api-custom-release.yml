@@ -105,6 +105,13 @@ jobs:
         working-directory: backend
         run: go test ./...
 
+      - name: Validate release control plane
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd deploy/update-bridge && go test ./... && go vet ./...)
+          (cd deploy/deploy-helper && go test ./... && go vet ./...)
+
       - name: Build Linux binary with embedded frontend
         working-directory: backend
         env:
@@ -118,7 +125,33 @@ jobs:
             -o "$artifact_dir/sub2api" ./cmd/server
           "$artifact_dir/sub2api" --version
           tar -C ../artifacts -czf "../artifacts/sub2api_${VERSION}_linux_amd64.tar.gz" "sub2api_${VERSION}_linux_amd64"
-          (cd ../artifacts && sha256sum "sub2api_${VERSION}_linux_amd64.tar.gz" > checksums.txt)
+
+      - name: Build Linux release control plane
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          artifact_dir="artifacts/sub2api_control_${VERSION}_linux_amd64"
+          mkdir -p "$artifact_dir"
+          (cd deploy/update-bridge && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+            -o "../../$artifact_dir/aifoo-update-bridge" .)
+          (cd deploy/deploy-helper && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+            -o "../../$artifact_dir/aifoo-deploy-helper" .)
+          cp deploy/update-bridge/install.sh "$artifact_dir/install.sh"
+          cp deploy/update-bridge/aifoo-update-bridge.service "$artifact_dir/aifoo-update-bridge.service"
+          cp deploy/update-bridge/nginx-location.conf "$artifact_dir/nginx-location.conf"
+          cp deploy/update-bridge/README.md "$artifact_dir/README.md"
+          printf '%s\n' "$VERSION" > "$artifact_dir/VERSION"
+          chmod 0755 "$artifact_dir/aifoo-update-bridge" "$artifact_dir/aifoo-deploy-helper" "$artifact_dir/install.sh"
+          tar -C artifacts -czf "artifacts/sub2api_control_${VERSION}_linux_amd64.tar.gz" \
+            "sub2api_control_${VERSION}_linux_amd64"
+          tar -tzf "artifacts/sub2api_control_${VERSION}_linux_amd64.tar.gz" | grep -F \
+            "sub2api_control_${VERSION}_linux_amd64/aifoo-update-bridge"
+          tar -tzf "artifacts/sub2api_control_${VERSION}_linux_amd64.tar.gz" | grep -F \
+            "sub2api_control_${VERSION}_linux_amd64/aifoo-deploy-helper"
+          (cd artifacts && sha256sum \
+            "sub2api_${VERSION}_linux_amd64.tar.gz" \
+            "sub2api_control_${VERSION}_linux_amd64.tar.gz" > checksums.txt)
 
       - name: Log in to GHCR for custom release
         if: ${{ steps.publication.outputs.publish == 'true' }}
@@ -157,9 +190,10 @@ jobs:
           release_tag="v${VERSION}"
           gh release create "$release_tag" \
             "artifacts/sub2api_${VERSION}_linux_amd64.tar.gz" \
+            "artifacts/sub2api_control_${VERSION}_linux_amd64.tar.gz" \
             artifacts/checksums.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "Sub2API ${VERSION}" \
-            --notes "AIFoo frontend with vendor classification and scheduled quality checks." \
+            --notes "AIFoo full-stack release with vendor classification, scheduled quality checks, and the version-matched Linux update control plane." \
             --latest

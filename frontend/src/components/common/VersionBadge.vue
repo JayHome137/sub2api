@@ -651,9 +651,8 @@ import {
 import { useClipboard } from '@/composables/useClipboard'
 import Icon from '@/components/icons/Icon.vue'
 
-const GITHUB_REPO = 'Wei-Shaw/sub2api'
-// Docker Hub image published by CI (tags carry no "v" prefix, e.g. weishaw/sub2api:0.1.146)
-const DOCKER_IMAGE = 'weishaw/sub2api'
+// GHCR full-stack image published by the custom release workflow.
+const DOCKER_IMAGE = 'ghcr.io/jayhome137/sub2api'
 
 const { t } = useI18n()
 
@@ -698,20 +697,12 @@ const rollbackError = ref('')
 
 const { copied, copyToClipboard } = useClipboard()
 
-// Manual rollback methods differ by deployment: script installs use install.sh,
-// docker deployments pin the image tag instead
-const manualTab = ref<'script' | 'docker'>('script')
+// Manual rollback fallback for the production full-stack deployment.
+const manualTab = ref<'docker'>('docker')
 
 const manualTabs = computed(() => [
-  { key: 'script' as const, label: t('version.deployScript') },
   { key: 'docker' as const, label: t('version.deployDocker') }
 ])
-
-const scriptRollbackCommand = computed(() => {
-  if (!selectedRollbackVersion.value) return ''
-  const tag = `v${selectedRollbackVersion.value}`
-  return `curl -sSL https://raw.githubusercontent.com/${GITHUB_REPO}/${tag}/deploy/install.sh | sudo bash -s -- rollback ${tag}`
-})
 
 const dockerRollbackCommand = computed(() => {
   if (!selectedRollbackVersion.value) return ''
@@ -724,9 +715,7 @@ const dockerRollbackCommand = computed(() => {
   ].join('\n')
 })
 
-const activeManualCommand = computed(() =>
-  manualTab.value === 'docker' ? dockerRollbackCommand.value : scriptRollbackCommand.value
-)
+const activeManualCommand = dockerRollbackCommand
 
 // Only show update check for release builds (binary/docker deployment)
 const isReleaseBuild = computed(() => buildType.value === 'release')
@@ -779,7 +768,7 @@ function resetRollbackState() {
   rollbackVersionsError.value = ''
   selectedRollbackVersion.value = ''
   rollbackError.value = ''
-  manualTab.value = 'script'
+  manualTab.value = 'docker'
 }
 
 async function toggleRollbackPanel() {
@@ -856,10 +845,12 @@ async function handleRestart() {
 
   try {
     await restartService()
-    // Service will restart, page will reload automatically or show disconnected
   } catch (error) {
-    // Expected - connection will be lost during restart
-    console.log('Service restarting...')
+    const err = error as { response?: { data?: { message?: string } }; message?: string }
+    updateError.value = err.response?.data?.message || err.message || t('version.updateFailed')
+    restarting.value = false
+    restartCountdown.value = 0
+    return
   }
 
   // Start countdown

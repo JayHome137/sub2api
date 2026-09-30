@@ -102,7 +102,7 @@ func request(t *testing.T, server *bridgeServer, method, path, body string, auth
 	return response
 }
 
-func TestUpdatePreparesOfficialLatestVersion(t *testing.T) {
+func TestUpdatePreparesCustomFullStackLatestVersion(t *testing.T) {
 	helper := &fakeHelper{}
 	server, closeAdmin := newTestServer(t, helper, true)
 	defer closeAdmin()
@@ -111,7 +111,7 @@ func TestUpdatePreparesOfficialLatestVersion(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
-	if !reflect.DeepEqual(helper.calls, [][]string{{"backend-prepare", "v0.1.183"}}) {
+	if !reflect.DeepEqual(helper.calls, [][]string{{"app-prepare", "v0.1.183"}}) {
 		t.Fatalf("helper calls = %#v", helper.calls)
 	}
 	var result updateResult
@@ -129,7 +129,7 @@ func TestRollbackNormalizesVersion(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
-	if !reflect.DeepEqual(helper.calls, [][]string{{"backend-prepare", "v0.1.181"}}) {
+	if !reflect.DeepEqual(helper.calls, [][]string{{"app-prepare", "v0.1.181"}}) {
 		t.Fatalf("helper calls = %#v", helper.calls)
 	}
 }
@@ -143,7 +143,7 @@ func TestRestartActivatesPreparedImage(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
-	if !reflect.DeepEqual(helper.calls, [][]string{{"backend-activate"}}) {
+	if !reflect.DeepEqual(helper.calls, [][]string{{"app-activate"}}) {
 		t.Fatalf("helper calls = %#v", helper.calls)
 	}
 }
