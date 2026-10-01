@@ -54,12 +54,6 @@
             <span v-if="hoveredEvent.model_id" class="truncate font-mono text-gray-400">{{ hoveredEvent.model_id }}</span>
           </div>
           <div
-            v-if="hoveredEvent.status === 'degraded' && hoveredEvent.error_message"
-            class="quality-history-popover__reason"
-          >
-            {{ hoveredEvent.error_message }}
-          </div>
-          <div
             v-if="hoveredEvent.quality_mode === 'candy' && hoveredEvent.status === 'success'"
             class="quality-history-popover__message"
           >
@@ -308,14 +302,6 @@ const popoverStyle = computed(() => ({
   font-size: 10px;
   line-height: 1.4;
   white-space: nowrap;
-}
-
-.quality-history-popover__reason {
-  margin-top: 4px;
-  max-width: 320px;
-  font-size: 10px;
-  line-height: 1.45;
-  color: rgb(252 165 165);
 }
 
 .quality-history-popover__preview {
