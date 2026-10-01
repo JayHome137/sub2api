@@ -835,7 +835,7 @@ export default {
       title: '分组管理',
       description: '管理 API 密钥分组和费率配置',
       qualityCheck: '启用降智检测',
-      qualityCheckHelp: '展示 V3 分组质量状态，并允许符合条件的质量计划自动暂停账号。关闭后，如果账号仍属于其他开启的分组，暂停会继续保留。',
+      qualityCheckHelp: '控制 V3 分组质量状态的展示与聚合；账号是否因连续降智自动暂停，由账号定时测试面板中的账号级开关控制。',
       qualityCheckUpdateFailed: '分组质量检测设置更新失败',
       searchGroups: '搜索分组...',
       createGroup: '创建分组',

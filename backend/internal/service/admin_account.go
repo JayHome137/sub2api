@@ -942,7 +942,19 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 	if len(updates) == 0 {
 		return nil
 	}
-	return s.accountRepo.UpdateExtra(ctx, id, updates)
+	if err := s.accountRepo.UpdateExtra(ctx, id, updates); err != nil {
+		return err
+	}
+	if enabled, ok := updates[ScheduledQualityAutoPauseEnabledExtraKey].(bool); ok && !enabled {
+		if repo, ok := s.accountRepo.(interface {
+			ClearScheduledQualityPause(context.Context, int64, int64) (bool, error)
+		}); ok {
+			if _, err := repo.ClearScheduledQualityPause(ctx, id, 0); err != nil {
+				return fmt.Errorf("clear scheduled quality pause: %w", err)
+			}
+		}
+	}
+	return nil
 }
 
 // BulkUpdateAccounts updates multiple accounts in one request.

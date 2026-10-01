@@ -200,6 +200,10 @@ export async function update(id: number, updates: UpdateAccountRequest): Promise
   return data
 }
 
+export async function setScheduledQualityAutoPause(id: number, enabled: boolean): Promise<void> {
+  await apiClient.put(`/admin/accounts/${id}/scheduled-quality-auto-pause`, { enabled })
+}
+
 /**
  * Check mixed-channel risk for account-group binding.
  */
@@ -1052,6 +1056,7 @@ export const accountsAPI = {
   create,
   duplicate,
   update,
+  setScheduledQualityAutoPause,
   checkMixedChannelRisk,
   delete: deleteAccount,
   toggleStatus,

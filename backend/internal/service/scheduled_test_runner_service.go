@@ -373,6 +373,11 @@ func (s *ScheduledTestRunnerService) pauseAccountForQuality(ctx context.Context,
 		// still be recorded, but it must never be auto-paused.
 		return
 	}
+	if enabled, configured := account.Extra[ScheduledQualityAutoPauseEnabledExtraKey]; configured {
+		if enabledValue, ok := enabled.(bool); !ok || !enabledValue {
+			return
+		}
+	}
 	if !account.Schedulable {
 		// It was already paused by an operator or another policy. Do not claim
 		// ownership of that state and do not overwrite its pause reason.

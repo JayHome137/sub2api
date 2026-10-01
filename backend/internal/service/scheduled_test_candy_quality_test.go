@@ -18,6 +18,8 @@ func TestAssessScheduledCandyQuality(t *testing.T) {
 		{name: "ambiguous explanation", response: "苹果 7，桃子 9，答案是 21", expected: "21", status: "success"},
 		{name: "empty answer", response: "", expected: "21", status: "unknown"},
 		{name: "empty expected answer", response: "21", expected: "", status: "unknown"},
+		{name: "new default answer", response: "29", expected: DefaultScheduledTestCandyAnswer, status: "success"},
+		{name: "new default answer phrase", response: "答案是 29 个", expected: DefaultScheduledTestCandyAnswer, status: "success"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
