@@ -46,8 +46,12 @@ export default {
       autoRecover: 'Auto Recover',
       autoRecoverHelp: 'Automatically recover account from error/rate-limited state on successful test',
       qualityCheck: 'Degradation Check',
-      qualityCheckHelp: 'Evaluates the built-in pelican prompt. After two consecutive degraded results, accounts in multi-account groups may be paused. Single-account groups and upstream accounts are never auto-paused.',
-      promptHelp: 'Only the built-in pelican prompt has a quality verdict. Custom prompts are sent but do not affect quality status or auto-pausing. When Degradation Check is off, the upstream default connectivity prompt is used.'
+      qualityCheckHelp: 'Evaluates the selected question type. After two consecutive failures, accounts in multi-account groups may be paused. Single-account groups and upstream accounts are never auto-paused.',
+      qualityMode: 'Question type',
+      qualityModePelican: 'Pelican animation',
+      qualityModeCandy: 'Candy answer matching',
+      qualityExpectedAnswer: 'Expected answer',
+      promptHelp: 'Pelican uses animation and visual review; Candy compares the answer only and does not render animation. When Degradation Check is off, the upstream default connectivity prompt is used.'
     },
 
     // Proxies

@@ -2451,6 +2451,8 @@ export interface ScheduledTestPlan {
   max_results: number
   auto_recover: boolean
   quality_check_enabled: boolean
+  quality_mode: 'pelican' | 'candy' | string
+  quality_expected_answer: string
   last_run_at: string | null
   next_run_at: string | null
   created_at: string
@@ -2467,6 +2469,7 @@ export interface ScheduledTestResult {
   started_at: string
   finished_at: string
   created_at: string
+  quality_mode?: 'pelican' | 'candy' | string
 }
 
 export interface CreateScheduledTestPlanRequest {
@@ -2478,6 +2481,8 @@ export interface CreateScheduledTestPlanRequest {
   max_results?: number
   auto_recover?: boolean
   quality_check_enabled?: boolean
+  quality_mode?: 'pelican' | 'candy' | string
+  quality_expected_answer?: string
 }
 
 export interface UpdateScheduledTestPlanRequest {
@@ -2488,6 +2493,8 @@ export interface UpdateScheduledTestPlanRequest {
   max_results?: number
   auto_recover?: boolean
   quality_check_enabled?: boolean
+  quality_mode?: 'pelican' | 'candy' | string
+  quality_expected_answer?: string
 }
 
 // Payment types

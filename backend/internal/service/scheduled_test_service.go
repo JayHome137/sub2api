@@ -10,9 +10,13 @@ import (
 )
 
 const (
-	DefaultScheduledTestPrompt = "请生成可直接运行的单文件HTML，使用内联SVG绘制鹈鹕骑自行车的二维循环动画。画面以鹈鹕和自行车为主体，展示清晰的身体结构、踩踏动作和车轮转动，配合协调的背景、配色与层次。动画应流畅自然、衔接连续，并适配不同屏幕尺寸。动画必须用 CSS @keyframes 或 SMIL（animate/animateTransform）实现，不要使用 JavaScript 或 <script> 标签。禁止依赖外部资源，只输出完整HTML，不要代码围栏或解释文字。"
-	DefaultScheduledTestCron   = "*/5 * * * *"
-	maxScheduledTestPromptSize = 32 * 1024
+	DefaultScheduledTestPrompt      = "请生成可直接运行的单文件HTML，使用内联SVG绘制鹈鹕骑自行车的二维循环动画。画面以鹈鹕和自行车为主体，展示清晰的身体结构、踩踏动作和车轮转动，配合协调的背景、配色与层次。动画应流畅自然、衔接连续，并适配不同屏幕尺寸。动画必须用 CSS @keyframes 或 SMIL（animate/animateTransform）实现，不要使用 JavaScript 或 <script> 标签。禁止依赖外部资源，只输出完整HTML，不要代码围栏或解释文字。"
+	DefaultScheduledTestCandyPrompt = "请回答这道糖果题：桌上有3颗红色糖果和2颗蓝色糖果，一共有多少颗糖果？只输出数字，不要解释。"
+	DefaultScheduledTestCandyAnswer = "5"
+	ScheduledTestQualityModePelican = "pelican"
+	ScheduledTestQualityModeCandy   = "candy"
+	DefaultScheduledTestCron        = "*/5 * * * *"
+	maxScheduledTestPromptSize      = 32 * 1024
 )
 
 // legacyScheduledTestPrompts keeps older default questions equivalent to the
@@ -124,7 +128,13 @@ func (s *ScheduledTestService) UpdatePlan(ctx context.Context, plan *ScheduledTe
 		return nil, nil
 	}
 	promptChanged := existing != nil && existing.PromptText != updated.PromptText
-	if !updated.Enabled || !updated.QualityCheckEnabled || promptChanged || !isDefaultScheduledTestPrompt(updated.PromptText) {
+	previousMode := ScheduledTestQualityModePelican
+	if existing != nil && existing.QualityMode != "" {
+		previousMode = existing.QualityMode
+	}
+	modeChanged := previousMode != updated.QualityMode
+	customPelicanPrompt := updated.QualityMode == ScheduledTestQualityModePelican && (promptChanged || !isDefaultScheduledTestPrompt(updated.PromptText))
+	if !updated.Enabled || !updated.QualityCheckEnabled || modeChanged || customPelicanPrompt {
 		if err := s.clearQualityPause(ctx, updated.ID); err != nil {
 			return nil, fmt.Errorf("clear scheduled quality pause: %w", err)
 		}
@@ -142,6 +152,23 @@ func normalizeScheduledTestPlan(plan *ScheduledTestPlan) error {
 	}
 	if len([]byte(plan.PromptText)) > maxScheduledTestPromptSize {
 		return fmt.Errorf("scheduled test prompt is too long")
+	}
+	plan.QualityMode = strings.ToLower(strings.TrimSpace(plan.QualityMode))
+	if plan.QualityMode == "" {
+		plan.QualityMode = ScheduledTestQualityModePelican
+	}
+	if plan.QualityMode != ScheduledTestQualityModePelican && plan.QualityMode != ScheduledTestQualityModeCandy {
+		return fmt.Errorf("unsupported scheduled test quality mode")
+	}
+	plan.QualityExpectedAnswer = strings.TrimSpace(plan.QualityExpectedAnswer)
+	if plan.QualityMode == ScheduledTestQualityModeCandy && plan.QualityExpectedAnswer == "" {
+		plan.QualityExpectedAnswer = DefaultScheduledTestCandyAnswer
+	}
+	if plan.QualityMode == ScheduledTestQualityModeCandy && isDefaultScheduledTestPrompt(plan.PromptText) {
+		plan.PromptText = DefaultScheduledTestCandyPrompt
+	}
+	if plan.QualityMode == ScheduledTestQualityModePelican && plan.PromptText == DefaultScheduledTestCandyPrompt {
+		plan.PromptText = DefaultScheduledTestPrompt
 	}
 	plan.CronExpression = strings.TrimSpace(plan.CronExpression)
 	if plan.CronExpression == "" {
@@ -191,6 +218,9 @@ func (s *ScheduledTestService) SaveResult(ctx context.Context, planID int64, max
 	}
 	result.ID = 0
 	result.PlanID = planID
+	if result.QualityMode == "" {
+		result.QualityMode = ScheduledTestQualityModePelican
+	}
 	saved, err := s.resultRepo.Create(ctx, result)
 	if err != nil {
 		return err
