@@ -20,24 +20,28 @@ func NewScheduledTestHandler(scheduledTestSvc *service.ScheduledTestService) *Sc
 }
 
 type createScheduledTestPlanRequest struct {
-	AccountID           int64  `json:"account_id" binding:"required"`
-	ModelID             string `json:"model_id"`
-	PromptText          string `json:"prompt_text"`
-	CronExpression      string `json:"cron_expression" binding:"required"`
-	Enabled             *bool  `json:"enabled"`
-	MaxResults          int    `json:"max_results"`
-	AutoRecover         *bool  `json:"auto_recover"`
-	QualityCheckEnabled *bool  `json:"quality_check_enabled"`
+	AccountID             int64  `json:"account_id" binding:"required"`
+	ModelID               string `json:"model_id"`
+	PromptText            string `json:"prompt_text"`
+	CronExpression        string `json:"cron_expression" binding:"required"`
+	Enabled               *bool  `json:"enabled"`
+	MaxResults            int    `json:"max_results"`
+	AutoRecover           *bool  `json:"auto_recover"`
+	QualityCheckEnabled   *bool  `json:"quality_check_enabled"`
+	QualityMode           string `json:"quality_mode"`
+	QualityExpectedAnswer string `json:"quality_expected_answer"`
 }
 
 type updateScheduledTestPlanRequest struct {
-	ModelID             string `json:"model_id"`
-	PromptText          string `json:"prompt_text"`
-	CronExpression      string `json:"cron_expression"`
-	Enabled             *bool  `json:"enabled"`
-	MaxResults          int    `json:"max_results"`
-	AutoRecover         *bool  `json:"auto_recover"`
-	QualityCheckEnabled *bool  `json:"quality_check_enabled"`
+	ModelID               string `json:"model_id"`
+	PromptText            string `json:"prompt_text"`
+	CronExpression        string `json:"cron_expression"`
+	Enabled               *bool  `json:"enabled"`
+	MaxResults            int    `json:"max_results"`
+	AutoRecover           *bool  `json:"auto_recover"`
+	QualityCheckEnabled   *bool  `json:"quality_check_enabled"`
+	QualityMode           string `json:"quality_mode"`
+	QualityExpectedAnswer string `json:"quality_expected_answer"`
 }
 
 // ListByAccount GET /admin/accounts/:id/scheduled-test-plans
@@ -65,12 +69,14 @@ func (h *ScheduledTestHandler) Create(c *gin.Context) {
 	}
 
 	plan := &service.ScheduledTestPlan{
-		AccountID:      req.AccountID,
-		ModelID:        req.ModelID,
-		PromptText:     req.PromptText,
-		CronExpression: req.CronExpression,
-		Enabled:        true,
-		MaxResults:     req.MaxResults,
+		AccountID:             req.AccountID,
+		ModelID:               req.ModelID,
+		PromptText:            req.PromptText,
+		CronExpression:        req.CronExpression,
+		Enabled:               true,
+		MaxResults:            req.MaxResults,
+		QualityMode:           req.QualityMode,
+		QualityExpectedAnswer: req.QualityExpectedAnswer,
 	}
 	if req.Enabled != nil {
 		plan.Enabled = *req.Enabled
@@ -130,6 +136,12 @@ func (h *ScheduledTestHandler) Update(c *gin.Context) {
 	}
 	if req.QualityCheckEnabled != nil {
 		existing.QualityCheckEnabled = *req.QualityCheckEnabled
+	}
+	if req.QualityMode != "" {
+		existing.QualityMode = req.QualityMode
+	}
+	if req.QualityExpectedAnswer != "" {
+		existing.QualityExpectedAnswer = req.QualityExpectedAnswer
 	}
 
 	updated, err := h.scheduledTestSvc.UpdatePlan(c.Request.Context(), existing)

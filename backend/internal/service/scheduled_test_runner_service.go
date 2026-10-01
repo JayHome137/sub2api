@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"sync"
@@ -9,10 +10,16 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
 )
 
 const scheduledTestDefaultMaxWorkers = 10
+
+const (
+	scheduledTestRunnerLeaderLockKey = "scheduled-test-runner"
+	scheduledTestRunnerLeaderLockTTL = 10 * time.Minute
+)
 
 // ScheduledTestRunnerService periodically scans due test plans and executes them.
 type ScheduledTestRunnerService struct {
@@ -21,6 +28,10 @@ type ScheduledTestRunnerService struct {
 	accountTestSvc *AccountTestService
 	rateLimitSvc   *RateLimitService
 	cfg            *config.Config
+	lockCache      LeaderLockCache
+	db             *sql.DB
+	instanceID     string
+	runMu          sync.Mutex
 
 	cron      *cron.Cron
 	startOnce sync.Once
@@ -48,7 +59,18 @@ func NewScheduledTestRunnerService(
 		accountTestSvc: accountTestSvc,
 		rateLimitSvc:   rateLimitSvc,
 		cfg:            cfg,
+		instanceID:     uuid.NewString(),
 	}
+}
+
+// SetLeaderLock wires the shared Redis/PostgreSQL coordination used to keep
+// multiple API instances from running the same scheduled-test tick.
+func (s *ScheduledTestRunnerService) SetLeaderLock(lockCache LeaderLockCache, db *sql.DB) {
+	if s == nil {
+		return
+	}
+	s.lockCache = lockCache
+	s.db = db
 }
 
 // Start begins the cron ticker (every minute).
@@ -94,6 +116,20 @@ func (s *ScheduledTestRunnerService) Stop() {
 }
 
 func (s *ScheduledTestRunnerService) runScheduled() {
+	if s == nil || !s.runMu.TryLock() {
+		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] tick skipped: previous tick still running")
+		return
+	}
+	defer s.runMu.Unlock()
+	lockCtx, cancelLock := context.WithTimeout(context.Background(), 2*time.Second)
+	release, acquired := tryAcquireSingletonLeaderLock(lockCtx, s.lockCache, s.db, scheduledTestRunnerLeaderLockKey, s.instanceID, scheduledTestRunnerLeaderLockTTL)
+	cancelLock()
+	if !acquired {
+		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] tick skipped: another instance is running")
+		return
+	}
+	defer release()
+
 	// Delay 10s so execution lands at ~:10 of each minute instead of :00.
 	time.Sleep(10 * time.Second)
 
@@ -132,6 +168,10 @@ func (s *ScheduledTestRunnerService) runOnePlan(ctx context.Context, plan *Sched
 	if s == nil || plan == nil || s.accountTestSvc == nil {
 		return
 	}
+	nextRun, claimed := s.claimScheduledPlan(ctx, plan)
+	if !claimed {
+		return
+	}
 
 	var (
 		result *ScheduledTestResult
@@ -144,15 +184,23 @@ func (s *ScheduledTestRunnerService) runOnePlan(ctx context.Context, plan *Sched
 	}
 	if err != nil {
 		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d RunTestBackground error: %v", plan.ID, err)
+		if plan.QualityCheckEnabled {
+			s.saveInconclusiveResult(ctx, plan, "quality check inconclusive: scheduled test did not return a result")
+		}
+		s.finishScheduledPlan(ctx, plan, nextRun)
 		return
 	}
 	if result == nil {
 		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d RunTestBackground returned no result", plan.ID)
+		if plan.QualityCheckEnabled {
+			s.saveInconclusiveResult(ctx, plan, "quality check inconclusive: scheduled test returned no result")
+		}
+		s.finishScheduledPlan(ctx, plan, nextRun)
 		return
 	}
 
 	if plan.QualityCheckEnabled && result.Status == "success" {
-		status, reason := s.accountTestSvc.assessScheduledVisualQuality(ctx, plan, result.ResponseText)
+		status, reason := s.accountTestSvc.assessScheduledQuality(ctx, plan, result.ResponseText)
 		switch status {
 		case "degraded":
 			result.Status = "degraded"
@@ -164,6 +212,13 @@ func (s *ScheduledTestRunnerService) runOnePlan(ctx context.Context, plan *Sched
 			result.ErrorMessage = reason
 		}
 	}
+	if plan.QualityCheckEnabled && plan.QualityMode == ScheduledTestQualityModeCandy && result.Status == "failed" {
+		result.Status = "inconclusive"
+		if strings.TrimSpace(result.ErrorMessage) == "" {
+			result.ErrorMessage = "quality check inconclusive: candy answer unavailable"
+		}
+	}
+	result.QualityMode = scheduledTestQualityMode(plan)
 
 	saved := false
 	if s.scheduledSvc == nil {
@@ -183,15 +238,63 @@ func (s *ScheduledTestRunnerService) runOnePlan(ctx context.Context, plan *Sched
 		s.tryRecoverAccount(ctx, plan.AccountID, plan.ID)
 	}
 
-	nextRun, err := computeNextRun(plan.CronExpression, time.Now())
+	s.finishScheduledPlan(ctx, plan, nextRun)
+}
+
+func (s *ScheduledTestRunnerService) claimScheduledPlan(ctx context.Context, plan *ScheduledTestPlan) (time.Time, bool) {
+	if s == nil || s.planRepo == nil || plan == nil {
+		return time.Time{}, false
+	}
+	now := time.Now()
+	nextRun, err := computeNextRun(plan.CronExpression, now)
 	if err != nil {
 		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d computeNextRun error: %v", plan.ID, err)
-		return
+		return time.Time{}, false
 	}
 
-	if err := s.planRepo.UpdateAfterRun(ctx, plan.ID, time.Now(), nextRun); err != nil {
-		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d UpdateAfterRun error: %v", plan.ID, err)
+	updateCtx, cancelUpdate := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelUpdate()
+	if err := s.planRepo.UpdateAfterRun(updateCtx, plan.ID, now, nextRun); err != nil {
+		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d claim failed: %v", plan.ID, err)
+		return time.Time{}, false
 	}
+	return nextRun, true
+}
+
+func (s *ScheduledTestRunnerService) finishScheduledPlan(ctx context.Context, plan *ScheduledTestPlan, nextRun time.Time) {
+	if s == nil || s.planRepo == nil || plan == nil {
+		return
+	}
+	now := time.Now()
+	updateCtx, cancelUpdate := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelUpdate()
+	if err := s.planRepo.UpdateAfterRun(updateCtx, plan.ID, now, nextRun); err != nil {
+		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d finish update error: %v", plan.ID, err)
+	}
+}
+
+func (s *ScheduledTestRunnerService) saveInconclusiveResult(ctx context.Context, plan *ScheduledTestPlan, reason string) {
+	if s == nil || s.scheduledSvc == nil || plan == nil {
+		return
+	}
+	now := time.Now()
+	result := &ScheduledTestResult{
+		Status:       "inconclusive",
+		ErrorMessage: reason,
+		QualityMode:  scheduledTestQualityMode(plan),
+		StartedAt:    now,
+		FinishedAt:   now,
+	}
+	if err := s.scheduledSvc.SaveResult(ctx, plan.ID, plan.MaxResults, result); err != nil {
+		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d SaveResult inconclusive error: %v", plan.ID, err)
+	}
+}
+
+func scheduledTestQualityMode(plan *ScheduledTestPlan) string {
+	if plan == nil || plan.QualityMode == "" {
+		return ScheduledTestQualityModePelican
+	}
+	return plan.QualityMode
 }
 
 func (s *ScheduledTestRunnerService) accountRepo() AccountRepository {
@@ -221,7 +324,7 @@ func (s *ScheduledTestRunnerService) updateQualityScheduling(ctx context.Context
 			logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d quality history unavailable: %v", plan.ID, err)
 			return
 		}
-		if !hasConsecutiveDegradedResults(results) {
+		if !hasConsecutiveDegradedResultsForMode(results, scheduledTestQualityMode(plan)) {
 			return
 		}
 		s.pauseAccountForQuality(ctx, repo, plan, result)
@@ -230,6 +333,25 @@ func (s *ScheduledTestRunnerService) updateQualityScheduling(ctx context.Context
 		// Custom prompts are excluded by the caller.
 		s.recoverAccountFromQuality(ctx, repo, plan.AccountID, plan.ID)
 	}
+}
+
+func hasConsecutiveDegradedResultsForMode(results []*ScheduledTestResult, mode string) bool {
+	if mode == "" {
+		mode = ScheduledTestQualityModePelican
+	}
+	if len(results) < 2 || results[0] == nil || results[1] == nil {
+		return false
+	}
+	for _, result := range results[:2] {
+		resultMode := result.QualityMode
+		if resultMode == "" {
+			resultMode = ScheduledTestQualityModePelican
+		}
+		if resultMode != mode || result.Status != "degraded" {
+			return false
+		}
+	}
+	return true
 }
 
 func hasConsecutiveDegradedResults(results []*ScheduledTestResult) bool {

@@ -97,7 +97,8 @@ jobs:
       - name: Validate affected backend paths
         working-directory: backend
         run: |
-          go test ./internal/service -run 'Test(ScheduledVisual|RenderScheduledVisual|ReviewRequest|UpdateService)' -count=1
+          go test ./internal/service -run 'Test(Scheduled|ScheduledVisual|RenderScheduledVisual|ReviewRequest|UpdateService)' -count=1
+          go test ./internal/repository ./internal/handler/admin ./cmd/server -count=1
 
       - name: Validate renderer source
         run: |
@@ -209,5 +210,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "Sub2API ${VERSION}" \
-            --notes "修复隔离渲染器缺少 Playwright 运行依赖的问题，确保定时降智检测可以完成 SVG 四帧渲染与判定；同步发布版本匹配的全栈镜像、渲染器镜像和 Linux 更新控制面。" \
+            --notes "修复定时检测在同一计划周期内重复执行的问题，增加跨实例互斥与周期领取，确保每个周期只执行一次；新增糖果题降智检测模式，支持预设答案匹配并在前端区分成功、失败和无法判定；保留鹈鹕视觉检测，并按题型隔离连续失败判定。同步发布版本匹配的全栈镜像、渲染器镜像和 Linux 更新控制面。" \
             --latest

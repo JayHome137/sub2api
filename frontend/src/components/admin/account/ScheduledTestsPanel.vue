@@ -119,6 +119,20 @@
               </p>
             </div>
           </div>
+          <div class="sm:col-span-2">
+            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+              {{ t('admin.scheduledTests.qualityMode') }}
+            </label>
+            <Select v-model="newPlan.quality_mode" :options="qualityModeOptions" :disabled="!newPlan.quality_check_enabled" />
+          </div>
+          <div v-if="newPlan.quality_mode === 'candy' && newPlan.quality_check_enabled" class="sm:col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+                {{ t('admin.scheduledTests.qualityExpectedAnswer') }}
+              </label>
+              <Input v-model="newPlan.quality_expected_answer" :placeholder="defaultScheduledTestCandyAnswer" />
+            </div>
+          </div>
           <div class="flex items-end">
             <div>
               <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
@@ -358,6 +372,20 @@
                   </p>
                 </div>
               </div>
+              <div class="sm:col-span-2">
+                <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+                  {{ t('admin.scheduledTests.qualityMode') }}
+                </label>
+                <Select v-model="editForm.quality_mode" :options="qualityModeOptions" :disabled="!editForm.quality_check_enabled" />
+              </div>
+              <div v-if="editForm.quality_mode === 'candy' && editForm.quality_check_enabled" class="sm:col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+                    {{ t('admin.scheduledTests.qualityExpectedAnswer') }}
+                  </label>
+                  <Input v-model="editForm.quality_expected_answer" :placeholder="defaultScheduledTestCandyAnswer" />
+                </div>
+              </div>
               <div class="flex items-end">
                 <div>
                   <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
@@ -434,7 +462,9 @@
                         result.status === 'success'
                           ? 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400'
                           : result.status === 'degraded'
-                            ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400'
+                            ? plan.quality_mode === 'candy'
+                              ? 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400'
+                              : 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400'
                             : isInconclusiveStatus(result.status)
                               ? 'bg-gray-100 text-gray-700 dark:bg-gray-500/20 dark:text-gray-400'
                             : result.status === 'running'
@@ -442,7 +472,7 @@
                               : 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400'
                       ]"
                     >
-                      {{ resultStatusLabel(result.status) }}
+                      {{ resultStatusLabel(result.status, plan.quality_mode) }}
                     </span>
                   </div>
                   <div class="mt-1 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
@@ -457,7 +487,7 @@
                   <div>
                     <div class="flex items-center gap-2">
                       <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                        {{ resultStatusLabel(selectedResult.status) }}
+                        {{ resultStatusLabel(selectedResult.status, selectedResult.quality_mode || plan.quality_mode) }}
                       </span>
                       <span v-if="selectedResult.latency_ms > 0" class="text-xs text-gray-500 dark:text-gray-400">
                         {{ selectedResult.latency_ms }}ms
@@ -552,6 +582,12 @@ import type { ScheduledTestPlan, ScheduledTestResult } from '@/types'
 const { t } = useI18n()
 const appStore = useAppStore()
 const defaultScheduledTestPrompt = '请生成可直接运行的单文件HTML，使用内联SVG绘制鹈鹕骑自行车的二维循环动画。画面以鹈鹕和自行车为主体，展示清晰的身体结构、踩踏动作和车轮转动，配合协调的背景、配色与层次。动画应流畅自然、衔接连续，并适配不同屏幕尺寸。禁止依赖外部资源，只输出完整HTML，不要代码围栏或解释文字。'
+const defaultScheduledTestCandyPrompt = '请回答这道糖果题：桌上有3颗红色糖果和2颗蓝色糖果，一共有多少颗糖果？只输出数字，不要解释。'
+const defaultScheduledTestCandyAnswer = '5'
+const qualityModeOptions = computed<SelectOption[]>(() => [
+  { value: 'pelican', label: t('admin.scheduledTests.qualityModePelican') },
+  { value: 'candy', label: t('admin.scheduledTests.qualityModeCandy') }
+])
 
 const props = defineProps<{
   show: boolean
@@ -586,7 +622,9 @@ const editForm = reactive({
   max_results: '100' as string,
   enabled: true,
   auto_recover: false,
-  quality_check_enabled: false
+  quality_check_enabled: false,
+  quality_mode: 'pelican' as string,
+  quality_expected_answer: defaultScheduledTestCandyAnswer
 })
 
 const newPlan = reactive({
@@ -596,7 +634,9 @@ const newPlan = reactive({
   max_results: '100' as string,
   enabled: true,
   auto_recover: false,
-  quality_check_enabled: false
+  quality_check_enabled: false,
+  quality_mode: 'pelican' as string,
+  quality_expected_answer: defaultScheduledTestCandyAnswer
 })
 
 const resetNewPlan = () => {
@@ -607,6 +647,8 @@ const resetNewPlan = () => {
   newPlan.enabled = true
   newPlan.auto_recover = false
   newPlan.quality_check_enabled = false
+  newPlan.quality_mode = 'pelican'
+  newPlan.quality_expected_answer = defaultScheduledTestCandyAnswer
 }
 
 // Load plans when dialog opens
@@ -626,6 +668,22 @@ watch(
     }
   }
 )
+
+watch(() => newPlan.quality_mode, (mode) => {
+  if (mode === 'candy' && newPlan.prompt_text === defaultScheduledTestPrompt) {
+    newPlan.prompt_text = defaultScheduledTestCandyPrompt
+  } else if (mode === 'pelican' && newPlan.prompt_text === defaultScheduledTestCandyPrompt) {
+    newPlan.prompt_text = defaultScheduledTestPrompt
+  }
+})
+
+watch(() => editForm.quality_mode, (mode) => {
+  if (mode === 'candy' && editForm.prompt_text === defaultScheduledTestPrompt) {
+    editForm.prompt_text = defaultScheduledTestCandyPrompt
+  } else if (mode === 'pelican' && editForm.prompt_text === defaultScheduledTestCandyPrompt) {
+    editForm.prompt_text = defaultScheduledTestPrompt
+  }
+})
 
 const loadPlans = async () => {
   if (!props.accountId) return
@@ -652,7 +710,9 @@ const handleCreate = async () => {
       enabled: newPlan.enabled,
       max_results: maxResults,
       auto_recover: newPlan.auto_recover,
-      quality_check_enabled: newPlan.quality_check_enabled
+      quality_check_enabled: newPlan.quality_check_enabled,
+      quality_mode: newPlan.quality_mode,
+      quality_expected_answer: newPlan.quality_expected_answer
     })
     appStore.showSuccess(t('admin.scheduledTests.createSuccess'))
     showAddForm.value = false
@@ -687,6 +747,8 @@ const startEdit = (plan: ScheduledTestPlan) => {
   editForm.enabled = plan.enabled
   editForm.auto_recover = plan.auto_recover
   editForm.quality_check_enabled = plan.quality_check_enabled
+  editForm.quality_mode = plan.quality_mode || 'pelican'
+  editForm.quality_expected_answer = plan.quality_expected_answer || defaultScheduledTestCandyAnswer
 }
 
 const cancelEdit = () => {
@@ -704,7 +766,9 @@ const handleEdit = async () => {
       max_results: Number(editForm.max_results) || 100,
       enabled: editForm.enabled,
       auto_recover: editForm.auto_recover,
-      quality_check_enabled: editForm.quality_check_enabled
+      quality_check_enabled: editForm.quality_check_enabled,
+      quality_mode: editForm.quality_mode,
+      quality_expected_answer: editForm.quality_expected_answer
     })
     const index = plans.value.findIndex((p) => p.id === editingPlanId.value)
     if (index !== -1) {
@@ -771,9 +835,9 @@ const selectResult = (resultId: number) => {
   previewMode.value = 'preview'
 }
 
-const resultStatusLabel = (status: string) => {
+const resultStatusLabel = (status: string, qualityMode?: string) => {
   if (status === 'success') return t('admin.scheduledTests.success')
-  if (status === 'degraded') return t('admin.scheduledTests.degraded')
+  if (status === 'degraded') return qualityMode === 'candy' ? t('admin.scheduledTests.failed') : t('admin.scheduledTests.degraded')
   if (isInconclusiveStatus(status)) return t('admin.scheduledTests.unknown')
   if (status === 'running') return t('admin.scheduledTests.running')
   return t('admin.scheduledTests.failed')

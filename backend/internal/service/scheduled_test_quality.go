@@ -1,11 +1,49 @@
 package service
 
 import (
+	"context"
 	"io"
 	"strings"
 
 	"golang.org/x/net/html"
 )
+
+// assessScheduledQuality selects the evaluator from the persisted plan mode.
+// The mode is part of the plan contract so changing a prompt cannot silently
+// switch an SVG review into answer matching (or the reverse).
+func (s *AccountTestService) assessScheduledQuality(ctx context.Context, plan *ScheduledTestPlan, response string) (string, string) {
+	if plan == nil {
+		return "unknown", "quality check inconclusive: scheduled test plan is missing"
+	}
+	if plan.QualityMode == "" || plan.QualityMode == ScheduledTestQualityModePelican {
+		return s.assessScheduledVisualQuality(ctx, plan, response)
+	}
+	if plan.QualityMode == ScheduledTestQualityModeCandy {
+		return assessScheduledCandyQuality(response, plan.QualityExpectedAnswer)
+	}
+	return "unknown", "quality check inconclusive: unsupported quality mode"
+}
+
+func assessScheduledCandyQuality(response, expected string) (string, string) {
+	expected = normalizeScheduledCandyAnswer(expected)
+	if expected == "" {
+		return "unknown", "quality check inconclusive: candy expected answer is empty"
+	}
+	answer := normalizeScheduledCandyAnswer(response)
+	if answer == "" {
+		return "unknown", "quality check inconclusive: candy answer is empty"
+	}
+	if answer != expected {
+		return "degraded", "quality check failed: candy answer does not match the expected answer"
+	}
+	return "success", ""
+}
+
+func normalizeScheduledCandyAnswer(value string) string {
+	value = strings.TrimSpace(strings.TrimPrefix(value, "\ufeff"))
+	value = strings.Trim(value, "`\"'")
+	return strings.ToLower(strings.Join(strings.Fields(value), " "))
+}
 
 // scheduledQualityReasonPrefix marks the only temporary pause that the
 // scheduled-test runner is allowed to clear automatically. Keep this prefix

@@ -46,8 +46,12 @@ export default {
       autoRecover: '自动恢复',
       autoRecoverHelp: '测试成功后自动恢复异常状态的账号',
       qualityCheck: '降智检测',
-      qualityCheckHelp: '开启后评估鹈鹕题目；连续两次退化时，多账号分组可自动暂停账号。单账号分组和上游转发账号不会自动暂停。',
-      promptHelp: '仅内置鹈鹕题目有质量判定；自定义题目仍会发送，但不会参与质量判定或自动暂停。关闭降智检测时使用官方默认连通性测试提示词。'
+      qualityCheckHelp: '开启后按所选题型判定；连续两次失败时，多账号分组可自动暂停账号。单账号分组和上游转发账号不会自动暂停。',
+      qualityMode: '检测题型',
+      qualityModePelican: '鹈鹕动画题',
+      qualityModeCandy: '糖果题（答案匹配）',
+      qualityExpectedAnswer: '预设答案',
+      promptHelp: '鹈鹕题使用动画和视觉评审；糖果题只比较模型答案，不渲染动画。关闭降智检测时使用官方默认连通性测试提示词。'
     },
 
     // Proxies Management
