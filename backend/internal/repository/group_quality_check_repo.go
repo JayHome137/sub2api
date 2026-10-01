@@ -77,7 +77,6 @@ func (r *groupQualityCheckRepository) ListRecentResults(ctx context.Context, gro
 	if limit <= 0 {
 		limit = 50
 	}
-	qualityPrompts := service.ScheduledTestQualityPrompts()
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT DISTINCT ON (p.account_id)
 		       r.id, p.account_id, r.status, r.error_message, r.latency_ms, r.created_at
@@ -87,14 +86,14 @@ func (r *groupQualityCheckRepository) ListRecentResults(ctx context.Context, gro
 		JOIN accounts a ON a.id = p.account_id
 		WHERE r.created_at >= $2
 		  AND p.quality_check_enabled = TRUE
-		  AND p.prompt_text = ANY($3)
+		  AND p.quality_mode IN ('pelican', 'candy')
 		  AND a.deleted_at IS NULL
 		  AND a.status = 'active'
 		  AND a.schedulable IS TRUE
 		  AND (a.temp_unschedulable_until IS NULL OR a.temp_unschedulable_until <= NOW())
 		ORDER BY p.account_id, r.created_at DESC
-		LIMIT $4
-	`, groupID, since, pq.Array(qualityPrompts), limit)
+		LIMIT $3
+	`, groupID, since, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +124,6 @@ func (r *groupQualityCheckRepository) ListGroupBuckets(ctx context.Context, grou
 	if len(groupIDs) == 0 || bucketSeconds <= 0 {
 		return nil, nil
 	}
-	qualityPrompts := service.ScheduledTestQualityPrompts()
 	rows, err := r.db.QueryContext(ctx, `
 		WITH latest AS (
 			SELECT DISTINCT ON (ag.group_id, p.account_id)
@@ -140,7 +138,7 @@ func (r *groupQualityCheckRepository) ListGroupBuckets(ctx context.Context, grou
 			WHERE ag.group_id = ANY($1)
 			  AND r.created_at >= $2
 			  AND p.quality_check_enabled = TRUE
-			  AND p.prompt_text = ANY($4)
+			  AND p.quality_mode IN ('pelican', 'candy')
 			  AND a.deleted_at IS NULL
 			  AND a.status = 'active'
 			  AND a.schedulable IS TRUE
@@ -155,7 +153,7 @@ func (r *groupQualityCheckRepository) ListGroupBuckets(ctx context.Context, grou
 		WHERE status IN ('success', 'degraded')
 		GROUP BY group_id, bucket_start
 		ORDER BY group_id, bucket_start
-	`, pq.Array(groupIDs), since, bucketSeconds, pq.Array(qualityPrompts))
+	`, pq.Array(groupIDs), since, bucketSeconds)
 	if err != nil {
 		return nil, err
 	}
@@ -184,24 +182,23 @@ func (r *groupQualityCheckRepository) ListGroupEvents(ctx context.Context, group
 	} else if limit > 100 {
 		limit = 100
 	}
-	qualityPrompts := service.ScheduledTestQualityPrompts()
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT r.id, ag.group_id, p.account_id, COALESCE(p.model_id, ''),
-		       r.status, COALESCE(r.error_message, ''), r.created_at
+		       r.status, COALESCE(r.error_message, ''), r.created_at, p.quality_mode
 		FROM scheduled_test_results r
 		JOIN scheduled_test_plans p ON p.id = r.plan_id
 		JOIN account_groups ag ON ag.account_id = p.account_id AND ag.group_id = $1
 		JOIN accounts a ON a.id = p.account_id
 		WHERE r.status IN ('success', 'degraded')
 		  AND p.quality_check_enabled = TRUE
-		  AND p.prompt_text = ANY($2)
+		  AND p.quality_mode IN ('pelican', 'candy')
 		  AND a.deleted_at IS NULL
 		  AND a.status = 'active'
 		  AND a.schedulable IS TRUE
 		  AND (a.temp_unschedulable_until IS NULL OR a.temp_unschedulable_until <= NOW())
 		ORDER BY r.created_at DESC, r.id DESC
-		LIMIT $3
-	`, groupID, pq.Array(qualityPrompts), limit)
+		LIMIT $2
+	`, groupID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +209,7 @@ func (r *groupQualityCheckRepository) ListGroupEvents(ctx context.Context, group
 		event := &service.GroupQualityEvent{}
 		if err := rows.Scan(
 			&event.ID, &event.GroupID, &event.AccountID, &event.ModelID,
-			&event.Status, &event.ErrorMessage, &event.CreatedAt,
+			&event.Status, &event.ErrorMessage, &event.CreatedAt, &event.QualityMode,
 		); err != nil {
 			return nil, err
 		}
@@ -228,7 +225,6 @@ func (r *groupQualityCheckRepository) ListGroupEvents(ctx context.Context, group
 // scoped to the group so a viewer cannot read arbitrary results by id.
 func (r *groupQualityCheckRepository) GetGroupEventArtwork(ctx context.Context, groupID, resultID int64) (string, error) {
 	var text sql.NullString
-	qualityPrompts := service.ScheduledTestQualityPrompts()
 	err := r.db.QueryRowContext(ctx, `
 		SELECT r.response_text
 		FROM scheduled_test_results r
@@ -238,12 +234,12 @@ func (r *groupQualityCheckRepository) GetGroupEventArtwork(ctx context.Context, 
 		WHERE r.id = $2
 		  AND r.status IN ('success', 'degraded')
 		  AND p.quality_check_enabled = TRUE
-		  AND p.prompt_text = ANY($3)
+		  AND p.quality_mode IN ('pelican', 'candy')
 		  AND a.deleted_at IS NULL
 		  AND a.status = 'active'
 		  AND a.schedulable IS TRUE
 		  AND (a.temp_unschedulable_until IS NULL OR a.temp_unschedulable_until <= NOW())
-	`, groupID, resultID, pq.Array(qualityPrompts)).Scan(&text)
+	`, groupID, resultID).Scan(&text)
 	if err == sql.ErrNoRows {
 		return "", service.ErrGroupQualityEventNotFound
 	}

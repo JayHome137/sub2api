@@ -59,6 +59,12 @@
           >
             {{ hoveredEvent.error_message }}
           </div>
+          <div
+            v-if="hoveredEvent.quality_mode === 'candy' && hoveredEvent.status === 'success'"
+            class="quality-history-popover__message"
+          >
+            {{ hoveredEvent.error_message || t('monitorCommon.qualityHistoryCandyPass') }}
+          </div>
           <div v-if="artworkLoading" class="quality-history-popover__message">
             {{ t('monitorCommon.qualityArtworkLoading') }}
           </div>
@@ -196,7 +202,7 @@ function hoverEvent(index: number, event?: Event) {
   artworkFailed.value = false
   const request = ++hoverRequest
   const item = events.value[index]
-  if (!props.groupId || !item) return
+  if (!props.groupId || !item || item.quality_mode === 'candy') return
   artworkLoading.value = true
   void getQualityEventArtwork(props.groupId, item.id)
     .then((artwork) => {

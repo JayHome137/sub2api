@@ -18,6 +18,7 @@ type ScheduledTestPlan struct {
 	QualityCheckEnabled   bool       `json:"quality_check_enabled"`
 	QualityMode           string     `json:"quality_mode"`
 	QualityExpectedAnswer string     `json:"quality_expected_answer"`
+	ReasoningEffort       string     `json:"reasoning_effort"`
 	LastRunAt             *time.Time `json:"last_run_at"`
 	NextRunAt             *time.Time `json:"next_run_at"`
 	CreatedAt             time.Time  `json:"created_at"`

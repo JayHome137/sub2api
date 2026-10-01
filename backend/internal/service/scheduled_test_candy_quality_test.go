@@ -9,11 +9,13 @@ func TestAssessScheduledCandyQuality(t *testing.T) {
 		expected string
 		status   string
 	}{
-		{name: "matching answer", response: "5", expected: "5", status: "success"},
-		{name: "matching answer with whitespace", response: " 5\n", expected: "5", status: "success"},
-		{name: "wrong answer", response: "4", expected: "5", status: "degraded"},
-		{name: "empty answer", response: "", expected: "5", status: "unknown"},
-		{name: "empty expected answer", response: "5", expected: "", status: "unknown"},
+		{name: "matching answer", response: "21", expected: "21", status: "success"},
+		{name: "matching answer phrase", response: "答案是 21 个", expected: "21", status: "success"},
+		{name: "final selection wins", response: "如果不允许选择，答案是 **29 个**。\n### 可以按形状选择：21 个", expected: "21", status: "success"},
+		{name: "wrong answer", response: "20", expected: "21", status: "degraded"},
+		{name: "ambiguous explanation", response: "苹果 7，桃子 9，答案是 21", expected: "21", status: "success"},
+		{name: "empty answer", response: "", expected: "21", status: "unknown"},
+		{name: "empty expected answer", response: "21", expected: "", status: "unknown"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

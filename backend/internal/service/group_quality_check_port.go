@@ -53,6 +53,7 @@ type GroupQualityEvent struct {
 	AccountID    int64     `json:"account_id"`
 	ModelID      string    `json:"model_id"`
 	Status       string    `json:"status"` // success | degraded
+	QualityMode  string    `json:"quality_mode"`
 	ErrorMessage string    `json:"error_message"`
 	CreatedAt    time.Time `json:"created_at"`
 }

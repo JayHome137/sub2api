@@ -51,6 +51,13 @@ export default {
       qualityModePelican: '鹈鹕动画题',
       qualityModeCandy: '糖果题（答案匹配）',
       qualityExpectedAnswer: '预设答案',
+      reasoningEffort: '思考强度',
+      reasoningEffortAuto: '自动（跟随上游）',
+      reasoningEffortLow: '低',
+      reasoningEffortMedium: '中',
+      reasoningEffortHigh: '高',
+      reasoningEffortXHigh: '极高',
+      reasoningEffortMax: '最大',
       promptHelp: '鹈鹕题使用动画和视觉评审；糖果题只比较模型答案，不渲染动画。关闭降智检测时使用官方默认连通性测试提示词。'
     },
 

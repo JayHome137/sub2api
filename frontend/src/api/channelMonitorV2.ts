@@ -288,6 +288,7 @@ export interface MonitorQualityEvent {
   account_id: number
   model_id: string
   status: 'success' | 'degraded'
+  quality_mode: 'pelican' | 'candy' | string
   error_message: string
   created_at: string
 }
