@@ -12,6 +12,8 @@ func TestAssessScheduledCandyQuality(t *testing.T) {
 		{name: "matching answer", response: "21", expected: "21", status: "success"},
 		{name: "matching answer phrase", response: "答案是 21 个", expected: "21", status: "success"},
 		{name: "final selection wins", response: "如果不允许选择，答案是 **29 个**。\n### 可以按形状选择：21 个", expected: "21", status: "success"},
+		{name: "matching conditional answer among alternatives", response: "若允许凭手感区分形状，答案是 21 个。如果只能随机取出，则答案是 29 个。", expected: "21", status: "success"},
+		{name: "all conditional answers are wrong", response: "若允许凭手感区分形状，答案是 22 个。如果只能随机取出，则答案是 29 个。", expected: "21", status: "degraded"},
 		{name: "wrong answer", response: "20", expected: "21", status: "degraded"},
 		{name: "ambiguous explanation", response: "苹果 7，桃子 9，答案是 21", expected: "21", status: "success"},
 		{name: "empty answer", response: "", expected: "21", status: "unknown"},

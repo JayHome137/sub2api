@@ -30,14 +30,16 @@ func assessScheduledCandyQuality(response, expected string) (string, string) {
 	if expected == "" {
 		return "unknown", "quality check inconclusive: candy expected answer is empty"
 	}
-	answer := extractScheduledCandyAnswer(response)
-	if answer == "" {
+	answers := extractScheduledCandyAnswers(response)
+	if len(answers) == 0 {
 		return "unknown", "quality check inconclusive: candy answer is missing or ambiguous"
 	}
-	if answer != expected {
-		return "degraded", "quality check failed: candy answer does not match the expected answer"
+	for _, answer := range answers {
+		if answer == expected {
+			return "success", ""
+		}
 	}
-	return "success", ""
+	return "degraded", "quality check failed: candy answer does not match the expected answer"
 }
 
 func normalizeScheduledCandyAnswer(value string) string {
@@ -50,23 +52,35 @@ func normalizeScheduledCandyAnswer(value string) string {
 var scheduledCandyAnswerCue = regexp.MustCompile(`(?i)(?:答案|answer|result|选择|取出|最少(?:取出)?|因此|所以)[^0-9]{0,24}([0-9]+)`)
 var scheduledCandyNumber = regexp.MustCompile(`\d+`)
 
-// extractScheduledCandyAnswer accepts a bare number or a clear answer phrase,
-// while rejecting prompt echoes and explanations containing several numbers.
-func extractScheduledCandyAnswer(value string) string {
+// extractScheduledCandyAnswers accepts a bare number or numbers attached to
+// explicit answer cues. Multiple conditional choices remain candidates.
+func extractScheduledCandyAnswers(value string) []string {
 	value = normalizeScheduledCandyAnswer(value)
 	if value == "" {
-		return ""
+		return nil
 	}
 	if matches := scheduledCandyAnswerCue.FindAllStringSubmatch(value, -1); len(matches) > 0 {
-		// The final explicit answer/selection in a response is the model's
-		// resolved choice; earlier numbers are often counterfactual cases.
-		return matches[len(matches)-1][1]
+		answers := make([]string, 0, len(matches))
+		for _, match := range matches {
+			answers = append(answers, match[1])
+		}
+		return answers
 	}
 	numbers := scheduledCandyNumber.FindAllString(value, -1)
 	if len(numbers) == 1 {
-		return numbers[0]
+		return numbers
 	}
-	return ""
+	return nil
+}
+
+// extractScheduledCandyAnswer accepts a bare number or the final explicit
+// answer cue, for normalizing the configured expected answer.
+func extractScheduledCandyAnswer(value string) string {
+	answers := extractScheduledCandyAnswers(value)
+	if len(answers) == 0 {
+		return ""
+	}
+	return answers[len(answers)-1]
 }
 
 // scheduledQualityReasonPrefix marks the only temporary pause that the
