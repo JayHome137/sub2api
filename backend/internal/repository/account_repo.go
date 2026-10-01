@@ -2739,7 +2739,6 @@ func (r *accountRepository) MarkScheduledQualityPause(ctx context.Context, planI
 		return false, err
 	}
 
-	enabledGroupCount := 0
 	for _, groupID := range groupIDs {
 		var acquired bool
 		if err := tx.QueryRowContext(ctx, `
@@ -2748,16 +2747,6 @@ func (r *accountRepository) MarkScheduledQualityPause(ctx context.Context, planI
 			) AS group_lock
 		`, groupID).Scan(&acquired); err != nil {
 			return false, err
-		}
-		var enabled bool
-		if err := tx.QueryRowContext(ctx, `
-			SELECT enabled FROM group_quality_check_settings WHERE group_id = $1
-		`, groupID).Scan(&enabled); err != nil || !enabled {
-			if err != nil && err != sql.ErrNoRows {
-				return false, err
-			}
-		} else {
-			enabledGroupCount++
 		}
 		var count int
 		if err := tx.QueryRowContext(ctx, `
@@ -2779,10 +2768,6 @@ func (r *accountRepository) MarkScheduledQualityPause(ctx context.Context, planI
 			return false, nil
 		}
 	}
-	if enabledGroupCount == 0 {
-		return false, nil
-	}
-
 	result, err := tx.ExecContext(ctx, `
 		UPDATE accounts
 		SET schedulable = FALSE,

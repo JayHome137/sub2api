@@ -141,6 +141,12 @@ func TestScheduledQualityRunnerPausesOnlyWhenCapacityAllows(t *testing.T) {
 			wantPaused: true,
 		},
 		{
+			name:       "account opt-out keeps recording but does not pause",
+			account:    Account{ID: 45, GroupIDs: []int64{11}, Schedulable: true, Extra: map[string]any{ScheduledQualityAutoPauseEnabledExtraKey: false}},
+			groups:     map[int64][]Account{11: {{ID: 45}, {ID: 46}}},
+			wantPaused: false,
+		},
+		{
 			name:       "any single account group blocks pause",
 			account:    Account{ID: 5, GroupIDs: []int64{12, 13}, Schedulable: true},
 			groups:     map[int64][]Account{12: {{ID: 5}, {ID: 6}}, 13: {{ID: 5}}},

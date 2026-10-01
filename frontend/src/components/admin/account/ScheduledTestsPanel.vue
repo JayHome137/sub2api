@@ -6,6 +6,21 @@
     @close="emit('close')"
   >
     <div class="space-y-4">
+      <div class="flex items-center justify-between border-b border-gray-200 pb-3 dark:border-dark-600">
+        <div>
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">
+            {{ t('admin.scheduledTests.autoPause') }}
+          </p>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.scheduledTests.autoPauseHelp') }}
+          </p>
+        </div>
+        <Toggle
+          :model-value="autoPauseEnabled"
+          :disabled="savingAutoPause || loadingAutoPause"
+          @update:model-value="handleAutoPauseToggle"
+        />
+      </div>
       <!-- Add Plan Button -->
       <div class="flex items-center justify-between">
         <p class="text-sm text-gray-500 dark:text-gray-400">
@@ -595,7 +610,7 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const defaultScheduledTestPrompt = '请生成可直接运行的单文件HTML，使用内联SVG绘制鹈鹕骑自行车的二维循环动画。画面以鹈鹕和自行车为主体，展示清晰的身体结构、踩踏动作和车轮转动，配合协调的背景、配色与层次。动画应流畅自然、衔接连续，并适配不同屏幕尺寸。禁止依赖外部资源，只输出完整HTML，不要代码围栏或解释文字。'
 const defaultScheduledTestCandyPrompt = '在一个黑色的袋子里放有三种口味的糖果，每种糖果有两种不同的形状（圆形和五角星形，不同的形状靠手感可以分辨）。现已知不同口味的糖和不同形状的数量统计如下表。参赛者需要在活动前决定摸出的糖果数目，那么，最少取出多少个糖果才能保证手中同时拥有不同形状的苹果味和桃子味的糖？（同时手中有圆形苹果味匹配五角星桃子味糖果，或者有圆形桃子味匹配五角星苹果味糖果都满足要求）\n苹果味 桃子味 西瓜味\n圆形 7 9 8\n五角星形 7 6 4\n请直接给出答案。'
-const defaultScheduledTestCandyAnswer = '21'
+const defaultScheduledTestCandyAnswer = '29'
 const qualityModeOptions = computed<SelectOption[]>(() => [
   { value: 'pelican', label: t('admin.scheduledTests.qualityModePelican') },
   { value: 'candy', label: t('admin.scheduledTests.qualityModeCandy') }
@@ -621,6 +636,9 @@ const emit = defineEmits<{
 
 // State
 const loading = ref(false)
+const loadingAutoPause = ref(false)
+const savingAutoPause = ref(false)
+const autoPauseEnabled = ref(true)
 const creating = ref(false)
 const loadingResults = ref(false)
 const plans = ref<ScheduledTestPlan[]>([])
@@ -679,7 +697,7 @@ watch(
   () => props.show,
   async (visible) => {
     if (visible && props.accountId) {
-      await loadPlans()
+      await Promise.all([loadPlans(), loadAutoPauseSetting()])
     } else {
       plans.value = []
       results.value = []
@@ -688,9 +706,39 @@ watch(
       previewMode.value = 'preview'
       showAddForm.value = false
       showDeleteConfirm.value = false
+      autoPauseEnabled.value = true
     }
   }
 )
+
+const loadAutoPauseSetting = async () => {
+  if (!props.accountId) return
+  loadingAutoPause.value = true
+  try {
+    const account = await adminAPI.accounts.getById(props.accountId)
+    const setting = account.extra?.scheduled_quality_auto_pause_enabled
+    autoPauseEnabled.value = typeof setting === 'boolean' ? setting : true
+  } catch (error: any) {
+    appStore.showError(error?.message || t('admin.scheduledTests.autoPauseLoadFailed'))
+  } finally {
+    loadingAutoPause.value = false
+  }
+}
+
+const handleAutoPauseToggle = async (enabled: boolean) => {
+  if (!props.accountId) return
+  const previous = autoPauseEnabled.value
+  autoPauseEnabled.value = enabled
+  savingAutoPause.value = true
+  try {
+    await adminAPI.accounts.setScheduledQualityAutoPause(props.accountId, enabled)
+  } catch (error: any) {
+    autoPauseEnabled.value = previous
+    appStore.showError(error?.message || t('admin.scheduledTests.autoPauseSaveFailed'))
+  } finally {
+    savingAutoPause.value = false
+  }
+}
 
 watch(() => newPlan.quality_mode, (mode) => {
   newPlan.prompt_text = mode === 'candy' ? defaultScheduledTestCandyPrompt : defaultScheduledTestPrompt

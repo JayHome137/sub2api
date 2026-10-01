@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"time"
 )
 
@@ -47,17 +46,15 @@ type GroupQualitySeries struct {
 // and exposes aggregated status. Probes are produced by the per-account
 // scheduled test plans; this service only toggles visibility and aggregates.
 type GroupQualityCheckService struct {
-	repo        GroupQualityCheckRepository
-	accountRepo AccountRepository
+	repo GroupQualityCheckRepository
 }
 
 // NewGroupQualityCheckService creates the service.
-func NewGroupQualityCheckService(repo GroupQualityCheckRepository, accountRepo AccountRepository) *GroupQualityCheckService {
-	return &GroupQualityCheckService{repo: repo, accountRepo: accountRepo}
+func NewGroupQualityCheckService(repo GroupQualityCheckRepository, _ AccountRepository) *GroupQualityCheckService {
+	return &GroupQualityCheckService{repo: repo}
 }
 
-// SetGroupEnabled enables/disables group quality status and automatic pauses.
-// Disabling also clears quality-check pauses so accounts are not left parked.
+// SetGroupEnabled controls whether group quality status is visible and aggregated.
 func (s *GroupQualityCheckService) SetGroupEnabled(ctx context.Context, groupID int64, enabled bool) (*GroupQualityCheckSettings, error) {
 	settings, err := s.repo.UpsertSettings(ctx, &GroupQualityCheckSettings{
 		GroupID:         groupID,
@@ -68,27 +65,7 @@ func (s *GroupQualityCheckService) SetGroupEnabled(ctx context.Context, groupID 
 		return nil, err
 	}
 
-	if !enabled {
-		if err := s.clearGroupQualityPauses(ctx, groupID); err != nil {
-			return settings, fmt.Errorf("clear group quality pauses: %w", err)
-		}
-	}
 	return settings, nil
-}
-
-func (s *GroupQualityCheckService) clearGroupQualityPauses(ctx context.Context, groupID int64) error {
-	if s.accountRepo == nil {
-		return nil
-	}
-	cleanupRepo, ok := s.accountRepo.(disabledGroupQualityPauseRepository)
-	if !ok {
-		return fmt.Errorf("disabled-group quality pause cleanup repository unavailable")
-	}
-	return cleanupRepo.ClearScheduledQualityPausesForDisabledGroup(ctx, groupID)
-}
-
-type disabledGroupQualityPauseRepository interface {
-	ClearScheduledQualityPausesForDisabledGroup(ctx context.Context, groupID int64) error
 }
 
 // GetGroupStatus returns the aggregated degradation status for one group.

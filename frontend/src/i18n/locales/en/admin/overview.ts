@@ -838,7 +838,7 @@ export default {
       title: 'Group Management',
       description: 'Manage API key groups and rate multipliers',
       qualityCheck: 'Enable Degradation Check',
-      qualityCheckHelp: 'Show this group’s V3 quality status and allow eligible quality plans to pause accounts. Turning it off clears a pause unless another enabled group still monitors that account.',
+      qualityCheckHelp: 'Controls whether this group displays and aggregates V3 quality status. Account auto-pause after consecutive degraded results is controlled by the account-level switch in Scheduled Tests.',
       qualityCheckUpdateFailed: 'Failed to update group quality settings',
       searchGroups: 'Search groups...',
       createGroup: 'Create Group',

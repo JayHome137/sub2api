@@ -386,7 +386,7 @@ func (s *groupQualityAccountRepoStub) SetSchedulable(_ context.Context, id int64
 	return nil
 }
 
-func TestGroupQualityCheckService_DisableClearsPausesAndReenables(t *testing.T) {
+func TestGroupQualityCheckService_DisableOnlyTurnsOffGroupStatus(t *testing.T) {
 	repo := newStubGroupQualityCheckRepo()
 	repo.settings[77] = &GroupQualityCheckSettings{GroupID: 77, Enabled: true}
 	accountRepo := &groupQualityAccountRepoStub{accounts: []Account{
@@ -398,11 +398,11 @@ func TestGroupQualityCheckService_DisableClearsPausesAndReenables(t *testing.T) 
 
 	_, err := svc.SetGroupEnabled(context.Background(), 77, false)
 	require.NoError(t, err)
-	require.Equal(t, []int64{1, 2}, accountRepo.cleared, "only quality-paused accounts are cleared")
-	require.Equal(t, []int64{1}, accountRepo.enabled, "a paused quality account is handed back to the scheduler")
+	require.Empty(t, accountRepo.cleared, "group display settings do not own account pauses")
+	require.Empty(t, accountRepo.enabled, "disabling group status does not recover accounts")
 }
 
-func TestGroupQualityCheckService_DisableKeepsPauseForAnotherEnabledGroup(t *testing.T) {
+func TestGroupQualityCheckService_DisableDoesNotChangeAccountPause(t *testing.T) {
 	repo := newStubGroupQualityCheckRepo()
 	repo.settings[77] = &GroupQualityCheckSettings{GroupID: 77, Enabled: true}
 	repo.settings[88] = &GroupQualityCheckSettings{GroupID: 88, Enabled: true}
@@ -414,20 +414,20 @@ func TestGroupQualityCheckService_DisableKeepsPauseForAnotherEnabledGroup(t *tes
 
 	_, err := svc.SetGroupEnabled(context.Background(), 77, false)
 	require.NoError(t, err)
-	require.Equal(t, []int64{2}, accountRepo.cleared)
-	require.Equal(t, []int64{2}, accountRepo.enabled)
+	require.Empty(t, accountRepo.cleared)
+	require.Empty(t, accountRepo.enabled)
 }
 
-func TestGroupQualityCheckService_DisableReturnsCleanupErrors(t *testing.T) {
+func TestGroupQualityCheckService_DisableDoesNotDependOnPauseCleanup(t *testing.T) {
 	repo := newStubGroupQualityCheckRepo()
 	repo.settings[77] = &GroupQualityCheckSettings{GroupID: 77, Enabled: true}
 	accountRepo := &groupQualityAccountRepoStub{clearErr: errors.New("cleanup unavailable")}
 	svc := NewGroupQualityCheckService(repo, accountRepo)
 	_, err := svc.SetGroupEnabled(context.Background(), 77, false)
-	require.ErrorContains(t, err, "cleanup unavailable")
+	require.NoError(t, err)
 
 	noCleanupRepo := &struct{ AccountRepository }{}
 	svc = NewGroupQualityCheckService(repo, noCleanupRepo)
 	_, err = svc.SetGroupEnabled(context.Background(), 77, false)
-	require.ErrorContains(t, err, "cleanup repository unavailable")
+	require.NoError(t, err)
 }
