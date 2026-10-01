@@ -203,6 +203,18 @@ jobs:
         run: |
           set -euo pipefail
           release_tag="v${VERSION}"
+          notes="$(cat <<'EOF'
+          本版本更新内容：
+
+          - 更新糖果题默认题目和预设答案为 21，改进答案提取规则，能正确识别回答中的最终选择，避免条件分支数字造成误判。
+          - 修复切换鹈鹕题与糖果题后默认提示词不恢复的问题。
+          - 修复糖果题结果未进入渠道监控的问题；糖果题展示答案判定，不加载鹈鹕题 SVG 动画。
+          - 定时降智检测增加思考强度选项，可按计划设置 reasoning effort；留空时沿用上游默认。
+          - 保留现有鹈鹕视觉检测和账号暂停保护规则。
+
+          同步发布全栈镜像、隔离渲染器镜像和 Linux 更新控制面。
+          EOF
+          )"
           gh release create "$release_tag" \
             "artifacts/sub2api_${VERSION}_linux_amd64.tar.gz" \
             "artifacts/sub2api_control_${VERSION}_linux_amd64.tar.gz" \
@@ -210,5 +222,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "Sub2API ${VERSION}" \
-            --notes "修复定时检测在同一计划周期内重复执行的问题，增加跨实例互斥与周期领取，确保每个周期只执行一次；新增糖果题降智检测模式，支持预设答案匹配并在前端区分成功、失败和无法判定；保留鹈鹕视觉检测，并按题型隔离连续失败判定。同步发布版本匹配的全栈镜像、渲染器镜像和 Linux 更新控制面。" \
+            --notes "$notes" \
             --latest
