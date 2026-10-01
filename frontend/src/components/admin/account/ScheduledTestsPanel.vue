@@ -133,6 +133,12 @@
               <Input v-model="newPlan.quality_expected_answer" :placeholder="defaultScheduledTestCandyAnswer" />
             </div>
           </div>
+          <div class="sm:col-span-2">
+            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+              {{ t('admin.scheduledTests.reasoningEffort') }}
+            </label>
+            <Select v-model="newPlan.reasoning_effort" :options="reasoningEffortOptions" :disabled="!newPlan.quality_check_enabled" />
+          </div>
           <div class="flex items-end">
             <div>
               <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
@@ -386,6 +392,12 @@
                   <Input v-model="editForm.quality_expected_answer" :placeholder="defaultScheduledTestCandyAnswer" />
                 </div>
               </div>
+              <div class="sm:col-span-2">
+                <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+                  {{ t('admin.scheduledTests.reasoningEffort') }}
+                </label>
+                <Select v-model="editForm.reasoning_effort" :options="reasoningEffortOptions" :disabled="!editForm.quality_check_enabled" />
+              </div>
               <div class="flex items-end">
                 <div>
                   <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
@@ -582,11 +594,19 @@ import type { ScheduledTestPlan, ScheduledTestResult } from '@/types'
 const { t } = useI18n()
 const appStore = useAppStore()
 const defaultScheduledTestPrompt = '请生成可直接运行的单文件HTML，使用内联SVG绘制鹈鹕骑自行车的二维循环动画。画面以鹈鹕和自行车为主体，展示清晰的身体结构、踩踏动作和车轮转动，配合协调的背景、配色与层次。动画应流畅自然、衔接连续，并适配不同屏幕尺寸。禁止依赖外部资源，只输出完整HTML，不要代码围栏或解释文字。'
-const defaultScheduledTestCandyPrompt = '请回答这道糖果题：桌上有3颗红色糖果和2颗蓝色糖果，一共有多少颗糖果？只输出数字，不要解释。'
-const defaultScheduledTestCandyAnswer = '5'
+const defaultScheduledTestCandyPrompt = '在一个黑色的袋子里放有三种口味的糖果，每种糖果有两种不同的形状（圆形和五角星形，不同的形状靠手感可以分辨）。现已知不同口味的糖和不同形状的数量统计如下表。参赛者需要在活动前决定摸出的糖果数目，那么，最少取出多少个糖果才能保证手中同时拥有不同形状的苹果味和桃子味的糖？（同时手中有圆形苹果味匹配五角星桃子味糖果，或者有圆形桃子味匹配五角星苹果味糖果都满足要求）\n苹果味 桃子味 西瓜味\n圆形 7 9 8\n五角星形 7 6 4\n请直接给出答案。'
+const defaultScheduledTestCandyAnswer = '21'
 const qualityModeOptions = computed<SelectOption[]>(() => [
   { value: 'pelican', label: t('admin.scheduledTests.qualityModePelican') },
   { value: 'candy', label: t('admin.scheduledTests.qualityModeCandy') }
+])
+const reasoningEffortOptions = computed<SelectOption[]>(() => [
+  { value: '', label: t('admin.scheduledTests.reasoningEffortAuto') },
+  { value: 'low', label: t('admin.scheduledTests.reasoningEffortLow') },
+  { value: 'medium', label: t('admin.scheduledTests.reasoningEffortMedium') },
+  { value: 'high', label: t('admin.scheduledTests.reasoningEffortHigh') },
+  { value: 'xhigh', label: t('admin.scheduledTests.reasoningEffortXHigh') },
+  { value: 'max', label: t('admin.scheduledTests.reasoningEffortMax') },
 ])
 
 const props = defineProps<{
@@ -624,7 +644,8 @@ const editForm = reactive({
   auto_recover: false,
   quality_check_enabled: false,
   quality_mode: 'pelican' as string,
-  quality_expected_answer: defaultScheduledTestCandyAnswer
+  quality_expected_answer: defaultScheduledTestCandyAnswer,
+  reasoning_effort: '' as string
 })
 
 const newPlan = reactive({
@@ -636,7 +657,8 @@ const newPlan = reactive({
   auto_recover: false,
   quality_check_enabled: false,
   quality_mode: 'pelican' as string,
-  quality_expected_answer: defaultScheduledTestCandyAnswer
+  quality_expected_answer: defaultScheduledTestCandyAnswer,
+  reasoning_effort: '' as string
 })
 
 const resetNewPlan = () => {
@@ -649,6 +671,7 @@ const resetNewPlan = () => {
   newPlan.quality_check_enabled = false
   newPlan.quality_mode = 'pelican'
   newPlan.quality_expected_answer = defaultScheduledTestCandyAnswer
+  newPlan.reasoning_effort = ''
 }
 
 // Load plans when dialog opens
@@ -670,19 +693,13 @@ watch(
 )
 
 watch(() => newPlan.quality_mode, (mode) => {
-  if (mode === 'candy' && newPlan.prompt_text === defaultScheduledTestPrompt) {
-    newPlan.prompt_text = defaultScheduledTestCandyPrompt
-  } else if (mode === 'pelican' && newPlan.prompt_text === defaultScheduledTestCandyPrompt) {
-    newPlan.prompt_text = defaultScheduledTestPrompt
-  }
+  newPlan.prompt_text = mode === 'candy' ? defaultScheduledTestCandyPrompt : defaultScheduledTestPrompt
+  if (mode === 'candy' && !newPlan.quality_expected_answer.trim()) newPlan.quality_expected_answer = defaultScheduledTestCandyAnswer
 })
 
 watch(() => editForm.quality_mode, (mode) => {
-  if (mode === 'candy' && editForm.prompt_text === defaultScheduledTestPrompt) {
-    editForm.prompt_text = defaultScheduledTestCandyPrompt
-  } else if (mode === 'pelican' && editForm.prompt_text === defaultScheduledTestCandyPrompt) {
-    editForm.prompt_text = defaultScheduledTestPrompt
-  }
+  editForm.prompt_text = mode === 'candy' ? defaultScheduledTestCandyPrompt : defaultScheduledTestPrompt
+  if (mode === 'candy' && !editForm.quality_expected_answer.trim()) editForm.quality_expected_answer = defaultScheduledTestCandyAnswer
 })
 
 const loadPlans = async () => {
@@ -712,7 +729,8 @@ const handleCreate = async () => {
       auto_recover: newPlan.auto_recover,
       quality_check_enabled: newPlan.quality_check_enabled,
       quality_mode: newPlan.quality_mode,
-      quality_expected_answer: newPlan.quality_expected_answer
+      quality_expected_answer: newPlan.quality_expected_answer,
+      reasoning_effort: newPlan.reasoning_effort
     })
     appStore.showSuccess(t('admin.scheduledTests.createSuccess'))
     showAddForm.value = false
@@ -749,6 +767,7 @@ const startEdit = (plan: ScheduledTestPlan) => {
   editForm.quality_check_enabled = plan.quality_check_enabled
   editForm.quality_mode = plan.quality_mode || 'pelican'
   editForm.quality_expected_answer = plan.quality_expected_answer || defaultScheduledTestCandyAnswer
+  editForm.reasoning_effort = plan.reasoning_effort || ''
 }
 
 const cancelEdit = () => {
@@ -768,7 +787,8 @@ const handleEdit = async () => {
       auto_recover: editForm.auto_recover,
       quality_check_enabled: editForm.quality_check_enabled,
       quality_mode: editForm.quality_mode,
-      quality_expected_answer: editForm.quality_expected_answer
+      quality_expected_answer: editForm.quality_expected_answer,
+      reasoning_effort: editForm.reasoning_effort
     })
     const index = plans.value.findIndex((p) => p.id === editingPlanId.value)
     if (index !== -1) {

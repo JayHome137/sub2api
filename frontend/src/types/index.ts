@@ -2453,6 +2453,7 @@ export interface ScheduledTestPlan {
   quality_check_enabled: boolean
   quality_mode: 'pelican' | 'candy' | string
   quality_expected_answer: string
+  reasoning_effort: string
   last_run_at: string | null
   next_run_at: string | null
   created_at: string
@@ -2483,6 +2484,7 @@ export interface CreateScheduledTestPlanRequest {
   quality_check_enabled?: boolean
   quality_mode?: 'pelican' | 'candy' | string
   quality_expected_answer?: string
+  reasoning_effort?: string
 }
 
 export interface UpdateScheduledTestPlanRequest {
@@ -2495,6 +2497,7 @@ export interface UpdateScheduledTestPlanRequest {
   quality_check_enabled?: boolean
   quality_mode?: 'pelican' | 'candy' | string
   quality_expected_answer?: string
+  reasoning_effort?: string
 }
 
 // Payment types

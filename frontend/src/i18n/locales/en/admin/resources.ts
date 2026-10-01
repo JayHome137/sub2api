@@ -51,6 +51,13 @@ export default {
       qualityModePelican: 'Pelican animation',
       qualityModeCandy: 'Candy answer matching',
       qualityExpectedAnswer: 'Expected answer',
+      reasoningEffort: 'Reasoning effort',
+      reasoningEffortAuto: 'Auto (provider default)',
+      reasoningEffortLow: 'Low',
+      reasoningEffortMedium: 'Medium',
+      reasoningEffortHigh: 'High',
+      reasoningEffortXHigh: 'Extra high',
+      reasoningEffortMax: 'Max',
       promptHelp: 'Pelican uses animation and visual review; Candy compares the answer only and does not render animation. When Degradation Check is off, the upstream default connectivity prompt is used.'
     },
 

@@ -30,18 +30,20 @@ type createScheduledTestPlanRequest struct {
 	QualityCheckEnabled   *bool  `json:"quality_check_enabled"`
 	QualityMode           string `json:"quality_mode"`
 	QualityExpectedAnswer string `json:"quality_expected_answer"`
+	ReasoningEffort       string `json:"reasoning_effort"`
 }
 
 type updateScheduledTestPlanRequest struct {
-	ModelID               string `json:"model_id"`
-	PromptText            string `json:"prompt_text"`
-	CronExpression        string `json:"cron_expression"`
-	Enabled               *bool  `json:"enabled"`
-	MaxResults            int    `json:"max_results"`
-	AutoRecover           *bool  `json:"auto_recover"`
-	QualityCheckEnabled   *bool  `json:"quality_check_enabled"`
-	QualityMode           string `json:"quality_mode"`
-	QualityExpectedAnswer string `json:"quality_expected_answer"`
+	ModelID               string  `json:"model_id"`
+	PromptText            string  `json:"prompt_text"`
+	CronExpression        string  `json:"cron_expression"`
+	Enabled               *bool   `json:"enabled"`
+	MaxResults            int     `json:"max_results"`
+	AutoRecover           *bool   `json:"auto_recover"`
+	QualityCheckEnabled   *bool   `json:"quality_check_enabled"`
+	QualityMode           string  `json:"quality_mode"`
+	QualityExpectedAnswer string  `json:"quality_expected_answer"`
+	ReasoningEffort       *string `json:"reasoning_effort"`
 }
 
 // ListByAccount GET /admin/accounts/:id/scheduled-test-plans
@@ -77,6 +79,7 @@ func (h *ScheduledTestHandler) Create(c *gin.Context) {
 		MaxResults:            req.MaxResults,
 		QualityMode:           req.QualityMode,
 		QualityExpectedAnswer: req.QualityExpectedAnswer,
+		ReasoningEffort:       req.ReasoningEffort,
 	}
 	if req.Enabled != nil {
 		plan.Enabled = *req.Enabled
@@ -142,6 +145,9 @@ func (h *ScheduledTestHandler) Update(c *gin.Context) {
 	}
 	if req.QualityExpectedAnswer != "" {
 		existing.QualityExpectedAnswer = req.QualityExpectedAnswer
+	}
+	if req.ReasoningEffort != nil {
+		existing.ReasoningEffort = *req.ReasoningEffort
 	}
 
 	updated, err := h.scheduledTestSvc.UpdatePlan(c.Request.Context(), existing)

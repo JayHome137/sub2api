@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"io"
+	"regexp"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -25,13 +26,13 @@ func (s *AccountTestService) assessScheduledQuality(ctx context.Context, plan *S
 }
 
 func assessScheduledCandyQuality(response, expected string) (string, string) {
-	expected = normalizeScheduledCandyAnswer(expected)
+	expected = extractScheduledCandyAnswer(expected)
 	if expected == "" {
 		return "unknown", "quality check inconclusive: candy expected answer is empty"
 	}
-	answer := normalizeScheduledCandyAnswer(response)
+	answer := extractScheduledCandyAnswer(response)
 	if answer == "" {
-		return "unknown", "quality check inconclusive: candy answer is empty"
+		return "unknown", "quality check inconclusive: candy answer is missing or ambiguous"
 	}
 	if answer != expected {
 		return "degraded", "quality check failed: candy answer does not match the expected answer"
@@ -41,8 +42,31 @@ func assessScheduledCandyQuality(response, expected string) (string, string) {
 
 func normalizeScheduledCandyAnswer(value string) string {
 	value = strings.TrimSpace(strings.TrimPrefix(value, "\ufeff"))
-	value = strings.Trim(value, "`\"'")
+	value = strings.NewReplacer("**", "", "__", "", "`", "", "\\(", "", "\\)", "").Replace(value)
+	value = strings.Trim(value, "\"'")
 	return strings.ToLower(strings.Join(strings.Fields(value), " "))
+}
+
+var scheduledCandyAnswerCue = regexp.MustCompile(`(?i)(?:答案|answer|result|选择|取出|最少(?:取出)?|因此|所以)[^0-9]{0,24}([0-9]+)`)
+var scheduledCandyNumber = regexp.MustCompile(`\d+`)
+
+// extractScheduledCandyAnswer accepts a bare number or a clear answer phrase,
+// while rejecting prompt echoes and explanations containing several numbers.
+func extractScheduledCandyAnswer(value string) string {
+	value = normalizeScheduledCandyAnswer(value)
+	if value == "" {
+		return ""
+	}
+	if matches := scheduledCandyAnswerCue.FindAllStringSubmatch(value, -1); len(matches) > 0 {
+		// The final explicit answer/selection in a response is the model's
+		// resolved choice; earlier numbers are often counterfactual cases.
+		return matches[len(matches)-1][1]
+	}
+	numbers := scheduledCandyNumber.FindAllString(value, -1)
+	if len(numbers) == 1 {
+		return numbers[0]
+	}
+	return ""
 }
 
 // scheduledQualityReasonPrefix marks the only temporary pause that the

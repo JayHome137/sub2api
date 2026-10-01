@@ -498,6 +498,7 @@ export default {
     qualityHistoryDegradedCount: '{n} degraded',
     qualityHistoryPass: 'Pass',
     qualityHistoryDegraded: 'Degraded',
+    qualityHistoryCandyPass: 'Candy answer matched',
     qualityHistoryEmpty: 'No completed checks yet',
     qualityHistoryLoading: 'Loading past checks…',
     qualityHistoryFailed: 'Failed to load past checks',

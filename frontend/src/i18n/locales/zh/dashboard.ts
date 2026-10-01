@@ -503,6 +503,7 @@ export default {
     qualityHistoryDegradedCount: '{n} 次降智',
     qualityHistoryPass: '通过',
     qualityHistoryDegraded: '降智',
+    qualityHistoryCandyPass: '糖果题答案匹配',
     qualityHistoryEmpty: '暂无已完成判定的检测',
     qualityHistoryLoading: '加载历次结果…',
     qualityHistoryFailed: '历次结果加载失败',

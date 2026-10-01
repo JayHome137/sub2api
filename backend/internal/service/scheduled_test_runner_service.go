@@ -178,7 +178,7 @@ func (s *ScheduledTestRunnerService) runOnePlan(ctx context.Context, plan *Sched
 		err    error
 	)
 	if plan.QualityCheckEnabled {
-		result, err = s.accountTestSvc.RunTestBackground(ctx, plan.AccountID, plan.ModelID, plan.PromptText)
+		result, err = s.accountTestSvc.RunTestBackgroundWithOptions(ctx, plan.AccountID, plan.ModelID, plan.PromptText, AccountTestOptions{ReasoningEffort: plan.ReasoningEffort})
 	} else {
 		result, err = s.accountTestSvc.RunTestBackground(ctx, plan.AccountID, plan.ModelID)
 	}

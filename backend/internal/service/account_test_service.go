@@ -68,8 +68,9 @@ type TestEvent struct {
 // AccountTestOptions carries optional media for admin connectivity tests.
 // ImageDataURL / AudioDataURL are full data URLs (data:<mime>;base64,...).
 type AccountTestOptions struct {
-	ImageDataURL string
-	AudioDataURL string
+	ImageDataURL    string
+	AudioDataURL    string
+	ReasoningEffort string
 }
 
 func firstAccountTestOptions(opts []AccountTestOptions) AccountTestOptions {
@@ -369,6 +370,10 @@ func createTestPayload(modelID string, prompts ...string) (map[string]any, error
 func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int64, modelID string, prompt string, mode string, opts ...AccountTestOptions) error {
 	ctx := c.Request.Context()
 	testOpts := firstAccountTestOptions(opts)
+	if effort := strings.TrimSpace(testOpts.ReasoningEffort); effort != "" {
+		ctx = withScheduledTestReasoningEffort(ctx, effort)
+		c.Request = c.Request.WithContext(ctx)
+	}
 
 	// Get account
 	account, err := s.accountRepo.GetByID(ctx, accountID)
@@ -559,6 +564,7 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create test payload")
 	}
+	applyScheduledTestReasoningEffort(ctx, payload, "anthropic", testModelID)
 	payloadBytes, _ := json.Marshal(payload)
 
 	// Send test_start event
@@ -637,6 +643,7 @@ func (s *AccountTestService) testClaudeVertexServiceAccountConnection(c *gin.Con
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create test payload")
 	}
+	applyScheduledTestReasoningEffort(ctx, payload, "anthropic", testModelID)
 	payloadBytes, _ := json.Marshal(payload)
 	vertexBody, err := buildVertexAnthropicRequestBody(payloadBytes)
 	if err != nil {
@@ -901,6 +908,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	}
 	payload := createOpenAITestPayload(upstreamTestModelID, isOAuth, prompt)
 	applyScheduledVisualReviewPayload(ctx, payload, true)
+	applyScheduledTestReasoningEffort(ctx, payload, "responses", upstreamTestModelID)
 	payloadBytes, _ := json.Marshal(payload)
 
 	// Send test_start event once. A task-invalid Agent Identity response may
@@ -2145,6 +2153,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 
 	payload := createOpenAIChatCompletionsTestPayload(testModelID, prompt)
 	applyScheduledVisualReviewPayload(ctx, payload, false)
+	applyScheduledTestReasoningEffort(ctx, payload, "chat_completions", testModelID)
 	payloadBytes, _ := json.Marshal(payload)
 
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
@@ -3315,6 +3324,17 @@ func (s *AccountTestService) sendErrorAndEnd(c *gin.Context, errorMsg string) er
 // RunTestBackground executes an account test in-memory (no real HTTP client),
 // capturing SSE output via httptest.NewRecorder, then parses the result.
 func (s *AccountTestService) RunTestBackground(ctx context.Context, accountID int64, modelID string, prompts ...string) (*ScheduledTestResult, error) {
+	return s.runTestBackground(ctx, accountID, modelID, AccountTestOptions{}, prompts...)
+}
+
+// RunTestBackgroundWithOptions executes a scheduled probe with optional
+// request controls such as reasoning effort while preserving the existing
+// background test API for callers that do not need them.
+func (s *AccountTestService) RunTestBackgroundWithOptions(ctx context.Context, accountID int64, modelID, prompt string, opts AccountTestOptions) (*ScheduledTestResult, error) {
+	return s.runTestBackground(ctx, accountID, modelID, opts, prompt)
+}
+
+func (s *AccountTestService) runTestBackground(ctx context.Context, accountID int64, modelID string, opts AccountTestOptions, prompts ...string) (*ScheduledTestResult, error) {
 	startedAt := time.Now()
 
 	w := httptest.NewRecorder()
@@ -3325,7 +3345,7 @@ func (s *AccountTestService) RunTestBackground(ctx context.Context, accountID in
 	if len(prompts) > 0 {
 		prompt = strings.TrimSpace(prompts[0])
 	}
-	testErr := s.TestAccountConnection(ginCtx, accountID, modelID, prompt, AccountTestModeDefault)
+	testErr := s.TestAccountConnection(ginCtx, accountID, modelID, prompt, AccountTestModeDefault, opts)
 
 	finishedAt := time.Now()
 	body := w.Body.String()

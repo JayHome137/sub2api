@@ -11,8 +11,8 @@ import (
 
 const (
 	DefaultScheduledTestPrompt      = "请生成可直接运行的单文件HTML，使用内联SVG绘制鹈鹕骑自行车的二维循环动画。画面以鹈鹕和自行车为主体，展示清晰的身体结构、踩踏动作和车轮转动，配合协调的背景、配色与层次。动画应流畅自然、衔接连续，并适配不同屏幕尺寸。动画必须用 CSS @keyframes 或 SMIL（animate/animateTransform）实现，不要使用 JavaScript 或 <script> 标签。禁止依赖外部资源，只输出完整HTML，不要代码围栏或解释文字。"
-	DefaultScheduledTestCandyPrompt = "请回答这道糖果题：桌上有3颗红色糖果和2颗蓝色糖果，一共有多少颗糖果？只输出数字，不要解释。"
-	DefaultScheduledTestCandyAnswer = "5"
+	DefaultScheduledTestCandyPrompt = "在一个黑色的袋子里放有三种口味的糖果，每种糖果有两种不同的形状（圆形和五角星形，不同的形状靠手感可以分辨）。现已知不同口味的糖和不同形状的数量统计如下表。参赛者需要在活动前决定摸出的糖果数目，那么，最少取出多少个糖果才能保证手中同时拥有不同形状的苹果味和桃子味的糖？（同时手中有圆形苹果味匹配五角星桃子味糖果，或者有圆形桃子味匹配五角星苹果味糖果都满足要求）\n苹果味 桃子味 西瓜味\n圆形 7 9 8\n五角星形 7 6 4\n请直接给出答案。"
+	DefaultScheduledTestCandyAnswer = "21"
 	ScheduledTestQualityModePelican = "pelican"
 	ScheduledTestQualityModeCandy   = "candy"
 	DefaultScheduledTestCron        = "*/5 * * * *"
@@ -170,11 +170,30 @@ func normalizeScheduledTestPlan(plan *ScheduledTestPlan) error {
 	if plan.QualityMode == ScheduledTestQualityModePelican && plan.PromptText == DefaultScheduledTestCandyPrompt {
 		plan.PromptText = DefaultScheduledTestPrompt
 	}
+	var err error
+	plan.ReasoningEffort, err = normalizeScheduledReasoningEffort(plan.ReasoningEffort)
+	if err != nil {
+		return err
+	}
 	plan.CronExpression = strings.TrimSpace(plan.CronExpression)
 	if plan.CronExpression == "" {
 		plan.CronExpression = DefaultScheduledTestCron
 	}
 	return nil
+}
+
+func normalizeScheduledReasoningEffort(raw string) (string, error) {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	if value == "" || value == "auto" || value == "automatic" {
+		return "", nil
+	}
+	value = strings.NewReplacer("-", "", "_", "", " ", "").Replace(value)
+	switch value {
+	case "none", "minimal", "low", "medium", "high", "xhigh", "max":
+		return value, nil
+	default:
+		return "", fmt.Errorf("unsupported scheduled test reasoning effort")
+	}
 }
 
 // DeletePlan removes a plan and its results (via CASCADE).
