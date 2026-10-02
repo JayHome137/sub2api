@@ -15,6 +15,7 @@ var _ OpsRepository = (*stubOpsRepo)(nil)
 type stubOpsRepo struct {
 	OpsRepository
 	overview *OpsDashboardOverview
+	billing  *BillingAnomalySnapshot
 	err      error
 }
 
@@ -26,6 +27,13 @@ func (s *stubOpsRepo) GetDashboardOverview(ctx context.Context, filter *OpsDashb
 		return s.overview, nil
 	}
 	return &OpsDashboardOverview{}, nil
+}
+
+func (s *stubOpsRepo) GetBillingAnomalySnapshot(context.Context, time.Time, time.Time) (*BillingAnomalySnapshot, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.billing, nil
 }
 
 func TestComputeGroupAvailableRatio(t *testing.T) {
@@ -249,6 +257,96 @@ func TestComputeRuleMetricNewIndicators(t *testing.T) {
 				return
 			}
 			require.InDelta(t, tt.wantValue, gotValue, 0.0001)
+		})
+	}
+}
+
+func TestComputeRuleMetricLatencyPercentiles(t *testing.T) {
+	t.Parallel()
+
+	p95 := 2400
+	p99 := 4100
+	svc := &OpsAlertEvaluatorService{
+		opsRepo: &stubOpsRepo{overview: &OpsDashboardOverview{
+			Duration: OpsPercentiles{P95: &p95, P99: &p99},
+		}},
+	}
+	start := time.Now().UTC().Add(-5 * time.Minute)
+	end := time.Now().UTC()
+
+	for _, tc := range []struct {
+		metric string
+		want   float64
+	}{
+		{metric: "p95_latency_ms", want: 2400},
+		{metric: "p99_latency_ms", want: 4100},
+	} {
+		t.Run(tc.metric, func(t *testing.T) {
+			t.Parallel()
+			value, ok := svc.computeRuleMetric(context.Background(), &OpsAlertRule{MetricType: tc.metric}, nil, start, end, "", nil)
+			require.True(t, ok)
+			require.Equal(t, tc.want, value)
+		})
+	}
+
+	t.Run("missing percentile is unavailable", func(t *testing.T) {
+		t.Parallel()
+		svc := &OpsAlertEvaluatorService{opsRepo: &stubOpsRepo{overview: &OpsDashboardOverview{}}}
+		value, ok := svc.computeRuleMetric(context.Background(), &OpsAlertRule{MetricType: "p95_latency_ms"}, nil, start, end, "", nil)
+		require.False(t, ok)
+		require.Zero(t, value)
+	})
+}
+
+func TestBillingAnomalySnapshotRatios(t *testing.T) {
+	t.Parallel()
+
+	snapshot := &BillingAnomalySnapshot{
+		MeteredRequests:                200,
+		ZeroCostRequests:               12,
+		PreviousWindowZeroCostRequests: 5,
+		WindowCostUSD:                  30,
+		PreviousWindowCostUSD:          20,
+	}
+	require.InDelta(t, 6, snapshot.ZeroCostRatio(), 0.0001)
+	require.Equal(t, float64(7), snapshot.ZeroCostRequestDelta())
+	spike, ok := snapshot.CostSpikeRatio()
+	require.True(t, ok)
+	require.InDelta(t, 150, spike, 0.0001)
+
+	snapshot.MeteredRequests = 0
+	require.Zero(t, snapshot.ZeroCostRatio())
+	_, ok = (&BillingAnomalySnapshot{WindowCostUSD: 3}).CostSpikeRatio()
+	require.False(t, ok, "a missing previous-window baseline must not alert")
+}
+
+func TestComputeBillingAnomalyMetrics(t *testing.T) {
+	t.Parallel()
+
+	svc := &OpsAlertEvaluatorService{opsRepo: &stubOpsRepo{billing: &BillingAnomalySnapshot{
+		MeteredRequests:                100,
+		ZeroCostRequests:               4,
+		PreviousWindowZeroCostRequests: 1,
+		WindowCostUSD:                  6,
+		PreviousWindowCostUSD:          3,
+		NegativeBalanceUsers:           2,
+	}}}
+	start := time.Now().UTC().Add(-5 * time.Minute)
+	end := time.Now().UTC()
+	for _, tc := range []struct {
+		metric string
+		want   float64
+	}{
+		{OpsMetricBillingZeroCostRequests, 4},
+		{OpsMetricBillingZeroCostRatio, 4},
+		{OpsMetricBillingZeroCostRequestsDelta, 3},
+		{OpsMetricBillingCostSpikeRatio, 200},
+		{OpsMetricBillingNegativeBalanceUsers, 2},
+	} {
+		t.Run(tc.metric, func(t *testing.T) {
+			value, ok := svc.computeRuleMetric(context.Background(), &OpsAlertRule{MetricType: tc.metric}, nil, start, end, "", nil)
+			require.True(t, ok)
+			require.Equal(t, tc.want, value)
 		})
 	}
 }

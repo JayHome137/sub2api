@@ -164,3 +164,17 @@ func TestResponsesStreamEvent_CreatedAtSurvivesUnmarshalRemarshal(t *testing.T) 
 
 	require.EqualValues(t, 1700000123, requireCreatedAt(t, responseObjectOf(t, evt)))
 }
+
+func TestResponsesStreamEvent_FloatingCreatedAtPreservesUsage(t *testing.T) {
+	upstream := []byte(`{"type":"response.completed","response":{"id":"resp_10","object":"response",` +
+		`"created_at":1790892388.0,"model":"deepseek-v4-flash","status":"completed","output":[],` +
+		`"usage":{"input_tokens":5,"output_tokens":10,"total_tokens":15}}}`)
+
+	var evt ResponsesStreamEvent
+	require.NoError(t, json.Unmarshal(upstream, &evt))
+	require.EqualValues(t, 1790892388, evt.Response.CreatedAt)
+	require.NotNil(t, evt.Response.Usage)
+	require.Equal(t, 5, evt.Response.Usage.InputTokens)
+	require.Equal(t, 10, evt.Response.Usage.OutputTokens)
+	require.EqualValues(t, 1790892388, requireCreatedAt(t, responseObjectOf(t, evt)))
+}

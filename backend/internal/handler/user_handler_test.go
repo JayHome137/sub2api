@@ -471,6 +471,10 @@ func (s *userHandlerEmailCacheStub) DeleteVerificationCode(context.Context, stri
 	return nil
 }
 
+func (s *userHandlerEmailCacheStub) VerifyVerificationCode(context.Context, string, string, int) (int, bool, error) {
+	return 0, false, nil
+}
+
 func (s *userHandlerEmailCacheStub) GetNotifyVerifyCode(context.Context, string) (*service.VerificationCodeData, error) {
 	return nil, nil
 }
@@ -493,6 +497,10 @@ func (s *userHandlerEmailCacheStub) SetPasswordResetToken(context.Context, strin
 
 func (s *userHandlerEmailCacheStub) DeletePasswordResetToken(context.Context, string) error {
 	return nil
+}
+
+func (s *userHandlerEmailCacheStub) ConsumePasswordResetToken(context.Context, string, string) (bool, error) {
+	return false, nil
 }
 
 func (s *userHandlerEmailCacheStub) IsPasswordResetEmailInCooldown(context.Context, string) bool {

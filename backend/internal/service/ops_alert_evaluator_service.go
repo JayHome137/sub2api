@@ -18,10 +18,12 @@ import (
 const (
 	opsAlertEvaluatorJobName = "ops_alert_evaluator"
 
-	opsAlertEvaluatorTimeout         = 45 * time.Second
-	opsAlertEvaluatorLeaderLockKey   = "ops:alert:evaluator:leader"
-	opsAlertEvaluatorLeaderLockTTL   = 90 * time.Second
-	opsAlertEvaluatorSkipLogInterval = 1 * time.Minute
+	opsAlertEvaluatorTimeout             = 45 * time.Second
+	opsAlertEvaluatorLeaderLockKey       = "ops:alert:evaluator:leader"
+	opsAlertEvaluatorLeaderLockTTL       = 90 * time.Second
+	opsAlertEvaluatorSkipLogInterval     = 1 * time.Minute
+	opsBillingNegativeBalanceBaselineKey = "ops:billing:negative_balance_users:baseline"
+	opsBillingNegativeBalanceBaselineTTL = time.Hour
 )
 
 var opsAlertEvaluatorReleaseScript = redis.NewScript(`
@@ -445,6 +447,15 @@ func (s *OpsAlertEvaluatorService) computeRuleMetric(
 		return 0, false
 	}
 	switch strings.TrimSpace(rule.MetricType) {
+	case OpsMetricBillingZeroCostRequests,
+		OpsMetricBillingZeroCostRatio,
+		OpsMetricBillingZeroCostRequestsDelta,
+		OpsMetricBillingCostSpikeRatio,
+		OpsMetricBillingNegativeBalanceUsers,
+		OpsMetricBillingNegativeBalanceDelta:
+		return s.computeBillingAnomalyMetric(ctx, rule, start, end)
+	}
+	switch strings.TrimSpace(rule.MetricType) {
 	case "cpu_usage_percent":
 		if systemMetrics != nil && systemMetrics.CPUUsagePercent != nil {
 			return *systemMetrics.CPUUsagePercent, true
@@ -598,6 +609,16 @@ func (s *OpsAlertEvaluatorService) computeRuleMetric(
 	}
 
 	switch strings.TrimSpace(rule.MetricType) {
+	case "p95_latency_ms":
+		if overview.Duration.P95 == nil {
+			return 0, false
+		}
+		return float64(*overview.Duration.P95), true
+	case "p99_latency_ms":
+		if overview.Duration.P99 == nil {
+			return 0, false
+		}
+		return float64(*overview.Duration.P99), true
 	case "success_rate":
 		if overview.RequestCountSLA <= 0 {
 			return 0, false
@@ -616,6 +637,57 @@ func (s *OpsAlertEvaluatorService) computeRuleMetric(
 	default:
 		return 0, false
 	}
+}
+
+func (s *OpsAlertEvaluatorService) computeBillingAnomalyMetric(ctx context.Context, rule *OpsAlertRule, start, end time.Time) (float64, bool) {
+	if s == nil || s.opsRepo == nil || rule == nil || !end.After(start) {
+		return 0, false
+	}
+	if end.Sub(start) > opsBillingMetricMaxWindow {
+		start = end.Add(-opsBillingMetricMaxWindow)
+	}
+	snapshot, err := s.opsRepo.GetBillingAnomalySnapshot(ctx, start, end)
+	if err != nil || snapshot == nil {
+		return 0, false
+	}
+	switch strings.TrimSpace(rule.MetricType) {
+	case OpsMetricBillingZeroCostRequests:
+		return float64(snapshot.ZeroCostRequests), true
+	case OpsMetricBillingZeroCostRatio:
+		if snapshot.MeteredRequests == 0 {
+			return 0, false
+		}
+		return snapshot.ZeroCostRatio(), true
+	case OpsMetricBillingZeroCostRequestsDelta:
+		return snapshot.ZeroCostRequestDelta(), true
+	case OpsMetricBillingCostSpikeRatio:
+		return snapshot.CostSpikeRatio()
+	case OpsMetricBillingNegativeBalanceUsers:
+		return float64(snapshot.NegativeBalanceUsers), true
+	case OpsMetricBillingNegativeBalanceDelta:
+		return s.negativeBalanceUserDelta(ctx, snapshot.NegativeBalanceUsers)
+	default:
+		return 0, false
+	}
+}
+
+func (s *OpsAlertEvaluatorService) negativeBalanceUserDelta(ctx context.Context, current int64) (float64, bool) {
+	if s == nil || s.redisClient == nil {
+		return 0, false
+	}
+	created, err := s.redisClient.SetNX(ctx, opsBillingNegativeBalanceBaselineKey, strconv.FormatInt(current, 10), opsBillingNegativeBalanceBaselineTTL).Result()
+	if err != nil || created {
+		return 0, false
+	}
+	raw, err := s.redisClient.Get(ctx, opsBillingNegativeBalanceBaselineKey).Result()
+	if err != nil {
+		return 0, false
+	}
+	baseline, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return float64(current - baseline), true
 }
 
 func compareMetric(value float64, operator string, threshold float64) bool {
