@@ -14,7 +14,7 @@
 
 **AI API 网关平台 - 订阅配额分发管理**
 
-[English](README.md) | 中文 | [日本語](README_JA.md)
+[English](README.md) | 中文
 
 </div>
 

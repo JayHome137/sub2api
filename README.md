@@ -14,7 +14,7 @@
 
 **AI API Gateway Platform for Subscription Quota Distribution**
 
-English | [中文](README_CN.md) | [日本語](README_JA.md)
+English | [中文](README_CN.md)
 
 </div>
 
