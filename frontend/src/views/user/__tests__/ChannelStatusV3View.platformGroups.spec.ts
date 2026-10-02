@@ -138,8 +138,11 @@ describe('ChannelStatusV3View platform grouping', () => {
           EmptyState: true,
           ChannelMonitorV3Card: defineComponent({
             name: 'ChannelMonitorV3Card',
-            props: ['row'],
-            setup: (props) => () => h('div', { 'data-testid': `card-${props.row.group_id}` }, props.row.group_name),
+            props: ['row', 'qualityRefreshRevision'],
+            setup: (props) => () => h('div', {
+              'data-testid': `card-${props.row.group_id}`,
+              'data-quality-refresh-revision': props.qualityRefreshRevision,
+            }, props.row.group_name),
           }),
         },
       },
@@ -151,6 +154,19 @@ describe('ChannelStatusV3View platform grouping', () => {
     expect(openaiCards.map((card) => card.text())).toEqual(['GPT', 'Codex'])
   })
 
+  it('advances the quality history revision after a successful manual refresh', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const card = wrapper.get('[data-testid="card-1"]')
+    const initialRevision = Number(card.attributes('data-quality-refresh-revision'))
+    expect(initialRevision).toBeGreaterThan(0)
+
+    await wrapper.findAll('button')[0]!.trigger('click')
+    await flushPromises()
+
+    expect(Number(card.attributes('data-quality-refresh-revision'))).toBeGreaterThan(initialRevision)
+  })
+
   function mountView() {
     return mount(ChannelStatusV3View, {
       global: {
@@ -160,8 +176,11 @@ describe('ChannelStatusV3View platform grouping', () => {
           EmptyState: true,
           ChannelMonitorV3Card: defineComponent({
             name: 'ChannelMonitorV3Card',
-            props: ['row'],
-            setup: (props) => () => h('div', { 'data-testid': `card-${props.row.group_id}` }, props.row.group_name),
+            props: ['row', 'qualityRefreshRevision'],
+            setup: (props) => () => h('div', {
+              'data-testid': `card-${props.row.group_id}`,
+              'data-quality-refresh-revision': props.qualityRefreshRevision,
+            }, props.row.group_name),
           }),
         },
       },

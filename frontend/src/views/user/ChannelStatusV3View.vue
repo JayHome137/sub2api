@@ -46,6 +46,7 @@
                 :key="row.group_id ?? `${row.platform}:${row.group_name ?? ''}`"
                 :row="row"
                 :user-rate-multiplier="getUserRateMultiplier(row.group_id)"
+                :quality-refresh-revision="qualityRefreshRevision"
                 :countdown-seconds="countdownSeconds"
                 :timeline-length="timelineLength"
                 :coverage="matrix?.coverage"
@@ -65,6 +66,7 @@
               <ChannelMonitorV3Card
                 :row="item.row"
                 :user-rate-multiplier="getUserRateMultiplier(item.row.group_id)"
+                :quality-refresh-revision="qualityRefreshRevision"
                 :countdown-seconds="countdownSeconds"
                 :timeline-length="timelineLength"
                 :coverage="matrix?.coverage"
@@ -113,6 +115,7 @@ const monitorDisabled = ref(false)
 const userGroupRates = ref<Record<number, number>>({})
 const groupExclusive = ref<Record<number, boolean>>({})
 const countdownSeconds = ref(0)
+const qualityRefreshRevision = ref(0)
 interface RangeData {
   snapshot: MonitorSnapshot
   matrix: MonitorMatrixResponse
@@ -216,6 +219,7 @@ function showRange(data: RangeData) {
   monitorDisabled.value = false
   snapshot.value = data.snapshot
   matrix.value = data.matrix
+  qualityRefreshRevision.value += 1
   scheduleRefresh(Math.ceil((data.expiresAt - Date.now()) / 1000))
 }
 

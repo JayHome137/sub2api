@@ -11,8 +11,8 @@
       </span>
     </div>
 
-    <div v-if="loading" class="pb-1 text-[10px] text-gray-400">{{ t('monitorCommon.qualityHistoryLoading') }}</div>
-    <div v-else-if="loadFailed" class="pb-1 text-[10px] text-red-500/90 dark:text-red-400/90">{{ t('monitorCommon.qualityHistoryFailed') }}</div>
+    <div v-if="loading && !hasLoaded" class="pb-1 text-[10px] text-gray-400">{{ t('monitorCommon.qualityHistoryLoading') }}</div>
+    <div v-else-if="loadFailed && !events.length" class="pb-1 text-[10px] text-red-500/90 dark:text-red-400/90">{{ t('monitorCommon.qualityHistoryFailed') }}</div>
     <div v-else-if="!events.length" class="pb-1 text-[10px] text-gray-400">{{ t('monitorCommon.qualityHistoryEmpty') }}</div>
 
     <div v-else class="quality-history-strip flex flex-wrap gap-1.5" @mouseleave="clearHover">
@@ -87,15 +87,18 @@ import { getQualityEventArtwork, getQualityEvents, type MonitorQualityEvent } fr
 const props = withDefaults(defineProps<{
   groupId?: number
   enabled?: boolean
+  refreshRevision?: number
 }>(), {
   groupId: undefined,
   enabled: false,
+  refreshRevision: 0,
 })
 
 const { t, locale } = useI18n()
 const events = ref<MonitorQualityEvent[]>([])
 const loading = ref(false)
 const loadFailed = ref(false)
+const hasLoaded = ref(false)
 const hovered = ref(false)
 const hoveredIndex = ref<number | null>(null)
 const hoveredArtwork = ref('')
@@ -140,15 +143,19 @@ async function load() {
   try {
     const list = await getQualityEvents(props.groupId, 30)
     events.value = Array.isArray(list) ? list : []
+    hasLoaded.value = true
   } catch {
     loadFailed.value = true
-    events.value = []
   } finally {
     loading.value = false
   }
 }
 
-watch([() => props.groupId, () => props.enabled], () => { void load() }, { immediate: true })
+watch(
+  [() => props.groupId, () => props.enabled, () => props.refreshRevision],
+  () => { void load() },
+  { immediate: true },
+)
 
 function formatChipTime(value: string) {
   const date = new Date(value)

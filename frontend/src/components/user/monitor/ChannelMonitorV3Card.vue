@@ -44,6 +44,7 @@
     <ChannelMonitorV3QualityHistory
       :group-id="row.group_id ?? undefined"
       :enabled="row.quality_enabled ?? false"
+      :refresh-revision="qualityRefreshRevision"
     />
   </article>
 </template>
@@ -65,8 +66,10 @@ const props = withDefaults(defineProps<{
   timelineLength: number
   coverage?: MonitorCoverage
   userRateMultiplier?: number | null
+  qualityRefreshRevision?: number
   showPlatformBadge?: boolean
 }>(), {
+  qualityRefreshRevision: 0,
   showPlatformBadge: true,
 })
 const { t } = useI18n()
