@@ -184,6 +184,20 @@ func (s *emailCacheStub) DeleteVerificationCode(ctx context.Context, email strin
 	return nil
 }
 
+func (s *emailCacheStub) VerifyVerificationCode(_ context.Context, _ string, code string, maxAttempts int) (int, bool, error) {
+	if s.err != nil || s.data == nil || s.data.Attempts >= maxAttempts {
+		if s.data != nil {
+			return s.data.Attempts, false, nil
+		}
+		return 0, false, s.err
+	}
+	if s.data.Code == code {
+		return s.data.Attempts, true, nil
+	}
+	s.data.Attempts++
+	return s.data.Attempts, false, nil
+}
+
 func (s *emailCacheStub) GetNotifyVerifyCode(ctx context.Context, email string) (*VerificationCodeData, error) {
 	return nil, nil
 }
@@ -206,6 +220,10 @@ func (s *emailCacheStub) SetPasswordResetToken(ctx context.Context, email string
 
 func (s *emailCacheStub) DeletePasswordResetToken(ctx context.Context, email string) error {
 	return nil
+}
+
+func (s *emailCacheStub) ConsumePasswordResetToken(context.Context, string, string) (bool, error) {
+	return false, nil
 }
 
 func (s *emailCacheStub) IsPasswordResetEmailInCooldown(ctx context.Context, email string) bool {

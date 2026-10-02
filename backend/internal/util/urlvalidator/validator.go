@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -105,6 +106,45 @@ func ValidateHTTPSURL(raw string, opts ValidationOptions) (string, error) {
 	return ValidateHTTPURL(raw, false, opts)
 }
 
+var blockedResolvedPrefixes = func() []netip.Prefix {
+	ranges := []string{
+		"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8",
+		"168.63.129.16/32", "169.254.0.0/16", "172.16.0.0/12",
+		"192.0.0.0/24", "192.0.2.0/24", "192.88.99.0/24", "192.168.0.0/16",
+		"198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24",
+		"224.0.0.0/4", "240.0.0.0/4",
+		"2001::/23", "2001:db8::/32", "2002::/16", "3fff::/20",
+	}
+	prefixes := make([]netip.Prefix, 0, len(ranges))
+	for _, cidr := range ranges {
+		prefixes = append(prefixes, netip.MustParsePrefix(cidr))
+	}
+	return prefixes
+}()
+
+var globalUnicastV6Prefix = netip.MustParsePrefix("2000::/3")
+
+func isPublicResolvedIP(ip net.IP) bool {
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok || addr.Zone() != "" {
+		return false
+	}
+	addr = addr.Unmap()
+	if !addr.IsGlobalUnicast() || addr.IsPrivate() || addr.IsLoopback() ||
+		addr.IsLinkLocalUnicast() || addr.IsMulticast() || addr.IsUnspecified() {
+		return false
+	}
+	if addr.Is6() && !globalUnicastV6Prefix.Contains(addr) {
+		return false
+	}
+	for _, prefix := range blockedResolvedPrefixes {
+		if prefix.Contains(addr) {
+			return false
+		}
+	}
+	return true
+}
+
 // ValidateResolvedIP 验证 DNS 解析后的 IP 地址是否安全
 // 用于防止 DNS Rebinding 攻击：在实际 HTTP 请求时调用此函数验证解析后的 IP
 func ValidateResolvedIP(host string) error {
@@ -117,8 +157,7 @@ func ValidateResolvedIP(host string) error {
 	}
 
 	for _, ip := range ips {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
-			ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		if !isPublicResolvedIP(ip) {
 			return fmt.Errorf("resolved ip %s is not allowed", ip.String())
 		}
 	}
@@ -173,7 +212,7 @@ func isBlockedHost(host string) bool {
 		return true
 	}
 	if ip := net.ParseIP(host); ip != nil {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		if !isPublicResolvedIP(ip) {
 			return true
 		}
 	}

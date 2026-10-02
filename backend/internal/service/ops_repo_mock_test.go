@@ -89,6 +89,10 @@ func (m *opsRepoMock) GetDashboardOverview(ctx context.Context, filter *OpsDashb
 	return &OpsDashboardOverview{}, nil
 }
 
+func (m *opsRepoMock) GetBillingAnomalySnapshot(ctx context.Context, start, end time.Time) (*BillingAnomalySnapshot, error) {
+	return &BillingAnomalySnapshot{}, nil
+}
+
 func (m *opsRepoMock) GetThroughputTrend(ctx context.Context, filter *OpsDashboardFilter, bucketSeconds int) (*OpsThroughputTrendResponse, error) {
 	return &OpsThroughputTrendResponse{}, nil
 }

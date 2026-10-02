@@ -37,6 +37,7 @@ type EmailCache interface {
 	GetVerificationCode(ctx context.Context, email string) (*VerificationCodeData, error)
 	SetVerificationCode(ctx context.Context, email string, data *VerificationCodeData, ttl time.Duration) error
 	DeleteVerificationCode(ctx context.Context, email string) error
+	VerifyVerificationCode(ctx context.Context, email, code string, maxAttempts int) (attempts int, matched bool, err error)
 
 	// Notify email verification code methods
 	GetNotifyVerifyCode(ctx context.Context, email string) (*VerificationCodeData, error)
@@ -47,6 +48,7 @@ type EmailCache interface {
 	GetPasswordResetToken(ctx context.Context, email string) (*PasswordResetTokenData, error)
 	SetPasswordResetToken(ctx context.Context, email string, data *PasswordResetTokenData, ttl time.Duration) error
 	DeletePasswordResetToken(ctx context.Context, email string) error
+	ConsumePasswordResetToken(ctx context.Context, email, token string) (bool, error)
 
 	// Password reset email cooldown methods
 	// Returns true if in cooldown period (email was sent recently)
@@ -376,37 +378,18 @@ func (s *EmailService) SendVerifyCode(ctx context.Context, email, siteName strin
 
 // VerifyCode 验证验证码
 func (s *EmailService) VerifyCode(ctx context.Context, email, code string) error {
-	data, err := s.cache.GetVerificationCode(ctx, email)
-	if err != nil || data == nil {
+	attempts, matched, err := s.cache.VerifyVerificationCode(ctx, email, code, maxVerifyCodeAttempts)
+	if err != nil {
+		slog.Error("failed to atomically verify email code", "email", email, "error", err)
 		return ErrInvalidVerifyCode
 	}
-
-	// 检查是否已达到最大尝试次数
-	if data.Attempts >= maxVerifyCodeAttempts {
+	if matched {
+		return nil
+	}
+	if attempts >= maxVerifyCodeAttempts {
 		return ErrVerifyCodeMaxAttempts
 	}
-
-	// 验证码不匹配 (constant-time comparison to prevent timing attacks)
-	if subtle.ConstantTimeCompare([]byte(data.Code), []byte(code)) != 1 {
-		data.Attempts++
-		remaining := time.Until(data.ExpiresAt)
-		if remaining <= 0 {
-			return ErrInvalidVerifyCode
-		}
-		if err := s.cache.SetVerificationCode(ctx, email, data, remaining); err != nil {
-			slog.Error("failed to update verification attempt count", "email", email, "error", err)
-		}
-		if data.Attempts >= maxVerifyCodeAttempts {
-			return ErrVerifyCodeMaxAttempts
-		}
-		return ErrInvalidVerifyCode
-	}
-
-	// 验证成功，删除验证码
-	if err := s.cache.DeleteVerificationCode(ctx, email); err != nil {
-		slog.Error("failed to delete verification code after success", "email", email, "error", err)
-	}
-	return nil
+	return ErrInvalidVerifyCode
 }
 
 // buildVerifyCodeEmailBody 构建验证码邮件HTML内容
@@ -572,25 +555,21 @@ func (s *EmailService) VerifyPasswordResetToken(ctx context.Context, email, toke
 	if err != nil || data == nil {
 		return ErrInvalidResetToken
 	}
-
-	// Use constant-time comparison to prevent timing attacks
 	if subtle.ConstantTimeCompare([]byte(data.Token), []byte(token)) != 1 {
 		return ErrInvalidResetToken
 	}
-
 	return nil
 }
 
-// ConsumePasswordResetToken verifies and deletes the token (one-time use)
+// ConsumePasswordResetToken verifies and atomically deletes the token (one-time use).
 func (s *EmailService) ConsumePasswordResetToken(ctx context.Context, email, token string) error {
-	// Verify first
-	if err := s.VerifyPasswordResetToken(ctx, email, token); err != nil {
-		return err
+	consumed, err := s.cache.ConsumePasswordResetToken(ctx, email, token)
+	if err != nil {
+		slog.Error("failed to atomically consume password reset token", "email", email, "error", err)
+		return ErrInvalidResetToken
 	}
-
-	// Delete after verification (one-time use)
-	if err := s.cache.DeletePasswordResetToken(ctx, email); err != nil {
-		slog.Error("failed to delete password reset token after consumption", "email", email, "error", err)
+	if !consumed {
+		return ErrInvalidResetToken
 	}
 	return nil
 }

@@ -381,6 +381,35 @@ type ResponsesResponse struct {
 	Error *ResponsesError `json:"error,omitempty"`
 }
 
+// UnmarshalJSON accepts integer and floating-point unix timestamps from
+// OpenAI-compatible upstreams while keeping the public Go field and wire
+// representation as int64.
+func (r *ResponsesResponse) UnmarshalJSON(data []byte) error {
+	type responseAlias ResponsesResponse
+	var wire struct {
+		*responseAlias
+		CreatedAt json.RawMessage `json:"created_at"`
+	}
+	wire.responseAlias = (*responseAlias)(r)
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	createdAt := bytes.TrimSpace(wire.CreatedAt)
+	if len(createdAt) == 0 || bytes.Equal(createdAt, []byte("null")) {
+		r.CreatedAt = 0
+		return nil
+	}
+	if err := json.Unmarshal(createdAt, &r.CreatedAt); err == nil {
+		return nil
+	}
+	var timestamp float64
+	if err := json.Unmarshal(createdAt, &timestamp); err != nil {
+		return err
+	}
+	r.CreatedAt = int64(timestamp)
+	return nil
+}
+
 // ResponsesError describes an error in a failed response.
 type ResponsesError struct {
 	Code    string `json:"code"`

@@ -1,6 +1,9 @@
 package urlvalidator
 
-import "testing"
+import (
+	"net"
+	"testing"
+)
 
 func TestValidateURLFormat(t *testing.T) {
 	if _, err := ValidateURLFormat("", false); err == nil {
@@ -79,6 +82,8 @@ func TestIsBlockedHost(t *testing.T) {
 		"localhost", "LOCALHOST", "foo.localhost", " 127.0.0.1 ",
 		"127.0.0.1", "::1", "10.0.0.5", "172.16.0.1", "192.168.1.1",
 		"169.254.169.254", "0.0.0.0", "::", "fe80::1", "fc00::1", "::ffff:127.0.0.1",
+		"100.64.0.1", "100.100.100.200", "198.18.0.1", "224.0.1.1", "240.0.0.1",
+		"192.0.2.1", "2001:db8::1", "2002::1", "3fff::1", "2001:20::1",
 	} {
 		if !IsBlockedHost(host) {
 			t.Fatalf("expected %q to be blocked", host)
@@ -87,6 +92,23 @@ func TestIsBlockedHost(t *testing.T) {
 	for _, host := range []string{"example.com", "cdn.example.com", "93.184.216.34", "8.8.8.8", "2606:4700:4700::1111", ""} {
 		if IsBlockedHost(host) {
 			t.Fatalf("expected %q to be allowed", host)
+		}
+	}
+}
+
+func TestIsPublicResolvedIP(t *testing.T) {
+	for _, value := range []string{
+		"0.0.0.1", "100.64.0.1", "100.100.100.200", "168.63.129.16",
+		"192.0.0.8", "198.18.0.1", "224.0.0.1", "240.0.0.1",
+		"2001:db8::1", "2002::1", "3fff::1", "2001:20::1", "::ffff:100.64.0.1",
+	} {
+		if isPublicResolvedIP(net.ParseIP(value)) {
+			t.Errorf("expected %q to be blocked", value)
+		}
+	}
+	for _, value := range []string{"8.8.8.8", "93.184.216.34", "2606:4700:4700::1111"} {
+		if !isPublicResolvedIP(net.ParseIP(value)) {
+			t.Errorf("expected %q to be allowed", value)
 		}
 	}
 }

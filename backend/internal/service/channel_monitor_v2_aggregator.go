@@ -20,6 +20,8 @@ const (
 	// Always refresh a small trailing window so late writes land without
 	// re-aggregating large history every tick.
 	channelMonitorV2RecentOverlap = 10 * time.Minute
+	// Bound live recovery work after downtime; older gaps are handled by retention backfill.
+	channelMonitorV2LiveMaxCatchUp = 6 * time.Hour
 
 	// Gentle backfill: small adaptive chunks, never default 24h hammering.
 	// Initial historical chunk after the 2h seed.
@@ -254,8 +256,23 @@ func (s *ChannelMonitorV2Aggregator) runOnce() {
 		return
 	}
 
-	// Always refresh the trailing overlap so late usage/error writes land in 1m facts.
-	if err := s.repo.RecomputeRange(ctx, now.Add(-channelMonitorV2RecentOverlap), now); err != nil {
+	// Refresh the overlap and any live gap since the last successful aggregation.
+	watermark, err := s.repo.GetAggregationWatermark(ctx)
+	if err != nil {
+		logger.LegacyPrintf("service.channel_monitor_v2", "[ChannelMonitorV2] reload watermark failed: %v", err)
+		return
+	}
+	liveStart := now.Add(-channelMonitorV2RecentOverlap)
+	if watermark != nil && !watermark.DataThrough.IsZero() {
+		dataThrough := watermark.DataThrough.UTC().Truncate(time.Minute)
+		if dataThrough.Before(liveStart) {
+			liveStart = dataThrough
+		}
+	}
+	if floor := now.Add(-channelMonitorV2LiveMaxCatchUp); liveStart.Before(floor) {
+		liveStart = floor
+	}
+	if err := s.repo.RecomputeRange(ctx, liveStart, now); err != nil {
 		logger.LegacyPrintf("service.channel_monitor_v2", "[ChannelMonitorV2] overlap aggregation failed: %v", err)
 		return
 	}

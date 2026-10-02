@@ -2,7 +2,9 @@ package repository
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -77,6 +79,64 @@ func (c *emailCache) DeleteVerificationCode(ctx context.Context, email string) e
 	return c.rdb.Del(ctx, key).Err()
 }
 
+// VerifyVerificationCode updates failed attempts or consumes a correct code atomically.
+func (c *emailCache) VerifyVerificationCode(ctx context.Context, email, code string, maxAttempts int) (attempts int, matched bool, err error) {
+	key := verifyCodeKey(email)
+	for retry := 0; retry < 8; retry++ {
+		attempts = 0
+		matched = false
+		err = c.rdb.Watch(ctx, func(tx *redis.Tx) error {
+			value, getErr := tx.Get(ctx, key).Result()
+			if getErr != nil {
+				return getErr
+			}
+			var data service.VerificationCodeData
+			if err := json.Unmarshal([]byte(value), &data); err != nil {
+				return err
+			}
+			attempts = data.Attempts
+			if data.Attempts >= maxAttempts {
+				return nil
+			}
+
+			if subtle.ConstantTimeCompare([]byte(data.Code), []byte(code)) == 1 {
+				_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+					pipe.Del(ctx, key)
+					return nil
+				})
+				if err == nil {
+					matched = true
+				}
+				return err
+			}
+
+			ttl, err := tx.PTTL(ctx, key).Result()
+			if err != nil {
+				return err
+			}
+			if ttl <= 0 {
+				return redis.Nil
+			}
+			data.Attempts++
+			attempts = data.Attempts
+			updated, err := json.Marshal(&data)
+			if err != nil {
+				return err
+			}
+			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				pipe.Set(ctx, key, updated, ttl)
+				return nil
+			})
+			return err
+		}, key)
+		if errors.Is(err, redis.TxFailedErr) {
+			continue
+		}
+		return attempts, matched, err
+	}
+	return attempts, false, errors.New("verification code changed too frequently")
+}
+
 // Password reset token methods
 
 func (c *emailCache) GetPasswordResetToken(ctx context.Context, email string) (*service.PasswordResetTokenData, error) {
@@ -104,6 +164,40 @@ func (c *emailCache) SetPasswordResetToken(ctx context.Context, email string, da
 func (c *emailCache) DeletePasswordResetToken(ctx context.Context, email string) error {
 	key := passwordResetKey(email)
 	return c.rdb.Del(ctx, key).Err()
+}
+
+// ConsumePasswordResetToken compares and deletes a reset token in one transaction.
+func (c *emailCache) ConsumePasswordResetToken(ctx context.Context, email, token string) (consumed bool, err error) {
+	key := passwordResetKey(email)
+	for retry := 0; retry < 8; retry++ {
+		consumed = false
+		err = c.rdb.Watch(ctx, func(tx *redis.Tx) error {
+			value, getErr := tx.Get(ctx, key).Result()
+			if getErr != nil {
+				return getErr
+			}
+			var data service.PasswordResetTokenData
+			if err := json.Unmarshal([]byte(value), &data); err != nil {
+				return err
+			}
+			if subtle.ConstantTimeCompare([]byte(data.Token), []byte(token)) != 1 {
+				return nil
+			}
+			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				pipe.Del(ctx, key)
+				return nil
+			})
+			if err == nil {
+				consumed = true
+			}
+			return err
+		}, key)
+		if errors.Is(err, redis.TxFailedErr) {
+			continue
+		}
+		return consumed, err
+	}
+	return false, errors.New("password reset token changed too frequently")
 }
 
 // Password reset email cooldown methods

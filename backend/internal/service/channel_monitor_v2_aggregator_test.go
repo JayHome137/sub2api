@@ -3,11 +3,66 @@
 package service
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+type channelMonitorV2AggregatorRepoStub struct {
+	ChannelMonitorV2Repository
+	watermark *ChannelMonitorV2AggregationWatermark
+	ranges    [][2]time.Time
+}
+
+func (s *channelMonitorV2AggregatorRepoStub) GetAggregationWatermark(context.Context) (*ChannelMonitorV2AggregationWatermark, error) {
+	return s.watermark, nil
+}
+
+func (s *channelMonitorV2AggregatorRepoStub) RecomputeRange(_ context.Context, start, end time.Time) error {
+	s.ranges = append(s.ranges, [2]time.Time{start, end})
+	return nil
+}
+
+func TestChannelMonitorV2AggregatorRecoversLiveGapWithinBound(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Minute)
+	dataThrough := now.Add(-35 * time.Minute)
+	repo := &channelMonitorV2AggregatorRepoStub{
+		watermark: &ChannelMonitorV2AggregationWatermark{
+			HasData:        true,
+			DataThrough:    dataThrough,
+			BackfillCursor: now.Add(-100 * 24 * time.Hour),
+		},
+	}
+	aggregator := NewChannelMonitorV2Aggregator(repo, nil, nil)
+
+	aggregator.runOnce()
+
+	require.NotEmpty(t, repo.ranges)
+	require.Equal(t, dataThrough, repo.ranges[0][0])
+	require.WithinDuration(t, now, repo.ranges[0][1], time.Minute)
+	require.Len(t, repo.ranges, 1, "live recovery must not move the historical backfill cursor")
+}
+
+func TestChannelMonitorV2AggregatorCapsLiveGapRecovery(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Minute)
+	repo := &channelMonitorV2AggregatorRepoStub{
+		watermark: &ChannelMonitorV2AggregationWatermark{
+			HasData:        true,
+			DataThrough:    now.Add(-24 * time.Hour),
+			BackfillCursor: now.Add(-100 * 24 * time.Hour),
+		},
+	}
+	aggregator := NewChannelMonitorV2Aggregator(repo, nil, nil)
+
+	aggregator.runOnce()
+
+	require.NotEmpty(t, repo.ranges)
+	require.WithinDuration(t, now.Add(-channelMonitorV2LiveMaxCatchUp), repo.ranges[0][0], time.Minute)
+	require.WithinDuration(t, now, repo.ranges[0][1], time.Minute)
+	require.Len(t, repo.ranges, 1, "bounded live recovery must leave older history to backfill")
+}
 
 func TestChannelMonitorV2MaxChunkForDepth(t *testing.T) {
 	now := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)

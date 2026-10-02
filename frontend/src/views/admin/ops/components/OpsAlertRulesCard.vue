@@ -48,7 +48,7 @@ const saving = ref(false)
 const editingId = ref<number | null>(null)
 const draft = ref<AlertRule | null>(null)
 
-type MetricGroup = 'system' | 'group' | 'account'
+type MetricGroup = 'system' | 'finance' | 'group' | 'account'
 
 interface MetricDefinition {
   type: MetricType
@@ -145,6 +145,24 @@ const metricDefinitions = computed(() => {
       unit: '%'
     },
     {
+      type: 'p95_latency_ms',
+      group: 'system',
+      label: t('admin.ops.alertRules.metrics.p95'),
+      description: t('admin.ops.alertRules.metricDescriptions.p95'),
+      recommendedOperator: '>',
+      recommendedThreshold: 2000,
+      unit: 'ms'
+    },
+    {
+      type: 'p99_latency_ms',
+      group: 'system',
+      label: t('admin.ops.alertRules.metrics.p99'),
+      description: t('admin.ops.alertRules.metricDescriptions.p99'),
+      recommendedOperator: '>',
+      recommendedThreshold: 3000,
+      unit: 'ms'
+    },
+    {
       type: 'cpu_usage_percent',
       group: 'system',
       label: t('admin.ops.alertRules.metrics.cpu'),
@@ -169,6 +187,58 @@ const metricDefinitions = computed(() => {
       description: t('admin.ops.alertRules.metricDescriptions.queueDepth'),
       recommendedOperator: '>',
       recommendedThreshold: 10
+    },
+
+    // Read-only billing health metrics.
+    {
+      type: 'billing_zero_cost_requests',
+      group: 'finance',
+      label: t('admin.ops.alertRules.metrics.billingZeroCostRequests'),
+      description: t('admin.ops.alertRules.metricDescriptions.billingZeroCostRequests'),
+      recommendedOperator: '>',
+      recommendedThreshold: 0
+    },
+    {
+      type: 'billing_zero_cost_ratio',
+      group: 'finance',
+      label: t('admin.ops.alertRules.metrics.billingZeroCostRatio'),
+      description: t('admin.ops.alertRules.metricDescriptions.billingZeroCostRatio'),
+      recommendedOperator: '>',
+      recommendedThreshold: 1,
+      unit: '%'
+    },
+    {
+      type: 'billing_zero_cost_requests_delta',
+      group: 'finance',
+      label: t('admin.ops.alertRules.metrics.billingZeroCostDelta'),
+      description: t('admin.ops.alertRules.metricDescriptions.billingZeroCostDelta'),
+      recommendedOperator: '>',
+      recommendedThreshold: 5
+    },
+    {
+      type: 'billing_cost_spike_ratio',
+      group: 'finance',
+      label: t('admin.ops.alertRules.metrics.billingCostSpikeRatio'),
+      description: t('admin.ops.alertRules.metricDescriptions.billingCostSpikeRatio'),
+      recommendedOperator: '>',
+      recommendedThreshold: 150,
+      unit: '%'
+    },
+    {
+      type: 'billing_negative_balance_users',
+      group: 'finance',
+      label: t('admin.ops.alertRules.metrics.billingNegativeBalanceUsers'),
+      description: t('admin.ops.alertRules.metricDescriptions.billingNegativeBalanceUsers'),
+      recommendedOperator: '>',
+      recommendedThreshold: 0
+    },
+    {
+      type: 'billing_negative_balance_users_delta',
+      group: 'finance',
+      label: t('admin.ops.alertRules.metrics.billingNegativeBalanceDelta'),
+      description: t('admin.ops.alertRules.metricDescriptions.billingNegativeBalanceDelta'),
+      recommendedOperator: '>',
+      recommendedThreshold: 0
     },
 
     // Group-level metrics (requires group_id filter)
@@ -266,7 +336,7 @@ const metricOptions = computed(() => {
     ]
   }
 
-  return [...buildGroup('system'), ...buildGroup('group'), ...buildGroup('account')]
+  return [...buildGroup('system'), ...buildGroup('finance'), ...buildGroup('group'), ...buildGroup('account')]
 })
 
 const operatorOptions = computed(() => {

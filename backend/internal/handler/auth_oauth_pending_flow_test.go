@@ -2821,6 +2821,10 @@ func (s *oauthPendingFlowEmailCacheStub) DeleteVerificationCode(_ context.Contex
 	return nil
 }
 
+func (s *oauthPendingFlowEmailCacheStub) VerifyVerificationCode(context.Context, string, string, int) (int, bool, error) {
+	return 0, false, nil
+}
+
 func (s *oauthPendingFlowEmailCacheStub) GetNotifyVerifyCode(context.Context, string) (*service.VerificationCodeData, error) {
 	return nil, nil
 }
@@ -2843,6 +2847,10 @@ func (s *oauthPendingFlowEmailCacheStub) SetPasswordResetToken(context.Context, 
 
 func (s *oauthPendingFlowEmailCacheStub) DeletePasswordResetToken(context.Context, string) error {
 	return nil
+}
+
+func (s *oauthPendingFlowEmailCacheStub) ConsumePasswordResetToken(context.Context, string, string) (bool, error) {
+	return false, nil
 }
 
 func (s *oauthPendingFlowEmailCacheStub) IsPasswordResetEmailInCooldown(context.Context, string) bool {
