@@ -20,7 +20,7 @@
 
 ## 关于本仓库
 
-本仓库是基于 [Wei-Shaw/sub2api](https://github.com/Wei-Shaw/sub2api) 的全栈定制分支，保留上游网关基础能力，集成 AIFOO 界面，并由本仓库构建和发布版本。
+本仓库是基于 [Wei-Shaw/sub2api](https://github.com/Wei-Shaw/sub2api) 的全栈定制分支，部分渠道监控和运维功能参考了 [kiss-kedaya/sub2api](https://github.com/kiss-kedaya/sub2api)，保留上游网关基础能力，集成 AIFOO 界面，并由本仓库构建和发布版本。
 
 上游通用功能和完整文档请见 [Wei-Shaw/sub2api](https://github.com/Wei-Shaw/sub2api)。
 
