@@ -20,7 +20,7 @@ English | [中文](README_CN.md)
 
 ## About this fork
 
-This repository is a customized full-stack fork of [Wei-Shaw/sub2api](https://github.com/Wei-Shaw/sub2api). It keeps the upstream gateway foundation, adds the AIFOO interface, and publishes releases from this repository.
+This repository is a customized full-stack fork of [Wei-Shaw/sub2api](https://github.com/Wei-Shaw/sub2api). Parts of its channel monitoring and operations features reference [kiss-kedaya/sub2api](https://github.com/kiss-kedaya/sub2api). It keeps the upstream gateway foundation, adds the AIFOO interface, and publishes releases from this repository.
 
 For the upstream project's general features and documentation, see [Wei-Shaw/sub2api](https://github.com/Wei-Shaw/sub2api).
 
