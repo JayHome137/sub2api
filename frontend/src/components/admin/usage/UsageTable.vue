@@ -230,6 +230,13 @@
               <span v-else class="text-gray-400 dark:text-gray-500">-</span>
               <span class="text-gray-400 dark:text-gray-500">{{ t('usage.latencyDuration') }}</span>
               <span class="font-medium tabular-nums" :class="LATENCY_TEXT_CLASSES[durationSeverity(row.duration_ms ?? 0)]">{{ formatDuration(row.duration_ms) }}</span>
+              <span class="text-gray-400 dark:text-gray-500">{{ t('usage.outputRate') }}</span>
+              <span
+                class="font-medium tabular-nums text-violet-600 dark:text-violet-400"
+                :title="t('usage.outputRateHint')"
+              >
+                {{ formatOutputRate(row.output_tokens, row.first_token_ms, row.duration_ms) }}
+              </span>
             </div>
           </div>
         </template>
@@ -687,6 +694,33 @@ const formatDuration = (ms: number | null | undefined): string => {
   const totalSec = Math.round(ms / 1000)
   if (totalSec < 3600) return `${Math.floor(totalSec / 60)}m ${totalSec % 60}s`
   return `${Math.floor(totalSec / 3600)}h ${Math.floor((totalSec % 3600) / 60)}m`
+}
+
+/** Average generated-token throughput after the first token, in output tokens/sec. */
+const MIN_OUTPUT_TOKENS_FOR_RATE = 20
+const MIN_GENERATION_WINDOW_MS_FOR_RATE = 500
+
+const formatOutputRate = (
+  outputTokens: number | null | undefined,
+  firstTokenMs: number | null | undefined,
+  durationMs: number | null | undefined,
+): string => {
+  if (outputTokens == null || firstTokenMs == null || durationMs == null) return '-'
+  const tokens = Number(outputTokens)
+  const firstToken = Number(firstTokenMs)
+  const duration = Number(durationMs)
+  const generationDuration = duration - firstToken
+  const durationsRoundToSameDisplay = formatDuration(firstTokenMs) === formatDuration(durationMs)
+  if (
+    !Number.isFinite(tokens) || tokens < MIN_OUTPUT_TOKENS_FOR_RATE
+    || !Number.isFinite(firstToken) || firstToken < 0
+    || !Number.isFinite(duration) || duration <= 0
+    || generationDuration < MIN_GENERATION_WINDOW_MS_FOR_RATE
+    || durationsRoundToSameDisplay
+  ) return '-'
+  const outputRate = tokens * 1000 / generationDuration
+  if (outputRate > tokens) return '-'
+  return `${outputRate.toFixed(1)} t/s`
 }
 
 // Cost tooltip functions
