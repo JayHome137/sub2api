@@ -96,7 +96,7 @@ jobs:
 
       - name: Validate pricing UI and incremental result refresh
         working-directory: frontend
-        run: pnpm exec vitest run src/components/admin/account/__tests__/ScheduledTestsPanel.refresh.spec.ts src/components/user/monitor/__tests__/ChannelMonitorV3QualityHistory.refresh.spec.ts src/views/admin/__tests__/UsageView.spec.ts src/i18n/__tests__/localesMessageCompile.spec.ts
+        run: pnpm exec vitest run src/components/admin/usage/__tests__/UsageTable.spec.ts src/components/admin/account/__tests__/ScheduledTestsPanel.refresh.spec.ts src/components/user/monitor/__tests__/ChannelMonitorV3QualityHistory.refresh.spec.ts src/views/admin/__tests__/UsageView.spec.ts src/i18n/__tests__/localesMessageCompile.spec.ts
 
       - name: Validate affected backend paths
         working-directory: backend
@@ -211,14 +211,10 @@ jobs:
           notes="$(cat <<'EOF'
           本版本更新内容：
 
-          - 修复渠道模型定价表单缺失中英文翻译、缓存价格及推理倍率标签显示异常。
-          - 更新内置模型价格目录，保留 GPT-5.6-Sol 的原定价及数据库内已保存的渠道自定义价格。
-          - 补齐 Claude Sonnet 5.5 定价缺失时的回退，避免误用旧模型价格；修复过滤思考块后空消息导致的兼容问题。
-          - 修复中转 SSE upstream_error 在输出前的备用账号切换，保留明确工具、权限和请求错误分类。
-          - 定时测试面板增量刷新历史记录，隐藏页面暂停轮询；保留糖果/鹈鹕展示和账号自动暂停开关。
-          - 修复 UsageView 导出测试的 XLSX mock，并补充余额并发预留、备用账号切换与前端交互回归验证。
+          - 管理员及用户用量记录页在“总耗时”下方新增输出速率（t/s），沿用 AIFOO 布局。
+          - 根据输出 Token 数与首 Token 后耗时计算平均生成速度；数据缺失、样本过少或时间窗口过短时显示横线。
+          - 补充管理员/用户显示与异常数据回归测试；不修改计费逻辑、模型价格、数据权限或数据库结构。
 
-          保留 AIFOO 界面与现有自定义检测逻辑；未引入数据库迁移。
           同步发布全栈镜像、隔离渲染器镜像和 Linux 更新控制面。
           EOF
           )"

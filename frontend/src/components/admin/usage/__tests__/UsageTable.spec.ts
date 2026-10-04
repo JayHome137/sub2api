@@ -87,6 +87,7 @@ const DataTableStub = {
         <slot name="cell-billing_mode" :row="row" />
         <slot name="cell-tokens" :row="row" />
         <slot name="cell-cost" :row="row" />
+        <slot name="cell-latency" :row="row" />
         <slot name="cell-request_id" :row="row" />
       </div>
     </div>
@@ -564,6 +565,7 @@ const DataTableStubWithUser = {
         <slot name="cell-billing_mode" :row="row" />
         <slot name="cell-tokens" :row="row" />
         <slot name="cell-cost" :row="row" />
+        <slot name="cell-latency" :row="row" />
       </div>
     </div>
   `,
@@ -638,5 +640,25 @@ describe('admin UsageTable deleted-user badge', () => {
 
     expect(wrapper.text()).not.toContain('Deleted')
     expect(wrapper.text()).toContain('active@test.com')
+  })
+})
+
+
+describe('output rate display', () => {
+  const renderRate = (overrides: Record<string, unknown> = {}, user = false) => mount(UsageTable, {
+    props: { data: [{ ...baseImageRow, billing_mode: 'token', output_tokens: 101, first_token_ms: 180, duration_ms: 1938, ...overrides }], loading: false, columns: [], showAccountBilling: !user, showUpstreamEndpoint: !user },
+    global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+  })
+  it.each([false, true])('shows the rate for user mode %s', (user) => {
+    const wrapper = renderRate({}, user)
+    expect(wrapper.text()).toContain('57.5 t/s')
+    expect(wrapper.text()).toContain('usage.outputRate')
+  })
+  it.each([
+    { first_token_ms: null }, { duration_ms: null }, { output_tokens: 0 },
+    { output_tokens: 19 }, { duration_ms: 180 }, { duration_ms: 100 },
+    { duration_ms: 500 }, { duration_ms: 900 }, { output_tokens: NaN },
+  ])('does not show a misleading rate for %j', (overrides) => {
+    expect(renderRate(overrides).text()).not.toContain('t/s')
   })
 })
