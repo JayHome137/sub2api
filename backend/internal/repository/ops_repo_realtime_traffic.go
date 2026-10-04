@@ -102,7 +102,7 @@ FROM combined`
 
 	// Keep "current" consistent with the dashboard overview semantics: last 1 minute.
 	// This remains "within the selected window" since end=start+window.
-	qpsCurrent, tpsCurrent, err := r.queryCurrentRates(ctx, filter, end)
+	qpsCurrent, tpsCurrent, _, err := r.queryCurrentRates(ctx, filter, end)
 	if err != nil {
 		return nil, err
 	}

@@ -87,7 +87,7 @@ func (r *opsRepository) getDashboardOverviewRaw(ctx context.Context, filter *ser
 	errorRate := safeDivideFloat64(float64(errorCountSLA), float64(requestCountSLA))
 	upstreamErrorRate := safeDivideFloat64(float64(upstreamExcl), float64(requestCountSLA))
 
-	qpsCurrent, tpsCurrent, err := r.queryCurrentRates(ctx, filter, end)
+	qpsCurrent, tpsCurrent, currentRequestCount, err := r.queryCurrentRates(ctx, filter, end)
 	if err != nil {
 		if isQueryTimeoutErr(err) {
 			degraded = true
@@ -155,6 +155,7 @@ func (r *opsRepository) getDashboardOverviewRaw(ctx context.Context, filter *ser
 			Peak:    tpsPeak,
 			Avg:     tpsAvg,
 		},
+		CurrentRequestCount: currentRequestCount,
 
 		Duration: duration,
 		TTFT:     ttft,
@@ -270,7 +271,7 @@ func (r *opsRepository) getDashboardOverviewPreaggregated(ctx context.Context, f
 	degraded := false
 
 	// Keep "current" rates as raw, to preserve realtime semantics.
-	qpsCurrent, tpsCurrent, err := r.queryCurrentRates(ctx, filter, end)
+	qpsCurrent, tpsCurrent, currentRequestCount, err := r.queryCurrentRates(ctx, filter, end)
 	if err != nil {
 		if isQueryTimeoutErr(err) {
 			degraded = true
@@ -338,6 +339,7 @@ func (r *opsRepository) getDashboardOverviewPreaggregated(ctx context.Context, f
 			Peak:    tpsPeak,
 			Avg:     tpsAvg,
 		},
+		CurrentRequestCount: currentRequestCount,
 
 		Duration: duration,
 		TTFT:     ttft,
@@ -902,21 +904,22 @@ FROM ops_error_logs
 	return errorTotal, businessLimited, errorCountSLA, upstreamExcl429529, upstream429, upstream529, nil
 }
 
-func (r *opsRepository) queryCurrentRates(ctx context.Context, filter *service.OpsDashboardFilter, end time.Time) (qpsCurrent float64, tpsCurrent float64, err error) {
+func (r *opsRepository) queryCurrentRates(ctx context.Context, filter *service.OpsDashboardFilter, end time.Time) (qpsCurrent float64, tpsCurrent float64, currentRequestCount int64, err error) {
 	windowStart := end.Add(-1 * time.Minute)
 
 	successCount1m, token1m, err := r.queryUsageCounts(ctx, filter, windowStart, end)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	errorCount1m, _, _, _, _, _, err := r.queryErrorCounts(ctx, filter, windowStart, end)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 
-	qpsCurrent = roundTo1DP(float64(successCount1m+errorCount1m) / 60.0)
+	currentRequestCount = successCount1m + errorCount1m
+	qpsCurrent = roundTo1DP(float64(currentRequestCount) / 60.0)
 	tpsCurrent = roundTo1DP(float64(token1m) / 60.0)
-	return qpsCurrent, tpsCurrent, nil
+	return qpsCurrent, tpsCurrent, currentRequestCount, nil
 }
 
 func (r *opsRepository) queryPeakRates(ctx context.Context, filter *service.OpsDashboardFilter, start, end time.Time) (qpsPeak float64, tpsPeak float64, err error) {

@@ -64,6 +64,9 @@ type OpsDashboardOverview struct {
 
 	QPS OpsRateSummary `json:"qps"`
 	TPS OpsRateSummary `json:"tps"`
+	// CurrentRequestCount is the raw request count in the latest one-minute window.
+	// It is kept separate from QPS, which is rounded for display.
+	CurrentRequestCount int64 `json:"current_request_count"`
 
 	Duration OpsPercentiles `json:"duration"`
 	TTFT     OpsPercentiles `json:"ttft"`
