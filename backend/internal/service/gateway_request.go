@@ -1434,6 +1434,15 @@ func filterThinkingBlocksInternal(body []byte, alwaysThinking bool) []byte {
 		}
 
 		if filteredThisMessage {
+			// Removing invalid thinking must not leave an empty message, which
+			// Anthropic rejects even when thinking itself is disabled.
+			if len(newContent) == 0 {
+				placeholder := "(content removed)"
+				if role == "assistant" {
+					placeholder = "(assistant content removed)"
+				}
+				newContent = append(newContent, map[string]any{"type": "text", "text": placeholder})
+			}
 			msgMap["content"] = newContent
 		}
 	}

@@ -153,7 +153,7 @@ async function load() {
 
 watch(
   [() => props.groupId, () => props.enabled, () => props.refreshRevision],
-  () => { void load() },
+  () => { if (document.visibilityState !== 'hidden') void load() },
   { immediate: true },
 )
 

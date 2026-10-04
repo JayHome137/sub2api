@@ -94,11 +94,16 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm run build
 
+      - name: Validate pricing UI and incremental result refresh
+        working-directory: frontend
+        run: pnpm exec vitest run src/components/admin/account/__tests__/ScheduledTestsPanel.refresh.spec.ts src/components/user/monitor/__tests__/ChannelMonitorV3QualityHistory.refresh.spec.ts src/views/admin/__tests__/UsageView.spec.ts src/i18n/__tests__/localesMessageCompile.spec.ts
+
       - name: Validate affected backend paths
         working-directory: backend
         run: |
           go test ./internal/service -run 'Test(Scheduled|ScheduledVisual|RenderScheduledVisual|ReviewRequest|UpdateService)' -count=1
           go test ./internal/repository ./internal/handler/admin ./cmd/server -count=1
+          go test -tags unit ./internal/service ./internal/handler -run 'Test.*(WrappedUpstream|Sonnet55|Inflight|Reservation|SyncBalanceCache|StreamFailed|StreamError|AccessState|Claude55|FilterThinking)' -count=1
 
       - name: Validate renderer source
         run: |
@@ -206,10 +211,14 @@ jobs:
           notes="$(cat <<'EOF'
           本版本更新内容：
 
-          - 修复运维监控低流量场景下健康状态误显示为“待机”的问题。
-          - 健康状态改用最近 1 分钟原始请求数判断，保留 QPS、健康评分和告警阈值的现有口径。
+          - 修复渠道模型定价表单缺失中英文翻译、缓存价格及推理倍率标签显示异常。
+          - 更新内置模型价格目录，保留 GPT-5.6-Sol 的原定价及数据库内已保存的渠道自定义价格。
+          - 补齐 Claude Sonnet 5.5 定价缺失时的回退，避免误用旧模型价格；修复过滤思考块后空消息导致的兼容问题。
+          - 修复中转 SSE upstream_error 在输出前的备用账号切换，保留明确工具、权限和请求错误分类。
+          - 定时测试面板增量刷新历史记录，隐藏页面暂停轮询；保留糖果/鹈鹕展示和账号自动暂停开关。
+          - 修复 UsageView 导出测试的 XLSX mock，并补充余额并发预留、备用账号切换与前端交互回归验证。
 
-          本版本未调整模型价格、AIFOO 前端和生产部署配置，也未新增数据库迁移。
+          保留 AIFOO 界面与现有自定义检测逻辑；未引入数据库迁移。
           同步发布全栈镜像、隔离渲染器镜像和 Linux 更新控制面。
           EOF
           )"
