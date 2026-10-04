@@ -62,6 +62,7 @@ export interface OpsDashboardOverview {
     peak: number
     avg: number
   }
+  current_request_count: number
 
   duration: OpsPercentiles
   ttft: OpsPercentiles

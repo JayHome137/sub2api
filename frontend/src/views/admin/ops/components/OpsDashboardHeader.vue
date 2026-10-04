@@ -426,9 +426,9 @@ const ttftMaxMs = computed(() => overview.value?.ttft?.max_ms ?? null)
 const isSystemIdle = computed(() => {
   const ov = overview.value
   if (!ov) return true
-  const qps = ov.qps?.current
   const errorRate = ov.error_rate ?? 0
-  return (qps ?? 0) === 0 && errorRate === 0
+  // Use the raw one-minute count; display QPS is rounded and turns 1-2 requests into 0.0.
+  return (ov.current_request_count ?? 0) === 0 && errorRate === 0
 })
 
 const healthScoreValue = computed<number | null>(() => {
