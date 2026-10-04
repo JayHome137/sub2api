@@ -3,6 +3,7 @@
 package service
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -12,7 +13,7 @@ import (
 func TestComputeDashboardHealthScore_IdleReturns100(t *testing.T) {
 	t.Parallel()
 
-	score := computeDashboardHealthScore(time.Now().UTC(), &OpsDashboardOverview{})
+	score := computeDashboardHealthScore(time.Now().UTC(), &OpsDashboardOverview{}, 1000)
 	require.Equal(t, 100, score)
 }
 
@@ -50,7 +51,7 @@ func TestComputeDashboardHealthScore_DegradesOnBadSignals(t *testing.T) {
 		},
 	}
 
-	score := computeDashboardHealthScore(time.Now().UTC(), ov)
+	score := computeDashboardHealthScore(time.Now().UTC(), ov, 1000)
 	require.Less(t, score, 80)
 	require.GreaterOrEqual(t, score, 0)
 }
@@ -229,7 +230,7 @@ func TestComputeDashboardHealthScore_Comprehensive(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			score := computeDashboardHealthScore(time.Now().UTC(), tt.overview)
+			score := computeDashboardHealthScore(time.Now().UTC(), tt.overview, 1000)
 			require.GreaterOrEqual(t, score, tt.wantMin, "score should be >= %d", tt.wantMin)
 			require.LessOrEqual(t, score, tt.wantMax, "score should be <= %d", tt.wantMax)
 			require.GreaterOrEqual(t, score, 0, "score must be >= 0")
@@ -328,7 +329,7 @@ func TestComputeBusinessHealth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			score := computeBusinessHealth(tt.overview)
+			score := computeBusinessHealth(tt.overview, 1000)
 			require.GreaterOrEqual(t, score, tt.wantMin, "score should be >= %.1f", tt.wantMin)
 			require.LessOrEqual(t, score, tt.wantMax, "score should be <= %.1f", tt.wantMax)
 			require.GreaterOrEqual(t, score, 0.0, "score must be >= 0")
@@ -440,3 +441,19 @@ func TestComputeInfraHealth(t *testing.T) {
 func timePtr(v time.Time) *time.Time { return &v }
 
 func stringPtr(v string) *string { return &v }
+
+func TestHealthScoreConfiguredTTFTBaseline(t *testing.T) {
+	for _, baseline := range []float64{30000, 50000} {
+		for _, tc := range []struct {
+			factor float64
+			score  int
+		}{{0.5, 100}, {1, 100}, {1.5, 91}, {2, 83}, {2.5, 74}, {3, 65}, {4, 65}} {
+			ov := &OpsDashboardOverview{RequestCountTotal: 10, TTFT: OpsPercentiles{P99: intPtr(int(baseline * tc.factor))}}
+			require.Equal(t, tc.score, computeDashboardHealthScore(time.Now(), ov, baseline))
+		}
+	}
+	for _, invalid := range []float64{0, -1, math.NaN(), math.Inf(1)} {
+		ov := &OpsDashboardOverview{RequestCountTotal: 1, TTFT: OpsPercentiles{P99: intPtr(500)}}
+		require.Equal(t, 100, computeDashboardHealthScore(time.Now(), ov, invalid))
+	}
+}

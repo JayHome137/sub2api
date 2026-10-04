@@ -12,7 +12,7 @@ import (
 // - Layered scoring: Business Health (70%) + Infrastructure Health (30%)
 // - Avoids double-counting (e.g., DB failure affects both infra and business metrics)
 // - Conservative + stable: penalize clear degradations; avoid overreacting to missing/idle data.
-func computeDashboardHealthScore(now time.Time, overview *OpsDashboardOverview) int {
+func computeDashboardHealthScore(now time.Time, overview *OpsDashboardOverview, baseline float64) int {
 	if overview == nil {
 		return 0
 	}
@@ -23,7 +23,7 @@ func computeDashboardHealthScore(now time.Time, overview *OpsDashboardOverview) 
 		return 100
 	}
 
-	businessHealth := computeBusinessHealth(overview)
+	businessHealth := computeBusinessHealth(overview, baseline)
 	infraHealth := computeInfraHealth(now, overview)
 
 	// Weighted combination: 70% business + 30% infrastructure
@@ -33,7 +33,7 @@ func computeDashboardHealthScore(now time.Time, overview *OpsDashboardOverview) 
 
 // computeBusinessHealth calculates business health score (0-100)
 // Components: Error Rate (50%) + TTFT (50%)
-func computeBusinessHealth(overview *OpsDashboardOverview) float64 {
+func computeBusinessHealth(overview *OpsDashboardOverview, baseline float64) float64 {
 	// Error rate score: 1% → 100, 10% → 0 (linear)
 	// Combines request errors and upstream errors
 	errorScore := 100.0
@@ -48,18 +48,13 @@ func computeBusinessHealth(overview *OpsDashboardOverview) float64 {
 		}
 	}
 
-	// TTFT score: 1s → 100, 3s → 0 (linear)
-	// Time to first token is critical for user experience
+	// The configured TTFT baseline earns full credit; 2T earns 50 and 3T zero.
+	if baseline <= 0 || math.IsNaN(baseline) || math.IsInf(baseline, 0) {
+		baseline = 500
+	}
 	ttftScore := 100.0
 	if overview.TTFT.P99 != nil {
-		p99 := float64(*overview.TTFT.P99)
-		if p99 > 1000 {
-			if p99 <= 3000 {
-				ttftScore = (3000 - p99) / 2000 * 100
-			} else {
-				ttftScore = 0
-			}
-		}
+		ttftScore = clampFloat64((3-float64(*overview.TTFT.P99)/baseline)*50, 0, 100)
 	}
 
 	// Weighted combination: 50% error rate + 50% TTFT

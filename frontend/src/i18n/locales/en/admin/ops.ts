@@ -134,7 +134,7 @@ export default {
       // Health Score & Diagnosis
       health: 'Health',
       healthCondition: 'Health Condition',
-      healthHelp: 'Overall system health score based on SLA, error rate, and resource usage',
+      healthHelp: 'Error rate (35%), TTFT (35%), and infrastructure (30%); TTFT uses the configured baseline',
       healthyStatus: 'Healthy',
       riskyStatus: 'At Risk',
       idleStatus: 'Idle',
@@ -202,8 +202,9 @@ export default {
         memoryHighImpact: 'Memory pressure is high, needs attention',
         memoryHighAction: 'Monitor memory trends, check for memory leaks',
         ttftHigh: 'Time to first token elevated ({ttft}ms)',
+        ttftCritical: 'Significantly elevated first-token wait ({ttft}ms)',
         ttftHighImpact: 'User perceived latency increased',
-        ttftHighAction: 'Optimize request processing flow, reduce pre-processing time',
+        ttftHighAction: 'Check upstream response, model reasoning time, and queueing',
         // Error rate diagnostics
         upstreamCritical: 'Upstream error rate critically high ({rate}%)',
         upstreamCriticalImpact: 'May affect many user requests',
@@ -702,11 +703,11 @@ export default {
         dailySummary: 'Daily Summary',
         weeklySummary: 'Weekly Summary',
         metricThresholds: 'Metric Thresholds',
-        metricThresholdsHint: 'Configure alert thresholds for metrics, values exceeding thresholds will be displayed in red',
+        metricThresholdsHint: 'Configure metric evaluation thresholds; TTFT uses the baseline rules described below',
         slaMinPercent: 'SLA Minimum Percentage',
         slaMinPercentHint: 'SLA below this value will be displayed in red (default: 99.5%)',
-        ttftP99MaxMs: 'TTFT P99 Maximum (ms)',
-        ttftP99MaxMsHint: 'TTFT P99 above this value will be displayed in red (default: 500ms)',
+        ttftP99MaxMs: 'TTFT P99 Health Baseline (ms)',
+        ttftP99MaxMsHint: 'Baseline T: ≤T green and full latency credit; T–2T yellow; ≥2T red; ≥3T zero latency credit. Missing or non-positive values fall back to 500ms.',
         requestErrorRateMaxPercent: 'Request Error Rate Maximum (%)',
         requestErrorRateMaxPercentHint: 'Request error rate above this value will be displayed in red (default: 5%)',
         upstreamErrorRateMaxPercent: 'Upstream Error Rate Maximum (%)',
@@ -817,7 +818,7 @@ export default {
         upstreamErrors: 'Upstream error statistics, excluding rate limit errors (429/529).',
         latency: 'Request duration statistics, including p50, p90, p95, p99 percentiles.',
         ttft: 'Time To First Token, measuring the speed of first token return in streaming responses.',
-        health: 'System health score (0-100), considering SLA, error rate, and resource usage.'
+        health: 'Health score (0-100): error rate 35%, TTFT 35%, infrastructure 30%. TTFT uses the configured baseline.'
       },
       charts: {
         emptyRequest: 'No requests in this window.',

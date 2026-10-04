@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ttftHealthLevel } from '../utils/ttftHealth'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Select from '@/components/common/Select.vue'
@@ -234,12 +235,7 @@ function getSLAThresholdLevel(slaPercent: number | null): ThresholdLevel {
 }
 
 function getTTFTThresholdLevel(ttftMs: number | null): ThresholdLevel {
-  if (ttftMs == null) return 'normal'
-  const threshold = props.thresholds?.ttft_p99_ms_max
-  if (threshold == null) return 'normal'
-  if (ttftMs >= threshold) return 'critical'
-  if (ttftMs >= threshold * 0.8) return 'warning'
-  return 'normal'
+  return ttftHealthLevel(ttftMs, overview.value?.ttft_health_baseline_ms ?? props.thresholds?.ttft_p99_ms_max)
 }
 
 function getRequestErrorRateThresholdLevel(errorRatePercent: number | null): ThresholdLevel {
@@ -543,10 +539,11 @@ const diagnosisReport = computed<DiagnosisItem[]>(() => {
   }
 
   const ttftP99 = ov.ttft?.p99_ms ?? 0
-  if (ttftP99 > 500) {
+  const ttftLevel = getTTFTThresholdLevel(ttftP99)
+  if (ttftLevel !== 'normal') {
     report.push({
-      type: 'warning',
-      message: t('admin.ops.diagnosis.ttftHigh', { ttft: ttftP99.toFixed(0) }),
+      type: ttftLevel === 'critical' ? 'critical' : 'warning',
+      message: t(ttftLevel === 'critical' ? 'admin.ops.diagnosis.ttftCritical' : 'admin.ops.diagnosis.ttftHigh', { ttft: ttftP99.toFixed(0) }),
       impact: t('admin.ops.diagnosis.ttftHighImpact'),
       action: t('admin.ops.diagnosis.ttftHighAction')
     })

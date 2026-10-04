@@ -37,7 +37,8 @@ type OpsDashboardOverview struct {
 
 	// HealthScore is a backend-computed overall health score (0-100).
 	// It is derived from the monitored metrics in this overview, plus best-effort system metrics/job heartbeats.
-	HealthScore int `json:"health_score"`
+	HealthScore          int     `json:"health_score"`
+	TTFTHealthBaselineMs float64 `json:"ttft_health_baseline_ms"`
 
 	// Latest system-level snapshot (window=1m, global).
 	SystemMetrics *OpsSystemMetricsSnapshot `json:"system_metrics"`
