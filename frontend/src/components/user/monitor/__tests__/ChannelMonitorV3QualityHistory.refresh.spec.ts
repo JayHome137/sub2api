@@ -18,6 +18,7 @@ vi.mock('vue-i18n', async (importOriginal) => {
 import ChannelMonitorV3QualityHistory from '../ChannelMonitorV3QualityHistory.vue'
 
 enableAutoUnmount(afterEach)
+afterEach(() => vi.restoreAllMocks())
 
 describe('ChannelMonitorV3QualityHistory refresh', () => {
   beforeEach(() => {
@@ -49,4 +50,16 @@ describe('ChannelMonitorV3QualityHistory refresh', () => {
     expect(getQualityEvents).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain('monitorCommon.qualityHistoryDegraded')
   })
+  it('skips hidden-page polling and reloads on the next visible refresh', async () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    const wrapper = mount(ChannelMonitorV3QualityHistory, { props: { groupId: 17, enabled: true } })
+    await flushPromises()
+    visibility.mockReturnValue('hidden')
+    await wrapper.setProps({ refreshRevision: 1 }); await flushPromises()
+    expect(getQualityEvents).toHaveBeenCalledTimes(1)
+    visibility.mockReturnValue('visible')
+    await wrapper.setProps({ refreshRevision: 2 }); await flushPromises()
+    expect(getQualityEvents).toHaveBeenCalledTimes(2)
+  })
+
 })

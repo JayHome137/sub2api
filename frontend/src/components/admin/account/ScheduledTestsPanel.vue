@@ -489,7 +489,7 @@
                         result.status === 'success'
                           ? 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400'
                           : result.status === 'degraded'
-                            ? plan.quality_mode === 'candy'
+                            ? (result.quality_mode || plan.quality_mode) === 'candy'
                               ? 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400'
                               : 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400'
                             : isInconclusiveStatus(result.status)
@@ -499,7 +499,7 @@
                               : 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400'
                       ]"
                     >
-                      {{ resultStatusLabel(result.status, plan.quality_mode) }}
+                      {{ resultStatusLabel(result.status, result.quality_mode || plan.quality_mode) }}
                     </span>
                   </div>
                   <div class="mt-1 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
@@ -591,7 +591,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, watch, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -692,11 +692,56 @@ const resetNewPlan = () => {
   newPlan.reasoning_effort = ''
 }
 
+// Poll stored results only; never trigger a test from the display refresh.
+let refreshTimer: ReturnType<typeof setInterval> | undefined
+let refreshInFlight = false
+let panelGeneration = 0
+const stopRefresh = () => {
+  if (refreshTimer) clearInterval(refreshTimer)
+  refreshTimer = undefined
+}
+onUnmounted(() => { panelGeneration++; stopRefresh() })
+const refreshOpenPanel = async () => {
+  if (!props.show || !props.accountId || loadingResults.value || creating.value || updating.value || refreshInFlight || document.visibilityState === 'hidden') return
+  const accountId = props.accountId
+  const generation = panelGeneration
+  const planId = expandedPlanId.value
+  refreshInFlight = true
+  try {
+    const latest = await adminAPI.scheduledTests.listByAccount(accountId)
+    if (generation !== panelGeneration) return
+    plans.value = latest
+    if (!planId || expandedPlanId.value !== planId) return
+    if (!latest.some(plan => plan.id === planId)) {
+      expandedPlanId.value = null
+      results.value = []
+      selectedResultId.value = null
+      return
+    }
+    const afterId = results.value.reduce((id, result) => Math.max(id, result.id), 0)
+    const incoming = await adminAPI.scheduledTests.listResults(planId, 20, afterId)
+    if (generation !== panelGeneration || expandedPlanId.value !== planId) return
+    const known = new Set(results.value.map(result => result.id))
+    results.value = [...incoming.filter(result => !known.has(result.id)), ...results.value]
+      .sort((a, b) => b.id - a.id).slice(0, 20)
+    if (!results.value.some(result => result.id === selectedResultId.value)) selectedResultId.value = results.value[0]?.id ?? null
+  } catch { /* Keep the displayed history on transient refresh failures. */ }
+  finally { refreshInFlight = false }
+}
+
 // Load plans when dialog opens
 watch(
-  () => props.show,
-  async (visible) => {
+  [() => props.show, () => props.accountId],
+  async ([visible]) => {
+    panelGeneration++
+    stopRefresh()
+    loadingResults.value = false
+    expandedPlanId.value = null
+    selectedResultId.value = null
+    results.value = []
+    plans.value = []
     if (visible && props.accountId) {
+      refreshTimer = setInterval(() => { void refreshOpenPanel() }, 15000)
       await Promise.all([loadPlans(), loadAutoPauseSetting()])
     } else {
       plans.value = []
@@ -713,15 +758,17 @@ watch(
 
 const loadAutoPauseSetting = async () => {
   if (!props.accountId) return
+  const generation = panelGeneration
   loadingAutoPause.value = true
   try {
     const account = await adminAPI.accounts.getById(props.accountId)
+    if (generation !== panelGeneration) return
     const setting = account.extra?.scheduled_quality_auto_pause_enabled
     autoPauseEnabled.value = typeof setting === 'boolean' ? setting : true
   } catch (error: any) {
-    appStore.showError(error?.message || t('admin.scheduledTests.autoPauseLoadFailed'))
+    if (generation === panelGeneration) appStore.showError(error?.message || t('admin.scheduledTests.autoPauseLoadFailed'))
   } finally {
-    loadingAutoPause.value = false
+    if (generation === panelGeneration) loadingAutoPause.value = false
   }
 }
 
@@ -752,13 +799,15 @@ watch(() => editForm.quality_mode, (mode) => {
 
 const loadPlans = async () => {
   if (!props.accountId) return
+  const generation = panelGeneration
   loading.value = true
   try {
-    plans.value = await adminAPI.scheduledTests.listByAccount(props.accountId)
+    const loaded = await adminAPI.scheduledTests.listByAccount(props.accountId)
+    if (generation === panelGeneration) plans.value = loaded
   } catch (error: any) {
-    appStore.showError(error?.message || 'Failed to load plans')
+    if (generation === panelGeneration) appStore.showError(error?.message || 'Failed to load plans')
   } finally {
-    loading.value = false
+    if (generation === panelGeneration) loading.value = false
   }
 }
 
@@ -886,15 +935,20 @@ const toggleExpand = async (planId: number) => {
   expandedPlanId.value = planId
   selectedResultId.value = null
   previewMode.value = 'preview'
+  results.value = []
+  const generation = panelGeneration
   loadingResults.value = true
   try {
-    results.value = await adminAPI.scheduledTests.listResults(planId, 20)
+    const loaded = await adminAPI.scheduledTests.listResults(planId, 20)
+    if (generation !== panelGeneration || expandedPlanId.value !== planId) return
+    results.value = loaded
     selectedResultId.value = results.value[0]?.id ?? null
   } catch (error: any) {
+    if (generation !== panelGeneration || expandedPlanId.value !== planId) return
     appStore.showError(error?.message || 'Failed to load results')
     results.value = []
   } finally {
-    loadingResults.value = false
+    if (generation === panelGeneration && expandedPlanId.value === planId) loadingResults.value = false
   }
 }
 
