@@ -32,6 +32,7 @@ export interface OpsDashboardOverview {
   group_id?: number | null
 
   health_score?: number
+  ttft_health_baseline_ms?: number
 
   system_metrics?: OpsSystemMetricsSnapshot | null
   job_heartbeats?: OpsJobHeartbeat[] | null

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"log"
+	"math"
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -65,7 +66,17 @@ func (s *OpsService) GetDashboardOverview(ctx context.Context, filter *OpsDashbo
 		log.Printf("[Ops] ListJobHeartbeats failed: %v", err)
 	}
 
-	overview.HealthScore = computeDashboardHealthScore(time.Now().UTC(), overview)
+	baseline := 500.0
+	if thresholds, err := s.GetMetricThresholds(ctx); err != nil {
+		return nil, err
+	} else if thresholds != nil && thresholds.TTFTp99MsMax != nil {
+		value := *thresholds.TTFTp99MsMax
+		if value > 0 && !math.IsNaN(value) && !math.IsInf(value, 0) {
+			baseline = value
+		}
+	}
+	overview.TTFTHealthBaselineMs = baseline
+	overview.HealthScore = computeDashboardHealthScore(time.Now().UTC(), overview, baseline)
 
 	return overview, nil
 }

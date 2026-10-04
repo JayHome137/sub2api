@@ -134,7 +134,7 @@ export default {
       // Health Score & Diagnosis
       health: '健康',
       healthCondition: '健康状况',
-      healthHelp: '基于 SLA、错误率和资源使用情况的系统整体健康评分',
+      healthHelp: '综合错误率（35%）、TTFT（35%）及基础设施（30%）；TTFT 基准取自阈值设置',
       healthyStatus: '健康',
       riskyStatus: '风险',
       idleStatus: '待机',
@@ -201,9 +201,10 @@ export default {
         memoryHigh: '内存使用率偏高 ({usage}%)',
         memoryHighImpact: '内存压力较大，需要关注',
         memoryHighAction: '监控内存趋势，检查是否有内存泄漏',
-        ttftHigh: '首 Token 时间偏高 ({ttft}ms)',
+        ttftHigh: '首 Token 等待偏长 ({ttft}ms)',
+        ttftCritical: '首 Token 等待明显偏长 ({ttft}ms)',
         ttftHighImpact: '用户感知时长增加',
-        ttftHighAction: '优化请求处理流程，减少前置逻辑耗时',
+        ttftHighAction: '检查上游响应、模型思考耗时及排队情况',
         // Error rate diagnostics
         upstreamCritical: '上游错误率严重偏高 ({rate}%)',
         upstreamCriticalImpact: '可能影响大量用户请求',
@@ -702,11 +703,11 @@ export default {
         dailySummary: '每日摘要',
         weeklySummary: '每周摘要',
         metricThresholds: '指标阈值配置',
-        metricThresholdsHint: '配置各项指标的告警阈值，超出阈值时将以红色显示',
+        metricThresholdsHint: '设置指标评估阈值；TTFT 按下方基准及倍数规则判断',
         slaMinPercent: 'SLA最低百分比',
         slaMinPercentHint: 'SLA低于此值时显示为红色（默认：99.5%）',
-        ttftP99MaxMs: 'TTFT P99最大值（毫秒）',
-        ttftP99MaxMsHint: 'TTFT P99高于此值时显示为红色（默认：500ms）',
+        ttftP99MaxMs: 'TTFT P99健康评估基准（毫秒）',
+        ttftP99MaxMsHint: '基准为 T：≤T 绿色且延迟项满分，T～2T 黄色，≥2T 红色，≥3T 延迟项零分。未设置或非正数回退至 500ms。',
         requestErrorRateMaxPercent: '请求错误率最大值（%）',
         requestErrorRateMaxPercentHint: '请求错误率高于此值时显示为红色（默认：5%）',
         upstreamErrorRateMaxPercent: '上游错误率最大值（%）',
@@ -818,7 +819,7 @@ export default {
         errors: '错误统计，包括总错误数、错误率和上游错误率。',
         latency: '请求时长统计，包括 p50、p90、p95、p99 等百分位数。',
         ttft: '首 Token 延迟（Time To First Token），衡量流式响应的首 Token 返回速度。',
-        health: '系统健康评分（0-100），综合考虑 SLA、错误率和资源使用情况。'
+        health: '系统健康评分（0-100）：错误率占35%，TTFT占35%，基础设施占30%；TTFT依据所设基准评分。'
       },
       charts: {
         emptyRequest: '该时间窗口内暂无请求。',

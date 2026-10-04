@@ -96,14 +96,14 @@ jobs:
 
       - name: Validate pricing UI and incremental result refresh
         working-directory: frontend
-        run: pnpm exec vitest run src/components/admin/usage/__tests__/UsageTable.spec.ts src/components/admin/account/__tests__/ScheduledTestsPanel.refresh.spec.ts src/components/user/monitor/__tests__/ChannelMonitorV3QualityHistory.refresh.spec.ts src/views/admin/__tests__/UsageView.spec.ts src/i18n/__tests__/localesMessageCompile.spec.ts
+        run: pnpm exec vitest run src/views/admin/ops/utils/__tests__/ttftHealth.spec.ts src/components/admin/usage/__tests__/UsageTable.spec.ts src/components/admin/account/__tests__/ScheduledTestsPanel.refresh.spec.ts src/components/user/monitor/__tests__/ChannelMonitorV3QualityHistory.refresh.spec.ts src/views/admin/__tests__/UsageView.spec.ts src/i18n/__tests__/localesMessageCompile.spec.ts
 
       - name: Validate affected backend paths
         working-directory: backend
         run: |
           go test ./internal/service -run 'Test(Scheduled|ScheduledVisual|RenderScheduledVisual|ReviewRequest|UpdateService)' -count=1
           go test ./internal/repository ./internal/handler/admin ./cmd/server -count=1
-          go test -tags unit ./internal/service ./internal/handler -run 'Test.*(WrappedUpstream|Sonnet55|Inflight|Reservation|SyncBalanceCache|StreamFailed|StreamError|AccessState|Claude55|FilterThinking)' -count=1
+          go test -tags unit ./internal/service ./internal/handler -run 'Test.*(DashboardHealth|BusinessHealth|HealthScoreConfigured|WrappedUpstream|Sonnet55|Inflight|Reservation|SyncBalanceCache|StreamFailed|StreamError|AccessState|Claude55|FilterThinking)' -count=1
 
       - name: Validate renderer source
         run: |
@@ -211,9 +211,10 @@ jobs:
           notes="$(cat <<'EOF'
           本版本更新内容：
 
-          - 管理员及用户用量记录页在“总耗时”下方新增输出速率（t/s），沿用 AIFOO 布局。
-          - 根据输出 Token 数与首 Token 后耗时计算平均生成速度；数据缺失、样本过少或时间窗口过短时显示横线。
-          - 补充管理员/用户显示与异常数据回归测试；不修改计费逻辑、模型价格、数据权限或数据库结构。
+          - 运维健康评分、TTFT 卡片颜色及智能诊断统一使用已保存的 TTFT P99 基准 T，不再使用固定 500ms 诊断线及固定 1～3秒评分区间。
+          - TTFT ≤T 满分且绿色，T～2T 黄色，≥2T 红色；TTFT 项在 T～3T 线性降至零。错误率、基础设施评分及权重保持不变。
+          - 后端返回评分实际使用的基准，避免前端设置缓存与健康评分判断不一致；修改阈值后随仪表盘刷新生效。
+          - 更新中英文设置说明和诊断建议；不修改已有阈值、单次用量记录配色、计费或生产部署。
 
           同步发布全栈镜像、隔离渲染器镜像和 Linux 更新控制面。
           EOF
