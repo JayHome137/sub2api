@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
@@ -70,6 +71,7 @@ type VerificationCodeData struct {
 
 // PasswordResetTokenData represents password reset token data
 type PasswordResetTokenData struct {
+	// Token holds the hex-encoded SHA-256 hash of the reset token.
 	Token     string
 	CreatedAt time.Time
 }
@@ -463,33 +465,19 @@ func (s *EmailService) GeneratePasswordResetToken() (string, error) {
 
 // SendPasswordResetEmail sends a password reset email with a reset link
 func (s *EmailService) SendPasswordResetEmail(ctx context.Context, email, siteName, resetURL string, locale ...string) error {
-	var token string
-	var needSaveToken bool
-
-	// Check if token already exists
-	existing, err := s.cache.GetPasswordResetToken(ctx, email)
-	if err == nil && existing != nil {
-		// Token exists, reuse it (allows resending email without generating new token)
-		token = existing.Token
-		needSaveToken = false
-	} else {
-		// Generate new token
-		token, err = s.GeneratePasswordResetToken()
-		if err != nil {
-			return fmt.Errorf("generate token: %w", err)
-		}
-		needSaveToken = true
+	// Redis stores only a hash, so a reset email always gets a new plaintext
+	// token. The cooldown bounds resend frequency without making the token
+	// recoverable from Redis.
+	token, err := s.GeneratePasswordResetToken()
+	if err != nil {
+		return fmt.Errorf("generate token: %w", err)
 	}
-
-	// Save token to Redis (only if new token generated)
-	if needSaveToken {
-		data := &PasswordResetTokenData{
-			Token:     token,
-			CreatedAt: time.Now(),
-		}
-		if err := s.cache.SetPasswordResetToken(ctx, email, data, passwordResetTokenTTL); err != nil {
-			return fmt.Errorf("save reset token: %w", err)
-		}
+	data := &PasswordResetTokenData{
+		Token:     hashPasswordResetToken(token),
+		CreatedAt: time.Now(),
+	}
+	if err := s.cache.SetPasswordResetToken(ctx, email, data, passwordResetTokenTTL); err != nil {
+		return fmt.Errorf("save reset token: %w", err)
 	}
 
 	// Build full reset URL with URL-encoded token and email
@@ -527,6 +515,12 @@ func (s *EmailService) SendPasswordResetEmail(ctx context.Context, email, siteNa
 	return nil
 }
 
+// hashPasswordResetToken returns the hex-encoded SHA-256 of a reset token.
+func hashPasswordResetToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
 // SendPasswordResetEmailWithCooldown sends password reset email with cooldown check (called by queue worker)
 // This method wraps SendPasswordResetEmail with email cooldown to prevent email bombing
 func (s *EmailService) SendPasswordResetEmailWithCooldown(ctx context.Context, email, siteName, resetURL string, locale ...string) error {
@@ -552,10 +546,10 @@ func (s *EmailService) SendPasswordResetEmailWithCooldown(ctx context.Context, e
 // VerifyPasswordResetToken verifies the password reset token without consuming it
 func (s *EmailService) VerifyPasswordResetToken(ctx context.Context, email, token string) error {
 	data, err := s.cache.GetPasswordResetToken(ctx, email)
-	if err != nil || data == nil {
+	if err != nil || data == nil || token == "" {
 		return ErrInvalidResetToken
 	}
-	if subtle.ConstantTimeCompare([]byte(data.Token), []byte(token)) != 1 {
+	if subtle.ConstantTimeCompare([]byte(data.Token), []byte(hashPasswordResetToken(token))) != 1 {
 		return ErrInvalidResetToken
 	}
 	return nil
@@ -563,7 +557,10 @@ func (s *EmailService) VerifyPasswordResetToken(ctx context.Context, email, toke
 
 // ConsumePasswordResetToken verifies and atomically deletes the token (one-time use).
 func (s *EmailService) ConsumePasswordResetToken(ctx context.Context, email, token string) error {
-	consumed, err := s.cache.ConsumePasswordResetToken(ctx, email, token)
+	if err := s.VerifyPasswordResetToken(ctx, email, token); err != nil {
+		return err
+	}
+	consumed, err := s.cache.ConsumePasswordResetToken(ctx, email, hashPasswordResetToken(token))
 	if err != nil {
 		slog.Error("failed to atomically consume password reset token", "email", email, "error", err)
 		return ErrInvalidResetToken

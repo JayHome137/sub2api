@@ -291,6 +291,37 @@ func TestOpenAIStreamBareErrorUsesSemanticFailover(t *testing.T) {
 	require.True(t, openAIStreamErrorEventShouldFailover(payload, "slow down"))
 }
 
+func TestOpenAIStreamRelayErrorTypeControlsFailoverClassification(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload string
+		want    bool
+	}{
+		{
+			name:    "generic relay error retries despite forbidden wording",
+			payload: `{"type":"response.failed","response":{"error":{"code":"upstream_error","message":"Upstream access forbidden, please contact administrator"}}}`,
+			want:    true,
+		},
+		{
+			name:    "explicit relay type retries",
+			payload: `{"type":"response.failed","response":{"error":{"type":"upstream_error","code":"upstream_error","message":"upstream unavailable"}}}`,
+			want:    true,
+		},
+		{
+			name:    "specific permission type keeps request classification",
+			payload: `{"type":"response.failed","response":{"error":{"type":"permission_error","code":"upstream_error","message":"access denied for this request"}}}`,
+			want:    false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload := []byte(tt.payload)
+			message := extractOpenAISSEErrorMessage(payload)
+			require.Equal(t, tt.want, openAIStreamErrorEventShouldFailover(payload, message))
+		})
+	}
+}
+
 func TestOpenAIStream403FailoverRequiresStructuredAccountCredentialSignal(t *testing.T) {
 	tests := []struct {
 		name    string
