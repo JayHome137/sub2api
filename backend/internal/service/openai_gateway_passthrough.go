@@ -1606,6 +1606,16 @@ func openAIStreamErrorEventShouldFailover(payload []byte, message string) bool {
 	if isOpenAIUpstreamAccessStateError(message, payload) {
 		return true
 	}
+	// Relay errors use code=upstream_error while preserving a provider error
+	// type. Only the generic relay shape should reuse the broad failover policy;
+	// a specific request-level type must keep its own classification.
+	relayErrorType := strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "response.error.type").String()))
+	if relayErrorType == "" {
+		relayErrorType = strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "error.type").String()))
+	}
+	if openAIStreamFailedEventErrorCode(payload) == "upstream_error" && (relayErrorType == "" || relayErrorType == "upstream_error") {
+		return openAIStreamFailedEventShouldFailover(payload, message)
+	}
 	switch openAIStreamFailedEventSemanticStatus(payload, message) {
 	case http.StatusForbidden:
 		return openAIStream403AccountFailure(payload, message)
