@@ -21,7 +21,7 @@
         :key="event.id"
         type="button"
         class="quality-history-chip"
-        :class="[event.status === 'degraded' ? 'is-degraded' : 'is-pass', { 'is-active': hoveredIndex === index }]"
+        :class="[statusClass(event.status), { 'is-active': hoveredIndex === index }]"
         :data-testid="`quality-history-chip-${event.id}`"
         :aria-label="chipLabel(event)"
         @mouseenter="hoverEvent(index, $event)"
@@ -45,19 +45,13 @@
           <div class="quality-history-popover__head">
             <span
               class="font-semibold"
-              :class="hoveredEvent.status === 'degraded' ? 'text-red-400' : 'text-emerald-400'"
+              :class="statusTextClass(hoveredEvent.status)"
             >
-              {{ hoveredEvent.status === 'degraded' ? t('monitorCommon.qualityHistoryDegraded') : t('monitorCommon.qualityHistoryPass') }}
+              {{ qualityStatusLabel(hoveredEvent.status) }}
             </span>
             <span class="font-mono text-amber-300/90" data-testid="quality-history-event-id">#{{ hoveredEvent.id }}</span>
             <span class="text-gray-300">{{ formatFullTime(hoveredEvent.created_at) }}</span>
             <span v-if="hoveredEvent.model_id" class="truncate font-mono text-gray-400">{{ hoveredEvent.model_id }}</span>
-          </div>
-          <div
-            v-if="hoveredEvent.quality_mode === 'candy' && hoveredEvent.status === 'success'"
-            class="quality-history-popover__message"
-          >
-            {{ hoveredEvent.error_message || t('monitorCommon.qualityHistoryCandyPass') }}
           </div>
           <div v-if="artworkLoading" class="quality-history-popover__message">
             {{ t('monitorCommon.qualityArtworkLoading') }}
@@ -105,7 +99,12 @@ const hoveredArtwork = ref('')
 const artworkLoading = ref(false)
 const artworkFailed = ref(false)
 const popoverPosition = ref({ left: 0, top: 0, x: '-50%', y: '-100%' })
+const isCoarsePointer = ref(false)
 let hoverRequest = 0
+
+if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+  isCoarsePointer.value = window.matchMedia('(pointer: coarse)').matches
+}
 
 const hoveredEvent = computed(() => (hoveredIndex.value === null ? null : events.value[hoveredIndex.value] ?? null))
 const degradedCount = computed(() => events.value.filter((event) => event.status === 'degraded').length)
@@ -176,6 +175,24 @@ function chipLabel(event: MonitorQualityEvent) {
   return `#${event.id} · ${formatFullTime(event.created_at)} · ${status}`
 }
 
+function statusClass(status: string) {
+  if (status === 'degraded') return 'is-degraded'
+  if (status === 'unknown' || status === 'inconclusive') return 'is-unknown'
+  return 'is-pass'
+}
+
+function statusTextClass(status: string) {
+  if (status === 'degraded') return 'text-red-400'
+  if (status === 'unknown' || status === 'inconclusive') return 'text-gray-400'
+  return 'text-emerald-400'
+}
+
+function qualityStatusLabel(status: string) {
+  if (status === 'degraded') return t('monitorCommon.qualityHistoryDegraded')
+  if (status === 'unknown' || status === 'inconclusive') return t('monitorCommon.qualityHistoryUnknown')
+  return t('monitorCommon.qualityHistoryPass')
+}
+
 function positionPopover(event?: Event) {
   const target = event?.currentTarget
   if (!(target instanceof HTMLElement) || typeof window === 'undefined') return
@@ -196,6 +213,10 @@ function positionPopover(event?: Event) {
 }
 
 function hoverEvent(index: number, event?: Event) {
+  if (isCoarsePointer.value) {
+    clearHover()
+    return
+  }
   positionPopover(event)
   hovered.value = true
   hoveredIndex.value = index
@@ -279,10 +300,19 @@ const popoverStyle = computed(() => ({
   color: rgb(185 28 28);
 }
 
+.quality-history-chip.is-unknown {
+  border-color: rgb(148 163 184 / 0.55);
+  color: rgb(100 116 139);
+}
+
 .dark .quality-history-chip {
   border-color: rgb(71 85 105 / 0.6);
   background: rgb(15 23 42 / 0.55);
   color: rgb(203 213 225);
+}
+
+.dark .quality-history-chip.is-unknown {
+  color: rgb(148 163 184);
 }
 
 .quality-history-popover {
