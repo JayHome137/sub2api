@@ -213,10 +213,6 @@ function positionPopover(event?: Event) {
 }
 
 function hoverEvent(index: number, event?: Event) {
-  if (isCoarsePointer.value) {
-    clearHover()
-    return
-  }
   positionPopover(event)
   hovered.value = true
   hoveredIndex.value = index
@@ -224,7 +220,8 @@ function hoverEvent(index: number, event?: Event) {
   artworkFailed.value = false
   const request = ++hoverRequest
   const item = events.value[index]
-  if (!props.groupId || !item || item.quality_mode === 'candy') return
+  // Touch devices keep the result header, but never load SVG artwork.
+  if (!props.groupId || !item || item.quality_mode === 'candy' || isCoarsePointer.value) return
   artworkLoading.value = true
   void getQualityEventArtwork(props.groupId, item.id)
     .then((artwork) => {
