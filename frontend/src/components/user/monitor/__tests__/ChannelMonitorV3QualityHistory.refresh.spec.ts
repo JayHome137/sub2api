@@ -65,7 +65,7 @@ describe('ChannelMonitorV3QualityHistory refresh', () => {
     expect(getQualityEvents).toHaveBeenCalledTimes(2)
   })
 
-  it('keeps touch devices to status chips without opening result details', async () => {
+  it('keeps touch devices to status chips and the basic result header', async () => {
     vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: true } as MediaQueryList)
     getQualityEvents.mockResolvedValue([{
       id: 90,
@@ -91,9 +91,10 @@ describe('ChannelMonitorV3QualityHistory refresh', () => {
 
     const chips = wrapper.findAll('[data-testid^="quality-history-chip-"]')
     expect(chips[1].classes()).toContain('is-unknown')
-    await chips[0].trigger('mouseenter')
+    await chips[0].trigger('focus')
     await flushPromises()
-    expect(wrapper.find('[data-testid="quality-history-popover"]').exists()).toBe(false)
+    expect(document.body.querySelector('[data-testid="quality-history-popover"]')).not.toBeNull()
+    expect(document.body.textContent).toContain('gpt-5')
     expect(getQualityEventArtwork).not.toHaveBeenCalled()
   })
 
