@@ -269,7 +269,7 @@ const popoverStyle = computed(() => ({
   font-size: 10px;
   font-weight: 600;
   color: rgb(71 85 105);
-  cursor: crosshair;
+  cursor: pointer;
   transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 160ms ease;
 }
 
