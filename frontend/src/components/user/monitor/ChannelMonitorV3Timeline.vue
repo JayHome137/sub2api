@@ -39,6 +39,7 @@
               v-if="hoveredBarIndex === index && bar.title"
               class="v3-timeline-tooltip"
               role="tooltip"
+              :ref="setTooltipElement"
               :style="tooltipStyle"
             >
               {{ bar.title }}
@@ -56,11 +57,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { MonitorCoverage, MonitorMatrixBucket } from '@/api/channelMonitorV2'
 import { monitorAvailability, monitorCacheRate } from '@/features/channel-monitor-v2/monitorPresentation'
 import { availabilityBarClass, formatMonitorMs, formatMonitorPercent } from '@/features/channel-monitor-v2/monitorFormat'
+import { isMobileDevice } from '@/utils/device'
 
 const props = withDefaults(defineProps<{
   buckets?: MonitorMatrixBucket[]
@@ -74,28 +76,83 @@ const props = withDefaults(defineProps<{
 
 const { t, locale } = useI18n()
 const hoveredBarIndex = ref<number | null>(null)
-const tooltipPosition = ref({ left: 0, top: 0, x: '-50%' })
+const tooltipPosition = ref({ left: 0, top: 0, x: '-50%', arrowLeft: '50%' })
+// These are DOM handles only. Keeping them outside Vue reactivity prevents a
+// Teleport ref update from scheduling another render while the tooltip is open.
+let tooltipTarget: HTMLElement | null = null
+let tooltipElement: HTMLElement | null = null
+
+function updateMobileTooltipArrow() {
+  if (!isMobileDevice()) {
+    if (tooltipPosition.value.arrowLeft !== '50%') {
+      tooltipPosition.value = { ...tooltipPosition.value, arrowLeft: '50%' }
+    }
+    return
+  }
+
+  const target = tooltipTarget
+  const tooltip = tooltipElement
+  if (!target || !tooltip) return
+
+  const targetRect = target.getBoundingClientRect()
+  const tooltipRect = tooltip.getBoundingClientRect()
+  if (tooltipRect.width <= 0) return
+
+  // The mobile tooltip is clamped to the viewport at the edges. Keep its
+  // arrow tied to the tapped bar instead of the clamped tooltip midpoint.
+  const targetCenter = targetRect.left + targetRect.width / 2
+  const arrowPadding = Math.min(12, tooltipRect.width / 2)
+  const arrowLeft = Math.min(
+    Math.max(targetCenter - tooltipRect.left, arrowPadding),
+    tooltipRect.width - arrowPadding,
+  )
+  const nextArrowLeft = `${arrowLeft}px`
+  if (tooltipPosition.value.arrowLeft !== nextArrowLeft) {
+    tooltipPosition.value = { ...tooltipPosition.value, arrowLeft: nextArrowLeft }
+  }
+}
+
+function setTooltipElement(element: unknown) {
+  const nextElement = element instanceof HTMLElement ? element : null
+  if (tooltipElement === nextElement) return
+  tooltipElement = nextElement
+  if (nextElement && isMobileDevice()) void nextTick(updateMobileTooltipArrow)
+}
 
 function setHoveredBar(index: number, event?: Event) {
   hoveredBarIndex.value = index
   const target = event?.currentTarget
   if (!(target instanceof HTMLElement) || typeof window === 'undefined') return
 
+  tooltipTarget = target
   const rect = target.getBoundingClientRect()
   const viewportGutter = 16
   const maxTooltipWidth = Math.min(280, window.innerWidth - viewportGutter * 2)
   const center = rect.left + rect.width / 2
   if (center + maxTooltipWidth / 2 > window.innerWidth - viewportGutter) {
-    tooltipPosition.value = { left: window.innerWidth - viewportGutter, top: rect.top - 8, x: '-100%' }
+    tooltipPosition.value = {
+      left: window.innerWidth - viewportGutter,
+      top: rect.top - 8,
+      x: '-100%',
+      arrowLeft: '50%',
+    }
   } else if (center - maxTooltipWidth / 2 < viewportGutter) {
-    tooltipPosition.value = { left: viewportGutter, top: rect.top - 8, x: '0%' }
+    tooltipPosition.value = {
+      left: viewportGutter,
+      top: rect.top - 8,
+      x: '0%',
+      arrowLeft: '50%',
+    }
   } else {
-    tooltipPosition.value = { left: center, top: rect.top - 8, x: '-50%' }
+    tooltipPosition.value = { left: center, top: rect.top - 8, x: '-50%', arrowLeft: '50%' }
   }
+  if (isMobileDevice()) void nextTick(updateMobileTooltipArrow)
 }
 
 function clearHoveredBar() {
   hoveredBarIndex.value = null
+  tooltipTarget = null
+  tooltipElement = null
 }
 
 function barDistance(index: number) {
@@ -191,11 +248,15 @@ const displayBars = computed<TimelineBar[]>(() => {
   return bars
 })
 
-const tooltipStyle = computed(() => ({
-  '--tooltip-left': `${tooltipPosition.value.left}px`,
-  '--tooltip-top': `${tooltipPosition.value.top}px`,
-  '--tooltip-x': tooltipPosition.value.x,
-}))
+const tooltipStyle = computed(() => {
+  const style: Record<string, string> = {
+    '--tooltip-left': `${tooltipPosition.value.left}px`,
+    '--tooltip-top': `${tooltipPosition.value.top}px`,
+    '--tooltip-x': tooltipPosition.value.x,
+  }
+  if (isMobileDevice()) style['--tooltip-arrow-left'] = tooltipPosition.value.arrowLeft
+  return style
+})
 </script>
 
 <style scoped>
@@ -236,7 +297,7 @@ const tooltipStyle = computed(() => ({
 	padding: 0;
 	border: 0;
 	background: transparent;
-	cursor: crosshair;
+	cursor: pointer;
 	appearance: none;
 }
 
@@ -296,7 +357,7 @@ const tooltipStyle = computed(() => ({
 
 .v3-timeline-tooltip::after {
 	position: absolute;
-	left: 50%;
+	left: var(--tooltip-arrow-left, 50%);
 	bottom: -4px;
 	width: 7px;
 	height: 7px;
