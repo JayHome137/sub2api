@@ -4,7 +4,7 @@ WORKDIR /opt/sub2api/quality-renderer
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 COPY package.json ./
 RUN npm install --omit=dev --ignore-scripts --no-audit --no-fund
-COPY --chown=pwuser:pwuser capture.mjs clock.mjs server.mjs ./
+COPY --chown=pwuser:pwuser capture.mjs clock.mjs process-tree.mjs server.mjs ./
 RUN node -e "import('playwright').then(() => process.exit(0)).catch(error => { console.error(error); process.exit(1) })"
 
 ENV QUALITY_RENDERER_HOST=0.0.0.0

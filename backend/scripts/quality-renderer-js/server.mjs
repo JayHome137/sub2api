@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { killTree } from './process-tree.mjs';
 
 const HOST = process.env.QUALITY_RENDERER_HOST || '0.0.0.0';
 const PORT = Number(process.env.QUALITY_RENDERER_PORT || 8080);
@@ -55,6 +56,7 @@ function render(document) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [CAPTURE], {
       cwd: ROOT,
+      detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'ignore'],
       env: { ...process.env },
     });
@@ -69,13 +71,13 @@ function render(document) {
       if (err) reject(err); else resolve(value);
     };
     const timer = setTimeout(() => {
-      child.kill('SIGKILL');
+      killTree(child.pid);
       finish(new Error('renderer timeout'));
     }, TIMEOUT_MS);
     child.stdout.on('data', chunk => {
       size += chunk.length;
       if (size > MAX_OUTPUT_BYTES) {
-        child.kill('SIGKILL');
+        killTree(child.pid);
         finish(new Error('renderer output too large'));
         return;
       }

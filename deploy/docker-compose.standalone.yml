@@ -166,6 +166,7 @@ services:
   quality-renderer:
     image: ${SUB2API_QUALITY_RENDERER_IMAGE:-ghcr.io/jayhome137/sub2api-quality-renderer:0.2.13}
     container_name: sub2api-quality-renderer
+    init: true
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
