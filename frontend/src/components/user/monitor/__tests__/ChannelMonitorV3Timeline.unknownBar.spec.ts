@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import type { MonitorHealth, MonitorMatrixBucket, MonitorMetric } from '@/api/channelMonitorV2'
 import ChannelMonitorV3Timeline from '../ChannelMonitorV3Timeline.vue'
 
@@ -53,6 +54,14 @@ const coverage = {
   coverage_complete: true, bucket_seconds: 300,
 }
 
+const originalInnerWidth = window.innerWidth
+
+afterEach(() => {
+  document.body.innerHTML = ''
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth })
+  vi.restoreAllMocks()
+})
+
 describe('ChannelMonitorV3Timeline unknown bars', () => {
   it('paints insufficient-sample bars gray instead of availability black', () => {
     const wrapper = mount(ChannelMonitorV3Timeline, {
@@ -93,5 +102,52 @@ describe('ChannelMonitorV3Timeline unknown bars', () => {
     expect(bars).toHaveLength(4)
     expect(bars.map(bar => bar.classes().includes('bg-gray-300'))).toEqual([true, false, true, true])
     expect(bars[1]!.classes()).toContain('bg-emerald-600')
+  })
+
+  it('anchors a right-clamped tooltip arrow to the focused bar', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 400 })
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      if (this.classList.contains('v3-bar-hitbox')) {
+        return { left: 350, right: 370, top: 100, bottom: 120, width: 20, height: 20 } as DOMRect
+      }
+      if (this.classList.contains('v3-timeline-tooltip')) {
+        return { left: 104, right: 384, top: 0, bottom: 40, width: 280, height: 40 } as DOMRect
+      }
+      return { left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0 } as DOMRect
+    })
+
+    const wrapper = mount(ChannelMonitorV3Timeline, {
+      props: { countdownSeconds: 0, length: 1, coverage },
+    })
+
+    await wrapper.get('.v3-bar-hitbox').trigger('focus')
+    await nextTick()
+
+    const tooltip = document.body.querySelector<HTMLElement>('.v3-timeline-tooltip')
+    expect(tooltip?.style.getPropertyValue('--tooltip-x')).toBe('-100%')
+    expect(tooltip?.style.getPropertyValue('--tooltip-arrow-left')).toBe('256px')
+    wrapper.unmount()
+  })
+
+  it('keeps the centered tooltip arrow unchanged away from viewport edges', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 })
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      if (this.classList.contains('v3-bar-hitbox')) {
+        return { left: 400, right: 420, top: 100, bottom: 120, width: 20, height: 20 } as DOMRect
+      }
+      return { left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0 } as DOMRect
+    })
+
+    const wrapper = mount(ChannelMonitorV3Timeline, {
+      props: { countdownSeconds: 0, length: 1, coverage },
+    })
+
+    await wrapper.get('.v3-bar-hitbox').trigger('focus')
+    await nextTick()
+
+    const tooltip = document.body.querySelector<HTMLElement>('.v3-timeline-tooltip')
+    expect(tooltip?.style.getPropertyValue('--tooltip-x')).toBe('-50%')
+    expect(tooltip?.style.getPropertyValue('--tooltip-arrow-left')).toBe('50%')
+    wrapper.unmount()
   })
 })
