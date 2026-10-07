@@ -39,6 +39,7 @@
               v-if="hoveredBarIndex === index && bar.title"
               class="v3-timeline-tooltip"
               role="tooltip"
+              :ref="setTooltipElement"
               :style="tooltipStyle"
             >
               {{ bar.title }}
@@ -56,7 +57,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { MonitorCoverage, MonitorMatrixBucket } from '@/api/channelMonitorV2'
 import { monitorAvailability, monitorCacheRate } from '@/features/channel-monitor-v2/monitorPresentation'
@@ -74,28 +75,72 @@ const props = withDefaults(defineProps<{
 
 const { t, locale } = useI18n()
 const hoveredBarIndex = ref<number | null>(null)
-const tooltipPosition = ref({ left: 0, top: 0, x: '-50%' })
+const tooltipPosition = ref({ left: 0, top: 0, x: '-50%', arrowLeft: '50%' })
+const tooltipTarget = ref<HTMLElement | null>(null)
+const tooltipElement = ref<HTMLElement | null>(null)
+
+function updateTooltipArrow() {
+  const target = tooltipTarget.value
+  const tooltip = tooltipElement.value
+  if (!target || !tooltip || tooltipPosition.value.x === '-50%') {
+    tooltipPosition.value = { ...tooltipPosition.value, arrowLeft: '50%' }
+    return
+  }
+
+  const targetRect = target.getBoundingClientRect()
+  const tooltipRect = tooltip.getBoundingClientRect()
+  if (tooltipRect.width <= 0) return
+
+  // Edge-clamped tooltips need the arrow anchored to the triggering bar,
+  // while centered tooltips keep their existing CSS-centred arrow.
+  const targetCenter = targetRect.left + targetRect.width / 2
+  const arrowPadding = Math.min(12, tooltipRect.width / 2)
+  const arrowLeft = Math.min(
+    Math.max(targetCenter - tooltipRect.left, arrowPadding),
+    tooltipRect.width - arrowPadding,
+  )
+  tooltipPosition.value = { ...tooltipPosition.value, arrowLeft: `${arrowLeft}px` }
+}
+
+function setTooltipElement(element: unknown) {
+  tooltipElement.value = element instanceof HTMLElement ? element : null
+  if (tooltipElement.value) void nextTick(updateTooltipArrow)
+}
 
 function setHoveredBar(index: number, event?: Event) {
   hoveredBarIndex.value = index
   const target = event?.currentTarget
   if (!(target instanceof HTMLElement) || typeof window === 'undefined') return
 
+  tooltipTarget.value = target
   const rect = target.getBoundingClientRect()
   const viewportGutter = 16
   const maxTooltipWidth = Math.min(280, window.innerWidth - viewportGutter * 2)
   const center = rect.left + rect.width / 2
   if (center + maxTooltipWidth / 2 > window.innerWidth - viewportGutter) {
-    tooltipPosition.value = { left: window.innerWidth - viewportGutter, top: rect.top - 8, x: '-100%' }
+    tooltipPosition.value = {
+      left: window.innerWidth - viewportGutter,
+      top: rect.top - 8,
+      x: '-100%',
+      arrowLeft: '50%',
+    }
   } else if (center - maxTooltipWidth / 2 < viewportGutter) {
-    tooltipPosition.value = { left: viewportGutter, top: rect.top - 8, x: '0%' }
+    tooltipPosition.value = {
+      left: viewportGutter,
+      top: rect.top - 8,
+      x: '0%',
+      arrowLeft: '50%',
+    }
   } else {
-    tooltipPosition.value = { left: center, top: rect.top - 8, x: '-50%' }
+    tooltipPosition.value = { left: center, top: rect.top - 8, x: '-50%', arrowLeft: '50%' }
   }
+  void nextTick(updateTooltipArrow)
 }
 
 function clearHoveredBar() {
   hoveredBarIndex.value = null
+  tooltipTarget.value = null
+  tooltipElement.value = null
 }
 
 function barDistance(index: number) {
@@ -195,6 +240,7 @@ const tooltipStyle = computed(() => ({
   '--tooltip-left': `${tooltipPosition.value.left}px`,
   '--tooltip-top': `${tooltipPosition.value.top}px`,
   '--tooltip-x': tooltipPosition.value.x,
+  '--tooltip-arrow-left': tooltipPosition.value.arrowLeft,
 }))
 </script>
 
@@ -296,7 +342,7 @@ const tooltipStyle = computed(() => ({
 
 .v3-timeline-tooltip::after {
 	position: absolute;
-	left: 50%;
+	left: var(--tooltip-arrow-left, 50%);
 	bottom: -4px;
 	width: 7px;
 	height: 7px;
