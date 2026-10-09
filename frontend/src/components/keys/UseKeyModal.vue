@@ -900,7 +900,7 @@ ${codexLocalCatalogToml.value}${codexModelCatalogMode.value === 'remote' ? `mode
 ${generateCodexProviderAuthConfig()}
 
 [features]
-goals = true`
+${codexAuthMode.value === 'api-key' && codexModelCatalogMode.value === 'remote' ? 'api_key_model_discovery = true\n' : ''}goals = true`
 
   // auth.json content
   const authContent = `{
@@ -1133,6 +1133,7 @@ requires_openai_auth = false
 # Grok/Sub2API path is HTTP/SSE; disable WS (Codex may otherwise try WebSocket first)
 supports_websockets = false
 
+${codexModelCatalogMode.value === 'remote' ? '[features]\napi_key_model_discovery = true\n' : ''}
 # Optional:
 # [features]
 # goals = true`
@@ -1168,7 +1169,7 @@ supports_websockets = true
 ${generateCodexProviderAuthConfig()}
 
 [features]
-responses_websockets_v2 = true
+${codexAuthMode.value === 'api-key' && codexModelCatalogMode.value === 'remote' ? 'api_key_model_discovery = true\n' : ''}responses_websockets_v2 = true
 goals = true`
 
   // auth.json content

@@ -235,7 +235,7 @@ docker compose down -v
 | `JWT_SECRET` | **Recommended** | *(auto-generated)* | JWT secret (fixed for persistent sessions) |
 | `TOTP_ENCRYPTION_KEY` | **Recommended** | *(auto-generated)* | TOTP encryption key (fixed for persistent 2FA) |
 | `SERVER_PORT` | No | `8080` | Server port |
-| `ADMIN_EMAIL` | No | `admin@sub2api.local` | Admin email |
+| `ADMIN_EMAIL` | No | Auto-generated on first install | Admin login email |
 | `ADMIN_PASSWORD` | No | *(auto-generated)* | Admin password |
 | `TZ` | No | `Asia/Shanghai` | Timezone |
 | `UPDATE_GITHUB_TOKEN` | No | *(empty)* | Token for `api.github.com` release checks only; asset downloads remain anonymous. |

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/mail"
 	"os"
 	"strconv"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
+	"github.com/gin-gonic/gin/binding"
 	"github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -149,6 +151,35 @@ func decideAdminBootstrap(totalUsers, adminUsers int64) adminBootstrapDecision {
 		shouldCreate: true,
 		reason:       adminBootstrapReasonEmptyDatabase,
 	}
+}
+
+func validateAdminEmail(email string) bool {
+	parsed, err := mail.ParseAddress(email)
+	if err != nil || parsed.Address != email || len(email) > 254 {
+		return false
+	}
+	loginReq := struct {
+		Email string `binding:"required,email"`
+	}{Email: email}
+	return binding.Validator.ValidateStruct(&loginReq) == nil
+}
+
+func validateAdminPassword(password string) error {
+	if len(password) < 8 {
+		return fmt.Errorf("admin password must be at least 8 bytes")
+	}
+	if len(password) > 72 {
+		return fmt.Errorf("admin password must be at most 72 bytes")
+	}
+	return nil
+}
+
+func generateAdminEmail() (string, error) {
+	suffix, err := generateSecret(8)
+	if err != nil {
+		return "", fmt.Errorf("generate admin email: %w", err)
+	}
+	return "admin-" + strings.ToLower(suffix) + "@sub2api.local", nil
 }
 
 func skipSetupEnabled() bool {
@@ -429,6 +460,15 @@ func createAdminUser(cfg *SetupConfig) (bool, string, error) {
 	if !decision.shouldCreate {
 		return false, decision.reason, nil
 	}
+	if strings.TrimSpace(cfg.Admin.Email) == "" {
+		cfg.Admin.Email, err = generateAdminEmail()
+		if err != nil {
+			return false, "", err
+		}
+		fmt.Printf("Generated admin email (login username): %s\n", cfg.Admin.Email)
+	} else if !validateAdminEmail(cfg.Admin.Email) {
+		return false, "", fmt.Errorf("invalid admin email: must be a valid email address")
+	}
 
 	if strings.TrimSpace(cfg.Admin.Password) == "" {
 		password, genErr := generateSecret(16)
@@ -438,6 +478,8 @@ func createAdminUser(cfg *SetupConfig) (bool, string, error) {
 		cfg.Admin.Password = password
 		fmt.Printf("Generated admin password (one-time): %s\n", cfg.Admin.Password)
 		fmt.Println("IMPORTANT: Save this password! It will not be shown again.")
+	} else if err := validateAdminPassword(cfg.Admin.Password); err != nil {
+		return false, "", err
 	}
 
 	admin := &service.User{
@@ -596,7 +638,7 @@ func AutoSetupFromEnv() error {
 			EnableTLS: getEnvOrDefault("REDIS_ENABLE_TLS", "false") == "true",
 		},
 		Admin: AdminConfig{
-			Email:    getEnvOrDefault("ADMIN_EMAIL", "admin@sub2api.local"),
+			Email:    strings.TrimSpace(os.Getenv("ADMIN_EMAIL")),
 			Password: getEnvOrDefault("ADMIN_PASSWORD", ""),
 		},
 		Server: ServerConfig{

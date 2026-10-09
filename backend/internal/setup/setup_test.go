@@ -78,6 +78,43 @@ func TestSetupDefaultAdminConcurrency(t *testing.T) {
 	})
 }
 
+func TestValidateAdminCredentials(t *testing.T) {
+	t.Run("email must be a plain valid address", func(t *testing.T) {
+		if !validateAdminEmail("admin@example.com") {
+			t.Fatal("valid email rejected")
+		}
+		if validateAdminEmail("Admin <admin@example.com>") || validateAdminEmail("admin@localhost") {
+			t.Fatal("invalid login email accepted")
+		}
+	})
+
+	t.Run("password is limited to bcrypt byte range", func(t *testing.T) {
+		if err := validateAdminPassword("12345678"); err != nil {
+			t.Fatalf("minimum password rejected: %v", err)
+		}
+		if err := validateAdminPassword(strings.Repeat("a", 73)); err == nil {
+			t.Fatal("password longer than 72 bytes accepted")
+		}
+	})
+}
+
+func TestGenerateAdminEmail(t *testing.T) {
+	first, err := generateAdminEmail()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := generateAdminEmail()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second || !strings.HasPrefix(first, "admin-") || !strings.HasSuffix(first, "@sub2api.local") {
+		t.Fatalf("unexpected generated admin emails: %q, %q", first, second)
+	}
+	if !validateAdminEmail(first) {
+		t.Fatalf("generated admin email is not accepted by login validation: %q", first)
+	}
+}
+
 func TestNeedsSetupSkipsWhenSkipSetupIsEnabled(t *testing.T) {
 	tests := []struct {
 		name  string

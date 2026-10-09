@@ -163,6 +163,48 @@ func TestWrapUsageRecordTaskContext_HandsReservationToBillingTask(t *testing.T) 
 	require.Equal(t, 0, cache.count())
 }
 
+type recordingInflightEstimator struct {
+	requests []service.InflightEstimateRequest
+}
+
+func (e *recordingInflightEstimator) EstimateInflightReservation(_ context.Context, _ *service.APIKey, req service.InflightEstimateRequest) (float64, bool) {
+	e.requests = append(e.requests, req)
+	return float64(req.MaxTokens) / 1000, true
+}
+
+func TestOpenAIWSTurnInflightStateReservesPerTurnAndHandsOffToBilling(t *testing.T) {
+	cache := newHandlerInflightCache(10)
+	cfg := &config.Config{}
+	cfg.Billing.InflightReservation = config.InflightReservationConfig{Enabled: true, TTLSeconds: 60}
+	billing := service.NewBillingCacheService(cache, nil, nil, nil, nil, nil, cfg, nil)
+	t.Cleanup(billing.Stop)
+	apiKey := &service.APIKey{User: &service.User{ID: 9}}
+	estimator := &recordingInflightEstimator{}
+	state := openAIWSTurnInflightState{}
+	baseCtx := context.Background()
+	payload := []byte(`{"max_output_tokens":300}`)
+	state.setRequest(2, "gpt-test", payload)
+	payload[0] = 'x'
+
+	require.NoError(t, state.reserve(baseCtx, 2, billing, estimator, apiKey, nil))
+	require.NoError(t, state.reserve(baseCtx, 2, billing, estimator, apiKey, nil), "duplicate mapping must not reserve twice")
+	require.Len(t, estimator.requests, 1)
+	require.Equal(t, 300, estimator.requests[0].MaxTokens)
+	require.Equal(t, 1, cache.count())
+
+	turnCtx, done := state.take(2, baseCtx)
+	require.NotNil(t, service.InflightReservationFromContext(turnCtx))
+	task, _ := wrapUsageRecordTaskContext(turnCtx, func(context.Context) {})
+	done()
+	require.Equal(t, 1, cache.count(), "reservation remains held while the usage task is pending")
+	task(context.Background())
+	require.Equal(t, 0, cache.count(), "usage task releases the reservation after billing")
+
+	_, done = state.take(2, baseCtx)
+	done()
+	require.Equal(t, 0, cache.count(), "taking the same turn twice is safe")
+}
+
 // 新接入的端点（独立 web_search）：在途预留超过余额时拒绝，且不残留预留。
 func TestWebSearch_RejectsWhenInflightExceedsBalance(t *testing.T) {
 	cache := newHandlerInflightCache(1.5)

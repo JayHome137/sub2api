@@ -238,6 +238,8 @@ describe('UseKeyModal', () => {
     expect(configToml).toContain('base_url = "https://example.com/v1"')
     expect(configToml).toContain('env_key = "SUB2API_API_KEY"')
     expect(configToml).toContain('wire_api = "responses"')
+    expect(configToml).toContain('model_catalog_url = "https://example.com/v1/models"')
+    expect(configToml).toContain('[features]\napi_key_model_discovery = true')
     // API-key provider: Codex must not require a ChatGPT OAuth login.
     expect(configToml).toContain('requires_openai_auth = false')
     expect(configToml).toContain('supports_websockets = false')
@@ -375,6 +377,7 @@ describe('UseKeyModal', () => {
     expect(configToml).toContain('requires_openai_auth = false')
     expect(configToml).toContain('http_headers = { "x-openai-actor-authorization" = "local-image-extension" }')
     expect(configToml).toContain('model_catalog_url = "https://example.com/v1/models"')
+    expect(configToml).toContain('api_key_model_discovery = true')
     expect(configToml).not.toContain('model_catalog_json')
     expect(configToml).not.toContain('env_key')
     expect(configToml).not.toContain('image_generation')
@@ -438,6 +441,7 @@ describe('UseKeyModal', () => {
     expect(configToml).not.toContain('image_generation')
     expect(configToml).toContain('supports_websockets = true')
     expect(configToml).toContain('[features]\nresponses_websockets_v2 = true\ngoals = true')
+    expect(configToml).not.toContain('api_key_model_discovery')
     expect(codeBlocks).toContain('{\n  "OPENAI_API_KEY": "sk-test"\n}')
     expect(wrapper.text()).toContain('auth.json')
   })
@@ -484,7 +488,7 @@ describe('UseKeyModal', () => {
     expect(configToml).not.toContain('env_key')
     expect(configToml).not.toContain('image_generation')
     expect(configToml).toContain('supports_websockets = true')
-    expect(configToml).toContain('[features]\nresponses_websockets_v2 = true\ngoals = true')
+    expect(configToml).toContain('[features]\napi_key_model_discovery = true\nresponses_websockets_v2 = true\ngoals = true')
     expect(codeBlocks).toContain('{\n  "OPENAI_API_KEY": "sk-test"\n}')
   })
 

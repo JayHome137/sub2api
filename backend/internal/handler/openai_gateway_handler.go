@@ -2668,6 +2668,22 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "billing check failed")
 		return
 	}
+	inflightCtx, inflightDone, inflightErr := reserveInflightBalanceCtx(
+		ctx,
+		h.billingCacheService,
+		h.gatewayService,
+		apiKey,
+		subscription,
+		tokenInflightEstimate(reqModel, firstMessage),
+	)
+	if inflightErr != nil {
+		reqLog.Info("openai.websocket_inflight_reservation_rejected", zap.Error(inflightErr))
+		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "billing check failed")
+		return
+	}
+	defer inflightDone()
+	ctx = inflightCtx
+	c.Request = c.Request.WithContext(ctx)
 
 	// A WebSocket may outlive a key's remaining spending window. Recheck
 	// after acquiring turn slots, including the first account-selection wait.
@@ -2943,6 +2959,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		// 后续 turn 的计费分组同样在 BeforeTurn 经认证缓存重取，使分组调价对
 		// 已打开的连接生效。
 		var turnBillingAPIKeys openAIWSTurnBillingAPIKeys
+		var turnInflight openAIWSTurnInflightState
 		// Passthrough ingress does not invoke BeforeTurn for the first frame.
 		if err := checkSimpleModeTurnBilling(); err != nil {
 			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "billing check failed")
@@ -2994,6 +3011,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					writeSecurityAuditWSError(ctx, wsConn, decision)
 					return service.NewOpenAIWSClientCloseError(securityAuditWSCloseStatus(decision), securityAuditWSCloseReason(decision), nil)
 				}
+				turnInflight.setRequest(turn, model, payload)
 				return nil
 			},
 			MapRequestModel: func(turn int, originalModel string) (string, error) {
@@ -3018,6 +3036,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				}
 				if turn > 1 && !mappedModelUnchanged && !account.IsModelSupported(model) && !account.IsModelSupported(mapping.MappedModel) {
 					return "", newOpenAIWSUnsupportedModelSwitchError(mapping.MappedModel)
+				}
+				turnBillingAPIKey := turnBillingAPIKeys.forTurn(turn, apiKey)
+				if err := turnInflight.reserve(ctx, turn, h.billingCacheService, h.gatewayService, turnBillingAPIKey, subscription); err != nil {
+					reqLog.Info("openai.websocket_turn_inflight_reservation_rejected", zap.Int("turn", turn), zap.Error(err))
+					return "", service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "billing check failed", err)
 				}
 				turnChannelMapping.Store(&openAIWSTurnChannelMappingSnapshot{turn: turn, mapping: mapping})
 				return mapping.MappedModel, nil
@@ -3071,6 +3094,8 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				return checkSimpleModeTurnBilling()
 			},
 			AfterTurn: func(turn int, result *service.OpenAIForwardResult, turnErr error) {
+				turnUsageCtx, turnInflightDone := turnInflight.take(turn, ctx)
+				defer turnInflightDone()
 				turnStart := getTurnStart(turn)
 				cyberBlockBody := takeCyberTurnBody(turn)
 				// 每次 attempt 都清 cyber mark；failover 链结束前保留 recorded guard，
@@ -3149,7 +3174,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				turnRecordPricingAt := turnPricing.currentOr(turnStart)
 				turnBillingAPIKey := turnBillingAPIKeys.forTurn(turn, apiKey)
 				cyberBlocked := service.GetOpsCyberPolicy(c) != nil
-				h.submitOpenAIUsageRecordTask(ctx, result, func(taskCtx context.Context) {
+				h.submitOpenAIUsageRecordTask(turnUsageCtx, result, func(taskCtx context.Context) {
 					if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
 						Result:             result,
 						APIKey:             turnBillingAPIKey,
