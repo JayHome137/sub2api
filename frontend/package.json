@@ -3,18 +3,6 @@
   "private": true,
   "version": "1.0.0",
   "packageManager": "pnpm@10.28.2",
-  "pnpm": {
-    "overrides": {
-      "dompurify@<3.4.13": "3.4.13",
-      "js-cookie": "3.0.7",
-      "form-data@<4.0.6": ">=4.0.6",
-      "postcss@<8.5.18": ">=8.5.18",
-      "yaml@>=1.0.0 <1.10.3": "1.10.3",
-      "uuid@>=11.0.0 <11.1.1": "11.1.1",
-      "uuid@>=13.0.0 <13.0.1": "13.0.1",
-      "source-map-js": "1.2.2"
-    }
-  },
   "type": "module",
   "scripts": {
     "dev": "vite",

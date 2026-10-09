@@ -1,8 +1,48 @@
 package provider
 
 import (
+	"context"
+	"net/url"
+	"strings"
 	"testing"
 )
+
+func TestEasyPayRejectsUnexpectedNotificationParams(t *testing.T) {
+	e := &EasyPay{config: map[string]string{"pkey": "secret"}}
+	_, err := e.VerifyNotification(context.Background(), "pid=1&trade_status=TRADE_SUCCESS&return_url=x", nil)
+	if err == nil || !strings.Contains(err.Error(), "unexpected notify param: return_url") {
+		t.Fatalf("unexpected callback parameter should be rejected, got %v", err)
+	}
+}
+
+func TestEasyPayVerifyNotificationAcceptsStandardSignedCallback(t *testing.T) {
+	const pkey = "secret"
+	e := &EasyPay{config: map[string]string{"pid": "1001", "pkey": pkey}}
+	params := map[string]string{
+		"pid":          "1001",
+		"trade_no":     "TRADE123",
+		"out_trade_no": "ORDER123",
+		"type":         "alipay",
+		"name":         "Test Product",
+		"money":        "10.00",
+		"trade_status": tradeStatusSuccess,
+		"param":        "custom metadata",
+	}
+	params["sign"] = easyPaySign(params, pkey)
+	params["sign_type"] = "MD5"
+
+	values := url.Values{}
+	for key, value := range params {
+		values.Set(key, value)
+	}
+	notification, err := e.VerifyNotification(context.Background(), values.Encode(), nil)
+	if err != nil {
+		t.Fatalf("valid standard callback was rejected: %v", err)
+	}
+	if notification.OrderID != "ORDER123" || notification.TradeNo != "TRADE123" || notification.Amount != 10 || notification.Status != "success" {
+		t.Fatalf("unexpected notification: %+v", notification)
+	}
+}
 
 func TestEasyPaySignConsistentOutput(t *testing.T) {
 	t.Parallel()

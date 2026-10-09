@@ -3,7 +3,6 @@ package setup
 import (
 	"fmt"
 	"net/http"
-	"net/mail"
 	"regexp"
 	"strings"
 	"sync"
@@ -85,17 +84,16 @@ func validateUsername(name string) bool {
 
 // validateEmail checks if email format is valid
 func validateEmail(email string) bool {
-	_, err := mail.ParseAddress(email)
-	return err == nil && len(email) <= 254
+	return validateAdminEmail(email)
 }
 
 // validatePassword checks password strength
 func validatePassword(password string) error {
 	if len(password) < 8 {
-		return fmt.Errorf("password must be at least 8 characters")
+		return fmt.Errorf("password must be at least 8 bytes")
 	}
-	if len(password) > 128 {
-		return fmt.Errorf("password must be at most 128 characters")
+	if len(password) > 72 {
+		return fmt.Errorf("password must be at most 72 bytes")
 	}
 	return nil
 }

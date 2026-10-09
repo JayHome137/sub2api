@@ -376,6 +376,9 @@ func (e *EasyPay) VerifyNotification(_ context.Context, rawBody string, _ map[st
 	// url.ParseQuery already decodes values — no additional decode needed.
 	params := make(map[string]string)
 	for k := range values {
+		if !easyPayNotifyAllowedParams[k] {
+			return nil, fmt.Errorf("unexpected notify param: %s", k)
+		}
 		params[k] = values.Get(k)
 	}
 	sign := params["sign"]
@@ -402,6 +405,12 @@ func (e *EasyPay) VerifyNotification(_ context.Context, rawBody string, _ map[st
 		TradeNo: params["trade_no"], OrderID: params["out_trade_no"],
 		Amount: amount, Status: status, RawData: rawBody, Metadata: metadata,
 	}, nil
+}
+
+var easyPayNotifyAllowedParams = map[string]bool{
+	"pid": true, "trade_no": true, "out_trade_no": true, "type": true,
+	"name": true, "money": true, "trade_status": true, "param": true,
+	"sign": true, "sign_type": true,
 }
 
 func (e *EasyPay) Refund(ctx context.Context, req payment.RefundRequest) (*payment.RefundResponse, error) {

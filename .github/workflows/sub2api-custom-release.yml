@@ -211,7 +211,9 @@ jobs:
           notes="$(cat <<'EOF'
           本版本更新内容：
 
-          - Bug fix
+          - 加固新安装管理员账号、EasyPay 回调和支付返回地址安全校验。
+          - 修复 Chat/Responses 协议转换、Codex OAuth web_search、WS 用量计费及账号模型展示问题。
+          - 修复运维告警分页、配置保存和异步页面请求竞态；保留现有 AIFOO、V3 监控与自定义价格。
 
           同步发布全栈镜像、隔离渲染器镜像和 Linux 更新控制面。
           EOF
