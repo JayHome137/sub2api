@@ -290,6 +290,8 @@ export interface MonitorQualityEvent {
   status: 'success' | 'degraded'
   quality_mode: 'pelican' | 'candy' | string
   error_message: string
+  latency_ms: number
+  cron_expression: string
   created_at: string
 }
 

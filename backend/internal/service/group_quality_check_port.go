@@ -48,14 +48,16 @@ type GroupQualityBucketRow struct {
 // Only runs that produced a verdict (success / degraded) are exposed;
 // transport failures and inconclusive checks remain internal to the admin.
 type GroupQualityEvent struct {
-	ID           int64     `json:"id"`
-	GroupID      int64     `json:"group_id"`
-	AccountID    int64     `json:"account_id"`
-	ModelID      string    `json:"model_id"`
-	Status       string    `json:"status"` // success | degraded
-	QualityMode  string    `json:"quality_mode"`
-	ErrorMessage string    `json:"error_message"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID             int64     `json:"id"`
+	GroupID        int64     `json:"group_id"`
+	AccountID      int64     `json:"account_id"`
+	ModelID        string    `json:"model_id"`
+	Status         string    `json:"status"` // success | degraded
+	QualityMode    string    `json:"quality_mode"`
+	ErrorMessage   string    `json:"error_message"`
+	LatencyMs      int64     `json:"latency_ms"`
+	CronExpression string    `json:"cron_expression"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // GroupQualityCheckRepository persists the per-group toggle and reads the
