@@ -184,7 +184,8 @@ func (r *groupQualityCheckRepository) ListGroupEvents(ctx context.Context, group
 	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT r.id, ag.group_id, p.account_id, COALESCE(p.model_id, ''),
-		       r.status, COALESCE(r.error_message, ''), r.created_at, p.quality_mode
+		       r.status, COALESCE(r.error_message, ''), r.latency_ms, p.cron_expression,
+		       r.created_at, p.quality_mode
 		FROM scheduled_test_results r
 		JOIN scheduled_test_plans p ON p.id = r.plan_id
 		JOIN account_groups ag ON ag.account_id = p.account_id AND ag.group_id = $1
@@ -209,7 +210,8 @@ func (r *groupQualityCheckRepository) ListGroupEvents(ctx context.Context, group
 		event := &service.GroupQualityEvent{}
 		if err := rows.Scan(
 			&event.ID, &event.GroupID, &event.AccountID, &event.ModelID,
-			&event.Status, &event.ErrorMessage, &event.CreatedAt, &event.QualityMode,
+			&event.Status, &event.ErrorMessage, &event.LatencyMs, &event.CronExpression,
+			&event.CreatedAt, &event.QualityMode,
 		); err != nil {
 			return nil, err
 		}

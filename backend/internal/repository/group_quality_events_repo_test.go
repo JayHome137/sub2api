@@ -18,12 +18,12 @@ func TestGroupQualityRepository_ListGroupEvents(t *testing.T) {
 	defer func() { _ = db.Close() }()
 	repo := repository.NewGroupQualityCheckRepository(db)
 	now := time.Now().UTC()
-	columns := []string{"id", "group_id", "account_id", "model_id", "status", "error_message", "created_at", "quality_mode"}
+	columns := []string{"id", "group_id", "account_id", "model_id", "status", "error_message", "latency_ms", "cron_expression", "created_at", "quality_mode"}
 	mock.ExpectQuery("(?s)SELECT r.id, ag.group_id, p.account_id.*JOIN accounts a.*p.quality_check_enabled = TRUE.*a.schedulable IS TRUE").
 		WithArgs(int64(43), 30).
 		WillReturnRows(sqlmock.NewRows(columns).
-			AddRow(11, 43, 7, "claude-sonnet-5", "degraded", "feet do not plausibly contact crank pedals", now, "pelican").
-			AddRow(10, 43, 7, "claude-sonnet-5", "success", "", now.Add(-time.Minute), "candy"))
+			AddRow(11, 43, 7, "claude-sonnet-5", "degraded", "feet do not plausibly contact crank pedals", 9130, "*/30 * * * *", now, "pelican").
+			AddRow(10, 43, 7, "claude-sonnet-5", "success", "", 8200, "*/30 * * * *", now.Add(-time.Minute), "candy"))
 
 	events, err := repo.ListGroupEvents(context.Background(), 43, 30)
 	require.NoError(t, err)
@@ -32,6 +32,8 @@ func TestGroupQualityRepository_ListGroupEvents(t *testing.T) {
 	require.Equal(t, "degraded", events[0].Status)
 	require.Equal(t, "claude-sonnet-5", events[0].ModelID)
 	require.Contains(t, events[0].ErrorMessage, "crank pedals")
+	require.Equal(t, int64(9130), events[0].LatencyMs)
+	require.Equal(t, "*/30 * * * *", events[0].CronExpression)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -42,7 +44,7 @@ func TestGroupQualityRepository_ListGroupEventsClampsLimit(t *testing.T) {
 	repo := repository.NewGroupQualityCheckRepository(db)
 	mock.ExpectQuery("(?s)SELECT r.id, ag.group_id, p.account_id.*JOIN accounts a.*p.quality_check_enabled = TRUE.*a.schedulable IS TRUE").
 		WithArgs(int64(9), 100).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id", "account_id", "model_id", "status", "error_message", "created_at", "quality_mode"}))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id", "account_id", "model_id", "status", "error_message", "latency_ms", "cron_expression", "created_at", "quality_mode"}))
 
 	events, err := repo.ListGroupEvents(context.Background(), 9, 5000)
 	require.NoError(t, err)

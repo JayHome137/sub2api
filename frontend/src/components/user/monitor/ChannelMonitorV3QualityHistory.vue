@@ -1,82 +1,93 @@
 <template>
-  <div
-    v-if="enabled && groupId"
+  <section
+    v-if="groupId"
     class="channel-signal-quality-history mt-3 border-t border-white/70 pt-3 dark:border-dark-700/60"
     data-testid="channel-quality-history"
   >
-    <div class="channel-signal-timeline__legend mb-1.5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-gray-400">
-      <span>{{ t('monitorCommon.qualityHistoryTitle', { n: events.length }) }}</span>
-      <span v-if="degradedCount" class="tabular-nums text-red-500/90 dark:text-red-400/90">
-        {{ t('monitorCommon.qualityHistoryDegradedCount', { n: degradedCount }) }}
+    <div class="quality-history-header">
+      <span class="quality-history-title">{{ t('monitorCommon.qualityHistoryStatusTitle') }}</span>
+      <span class="quality-history-status" :class="statusClass(latestEvent?.status)">
+        <span class="quality-history-status__dot" aria-hidden="true" />
+        {{ latestStatusLabel }}
       </span>
     </div>
 
-    <div v-if="loading && !hasLoaded" class="pb-1 text-[10px] text-gray-400">{{ t('monitorCommon.qualityHistoryLoading') }}</div>
-    <div v-else-if="loadFailed && !events.length" class="pb-1 text-[10px] text-red-500/90 dark:text-red-400/90">{{ t('monitorCommon.qualityHistoryFailed') }}</div>
-    <div v-else-if="!events.length" class="pb-1 text-[10px] text-gray-400">{{ t('monitorCommon.qualityHistoryEmpty') }}</div>
-
-    <div v-else class="quality-history-strip flex flex-wrap gap-1.5" @mouseleave="clearHover">
-      <button
-        v-for="(event, index) in events"
-        :key="event.id"
-        type="button"
-        class="quality-history-chip"
-        :class="[statusClass(event.status), { 'is-active': hoveredIndex === index }]"
-        :data-testid="`quality-history-chip-${event.id}`"
-        :aria-label="chipLabel(event)"
-        @mouseenter="hoverEvent(index, $event)"
-        @focus="hoverEvent(index, $event)"
-        @blur="clearHover"
-      >
-        <span class="quality-history-chip__dot" aria-hidden="true" />
-        <span class="quality-history-chip__time tabular-nums">{{ formatChipTime(event.created_at) }}</span>
-      </button>
+    <div class="quality-history-meta" data-testid="quality-history-meta">
+      <span class="truncate" data-testid="quality-history-model">{{ latestModel }}</span>
+      <span aria-hidden="true">·</span>
+      <span>{{ t('monitorCommon.qualityHistoryIntervalLabel') }} {{ latestInterval }}</span>
+      <span aria-hidden="true">·</span>
+      <span>{{ t('monitorCommon.qualityHistoryRecent', { n: HISTORY_LIMIT }) }}</span>
     </div>
 
-    <Teleport to="body">
-      <Transition name="v3-timeline-tooltip">
-        <div
-          v-if="hovered && hoveredEvent"
-          class="quality-history-popover"
-          :style="popoverStyle"
+    <div
+      class="quality-history-slots"
+      role="img"
+      :aria-label="t('monitorCommon.qualityHistoryStatusTitle')"
+      data-testid="quality-history-slots"
+    >
+      <span
+        v-for="(event, index) in historySlots"
+        :key="event?.id ?? `empty-${index}`"
+        class="quality-history-slot-wrap"
+        @mouseleave="clearActiveSlot"
+      >
+        <button
+          v-if="event"
+          type="button"
+          class="quality-history-slot"
+          :class="statusClass(event.status)"
+          :aria-label="eventLabel(event)"
+          :aria-describedby="activeSlot === index ? `quality-history-tooltip-${event.id}` : undefined"
+          :data-testid="`quality-history-slot-${index}`"
+          @mouseenter="setActiveSlot(index)"
+          @focus="setActiveSlot(index)"
+          @blur="clearActiveSlot"
+          @click="setActiveSlot(index)"
+        />
+        <span
+          v-else
+          class="quality-history-slot is-unknown is-empty"
+          :aria-label="t('monitorCommon.qualityHistoryStatusNoResult')"
+          :data-testid="`quality-history-slot-${index}`"
+        />
+        <span
+          v-if="event && activeSlot === index"
+          :id="`quality-history-tooltip-${event.id}`"
+          class="quality-history-slot-tooltip"
           role="tooltip"
-          data-testid="quality-history-popover"
+          data-testid="quality-history-tooltip"
         >
-          <div class="quality-history-popover__head">
-            <span
-              class="font-semibold"
-              :class="statusTextClass(hoveredEvent.status)"
-            >
-              {{ qualityStatusLabel(hoveredEvent.status) }}
-            </span>
-            <span class="font-mono text-amber-300/90" data-testid="quality-history-event-id">#{{ hoveredEvent.id }}</span>
-            <span class="text-gray-300">{{ formatFullTime(hoveredEvent.created_at) }}</span>
-            <span v-if="hoveredEvent.model_id" class="truncate font-mono text-gray-400">{{ hoveredEvent.model_id }}</span>
-          </div>
-          <div v-if="artworkLoading" class="quality-history-popover__message">
-            {{ t('monitorCommon.qualityArtworkLoading') }}
-          </div>
-          <div v-else-if="artworkFailed" class="quality-history-popover__message is-error">
-            {{ t('monitorCommon.qualityArtworkFailed') }}
-          </div>
-          <iframe
-            v-else-if="hoveredArtwork"
-            class="quality-history-popover__preview"
-            :srcdoc="hoveredArtworkSrcdoc"
-            :title="t('monitorCommon.qualityArtworkPreview')"
-            sandbox=""
-            referrerpolicy="no-referrer"
-          />
-        </div>
-      </Transition>
-    </Teleport>
-  </div>
+          <span>{{ t('monitorCommon.qualityHistoryTooltipTime') }}: {{ formatFullTime(event.created_at) }}</span>
+          <span>{{ t('monitorCommon.qualityHistoryTooltipModel') }}: {{ event.model_id || '-' }}</span>
+          <span>{{ t('monitorCommon.qualityHistoryTooltipResult') }}: {{ qualityStatusLabel(event.status) }}</span>
+          <span>{{ t('monitorCommon.qualityHistoryTooltipLatency') }}: {{ formatLatency(event.latency_ms) }}</span>
+          <span>{{ t('monitorCommon.qualityHistoryTooltipInterval') }}: {{ formatCronInterval(event.cron_expression) }}</span>
+        </span>
+      </span>
+    </div>
+
+    <div class="quality-history-footer">
+      <span>{{ footerLabel }}</span>
+      <time v-if="latestEvent" :datetime="latestEvent.created_at">
+        {{ formatFullTime(latestEvent.created_at) }}
+      </time>
+    </div>
+    <p v-if="loadFailed" class="quality-history-message is-error">
+      {{ t('monitorCommon.qualityHistoryFailed') }}
+    </p>
+    <p v-else-if="loading && !hasLoaded" class="quality-history-message">
+      {{ t('monitorCommon.qualityHistoryLoading') }}
+    </p>
+  </section>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getQualityEventArtwork, getQualityEvents, type MonitorQualityEvent } from '@/api/channelMonitorV2'
+import { getQualityEvents, type MonitorQualityEvent } from '@/api/channelMonitorV2'
+
+const HISTORY_LIMIT = 18
 
 const props = withDefaults(defineProps<{
   groupId?: number
@@ -93,54 +104,40 @@ const events = ref<MonitorQualityEvent[]>([])
 const loading = ref(false)
 const loadFailed = ref(false)
 const hasLoaded = ref(false)
-const hovered = ref(false)
-const hoveredIndex = ref<number | null>(null)
-const hoveredArtwork = ref('')
-const artworkLoading = ref(false)
-const artworkFailed = ref(false)
-const popoverPosition = ref({ left: 0, top: 0, x: '-50%', y: '-100%' })
-const isCoarsePointer = ref(false)
-let hoverRequest = 0
+const activeSlot = ref<number | null>(null)
 
-if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
-  isCoarsePointer.value = window.matchMedia('(pointer: coarse)').matches
-}
-
-const hoveredEvent = computed(() => (hoveredIndex.value === null ? null : events.value[hoveredIndex.value] ?? null))
-const degradedCount = computed(() => events.value.filter((event) => event.status === 'degraded').length)
-const hoveredArtworkSrcdoc = computed(() => {
-  if (!hoveredArtwork.value || typeof DOMParser === 'undefined') return ''
-  const document = new DOMParser().parseFromString(hoveredArtwork.value, 'text/html')
-  for (const meta of document.querySelectorAll('meta[http-equiv]')) meta.remove()
-  const policy = document.createElement('meta')
-  policy.httpEquiv = 'Content-Security-Policy'
-  policy.content = [
-    "default-src 'none'",
-    'img-src data: blob:',
-    "style-src 'unsafe-inline' data:",
-    'font-src data:',
-    'media-src data:',
-    "connect-src 'none'",
-    "frame-src 'none'",
-    "object-src 'none'",
-    "base-uri 'none'",
-    "form-action 'none'",
-    "navigate-to 'none'",
-  ].join('; ')
-  document.head.prepend(policy)
-  return `<!doctype html>${document.documentElement.outerHTML}`
+const latestEvent = computed(() => events.value[0] ?? null)
+const latestModel = computed(() => latestEvent.value?.model_id || '-')
+const latestInterval = computed(() => formatCronInterval(latestEvent.value?.cron_expression))
+const historySlots = computed(() => {
+  // The API returns newest first. The strip reads left to right from oldest to newest.
+  const recent = events.value.slice(0, HISTORY_LIMIT).reverse()
+  const emptyCount = Math.max(0, HISTORY_LIMIT - recent.length)
+  return [...Array.from({ length: emptyCount }, () => null), ...recent]
+})
+const latestStatusLabel = computed(() => {
+  if (!props.enabled) return t('monitorCommon.qualityHistoryStatusDisabled')
+  if (!latestEvent.value) return t('monitorCommon.qualityHistoryStatusWaiting')
+  return qualityStatusLabel(latestEvent.value.status)
+})
+const footerLabel = computed(() => {
+  if (!props.enabled) return t('monitorCommon.qualityHistoryFooterDisabled')
+  if (!latestEvent.value) return t('monitorCommon.qualityHistoryFooterWaiting')
+  return t('monitorCommon.qualityHistoryLegend')
 })
 
 async function load() {
   if (!props.enabled || !props.groupId) {
     events.value = []
-    clearHover()
+    activeSlot.value = null
+    hasLoaded.value = false
+    loadFailed.value = false
     return
   }
   loading.value = true
   loadFailed.value = false
   try {
-    const list = await getQualityEvents(props.groupId, 30)
+    const list = await getQualityEvents(props.groupId, HISTORY_LIMIT)
     events.value = Array.isArray(list) ? list : []
     hasLoaded.value = true
   } catch {
@@ -156,12 +153,6 @@ watch(
   { immediate: true },
 )
 
-function formatChipTime(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '--:--'
-  return new Intl.DateTimeFormat(locale.value || undefined, { hour: '2-digit', minute: '2-digit' }).format(date)
-}
-
 function formatFullTime(value: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
@@ -170,197 +161,222 @@ function formatFullTime(value: string) {
   }).format(date)
 }
 
-function chipLabel(event: MonitorQualityEvent) {
-  const status = event.status === 'degraded' ? t('monitorCommon.qualityHistoryDegraded') : t('monitorCommon.qualityHistoryPass')
-  return `#${event.id} · ${formatFullTime(event.created_at)} · ${status}`
+function formatLatency(value?: number) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return '-'
+  return `${(value / 1000).toFixed(2)}s`
 }
 
-function statusClass(status: string) {
-  if (status === 'degraded') return 'is-degraded'
-  if (status === 'unknown' || status === 'inconclusive') return 'is-unknown'
-  return 'is-pass'
+function formatCronInterval(expression?: string) {
+  const cron = expression?.trim()
+  if (!cron) return t('monitorCommon.qualityHistoryIntervalUnknown')
+  const everyMinutes = cron.match(/^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*$/)
+  if (everyMinutes) return `${everyMinutes[1]} min`
+  if (cron === '0 * * * *') return '60 min'
+  if (cron === '0 0 * * *') return '24 h'
+  return cron
 }
 
-function statusTextClass(status: string) {
-  if (status === 'degraded') return 'text-red-400'
-  if (status === 'unknown' || status === 'inconclusive') return 'text-gray-400'
-  return 'text-emerald-400'
+function statusClass(status?: string) {
+  if (status === 'degraded' || status === 'failed') return 'is-degraded'
+  if (status === 'success') return 'is-pass'
+  return 'is-unknown'
 }
 
-function qualityStatusLabel(status: string) {
-  if (status === 'degraded') return t('monitorCommon.qualityHistoryDegraded')
-  if (status === 'unknown' || status === 'inconclusive') return t('monitorCommon.qualityHistoryUnknown')
-  return t('monitorCommon.qualityHistoryPass')
+function qualityStatusLabel(status?: string) {
+  if (status === 'degraded' || status === 'failed') return t('monitorCommon.qualityHistoryStatusDegraded')
+  if (status === 'success') return t('monitorCommon.qualityHistoryStatusPass')
+  return t('monitorCommon.qualityHistoryStatusNoResult')
 }
 
-function positionPopover(event?: Event) {
-  const target = event?.currentTarget
-  if (!(target instanceof HTMLElement) || typeof window === 'undefined') return
-  const rect = target.getBoundingClientRect()
-  const viewportGutter = 16
-  const maxWidth = Math.min(360, window.innerWidth - viewportGutter * 2)
-  const placeBelow = rect.top < 240
-  const top = placeBelow ? rect.bottom + 8 : rect.top - 8
-  const y = placeBelow ? '0%' : '-100%'
-  const center = rect.left + rect.width / 2
-  if (center + maxWidth / 2 > window.innerWidth - viewportGutter) {
-    popoverPosition.value = { left: window.innerWidth - viewportGutter, top, x: '-100%', y }
-  } else if (center - maxWidth / 2 < viewportGutter) {
-    popoverPosition.value = { left: viewportGutter, top, x: '0%', y }
-  } else {
-    popoverPosition.value = { left: center, top, x: '-50%', y }
-  }
+function eventLabel(event: MonitorQualityEvent) {
+  return `${formatFullTime(event.created_at)} · ${qualityStatusLabel(event.status)}`
 }
 
-function hoverEvent(index: number, event?: Event) {
-  positionPopover(event)
-  hovered.value = true
-  hoveredIndex.value = index
-  hoveredArtwork.value = ''
-  artworkFailed.value = false
-  const request = ++hoverRequest
-  const item = events.value[index]
-  // Touch devices keep the result header, but never load SVG artwork.
-  if (!props.groupId || !item || item.quality_mode === 'candy' || isCoarsePointer.value) return
-  artworkLoading.value = true
-  void getQualityEventArtwork(props.groupId, item.id)
-    .then((artwork) => {
-      if (request === hoverRequest && hoveredIndex.value === index) hoveredArtwork.value = artwork
-    })
-    .catch(() => {
-      if (request === hoverRequest && hoveredIndex.value === index) artworkFailed.value = true
-    })
-    .finally(() => {
-      if (request === hoverRequest) artworkLoading.value = false
-    })
+function setActiveSlot(index: number) {
+  activeSlot.value = index
 }
 
-function clearHover() {
-  hoverRequest++
-  hovered.value = false
-  hoveredIndex.value = null
-  hoveredArtwork.value = ''
-  artworkLoading.value = false
-  artworkFailed.value = false
+function clearActiveSlot() {
+  activeSlot.value = null
 }
-
-const popoverStyle = computed(() => ({
-  '--tooltip-left': `${popoverPosition.value.left}px`,
-  '--tooltip-top': `${popoverPosition.value.top}px`,
-  '--tooltip-x': popoverPosition.value.x,
-  '--tooltip-y': popoverPosition.value.y,
-}))
 </script>
 
 <style scoped>
-.quality-history-strip {
-  max-height: 3.6rem;
-  overflow: auto;
+.channel-signal-quality-history {
+  color: rgb(125 151 169);
 }
 
-.quality-history-chip {
+.quality-history-header,
+.quality-history-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.quality-history-title {
+  color: rgb(214 232 242);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.quality-history-status {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  border: 1px solid rgb(148 163 184 / 0.35);
-  border-radius: 999px;
-  background: rgb(248 250 252 / 0.9);
-  padding: 2px 7px;
-  font-size: 10px;
-  font-weight: 600;
-  color: rgb(71 85 105);
-  cursor: pointer;
-  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 160ms ease;
-}
-
-.quality-history-chip.is-active {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 10px rgb(15 118 110 / 0.18);
-}
-
-.quality-history-chip__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-}
-
-.quality-history-chip.is-pass .quality-history-chip__dot {
-  background: rgb(16 185 129);
-}
-
-.quality-history-chip.is-degraded .quality-history-chip__dot {
-  background: rgb(239 68 68);
-}
-
-.quality-history-chip.is-degraded {
-  border-color: rgb(248 113 113 / 0.55);
-  color: rgb(185 28 28);
-}
-
-.quality-history-chip.is-unknown {
-  border-color: rgb(148 163 184 / 0.55);
-  color: rgb(100 116 139);
-}
-
-.dark .quality-history-chip {
-  border-color: rgb(71 85 105 / 0.6);
-  background: rgb(15 23 42 / 0.55);
-  color: rgb(203 213 225);
-}
-
-.dark .quality-history-chip.is-unknown {
-  color: rgb(148 163 184);
-}
-
-.quality-history-popover {
-  position: fixed;
-  left: var(--tooltip-left, 50%);
-  top: var(--tooltip-top, 0px);
-  z-index: 50;
-  width: max-content;
-  max-width: min(360px, calc(100vw - 32px));
-  transform: translateX(var(--tooltip-x, -50%)) translateY(var(--tooltip-y, -100%));
-  border: 1px solid rgb(255 255 255 / 0.14);
-  border-radius: 10px;
-  background: rgb(15 23 42 / 0.96);
-  padding: 8px 10px;
-  color: rgb(248 250 252);
-  box-shadow: 0 14px 30px rgb(15 23 42 / 0.35);
-  pointer-events: none;
-}
-
-.quality-history-popover__head {
-  display: flex;
-  align-items: baseline;
   gap: 8px;
-  font-size: 10px;
-  line-height: 1.4;
+  min-width: 0;
+  font-size: 16px;
   white-space: nowrap;
 }
 
-.quality-history-popover__preview {
-  display: block;
-  width: min(320px, calc(100vw - 52px));
-  height: 200px;
-  margin-top: 7px;
-  border: 0;
-  border-radius: 4px;
-  background: white;
+.quality-history-status__dot {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  border-radius: 999px;
 }
 
-.quality-history-popover__message {
+.quality-history-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   margin-top: 8px;
-  font-size: 10px;
-  color: rgb(203 213 225);
+  overflow: hidden;
+  color: rgb(126 154 173);
+  font-size: 14px;
+  line-height: 1.3;
+  white-space: nowrap;
 }
 
-.quality-history-popover__message.is-error {
-  color: rgb(252 165 165);
+.quality-history-slots {
+  display: grid;
+  grid-template-columns: repeat(18, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 16px;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .quality-history-chip {
-    transition: none;
+.quality-history-slot-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.quality-history-slot {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: 18px;
+  border: 0;
+  border-radius: 7px;
+  background: rgb(71 91 105 / 0.72);
+  cursor: pointer;
+}
+
+.quality-history-slot.is-empty {
+  height: 6px;
+  align-self: center;
+  border-radius: 999px;
+  background: rgb(100 116 139 / 0.75);
+}
+
+button.quality-history-slot:focus-visible {
+  outline: 2px solid rgb(125 211 252);
+  outline-offset: 2px;
+}
+
+.quality-history-slot-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  z-index: 10;
+  display: grid;
+  width: max-content;
+  max-width: min(260px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  gap: 3px;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 8px;
+  background: rgb(15 23 42 / 0.96);
+  padding: 7px 9px;
+  color: rgb(226 232 240);
+  box-shadow: 0 12px 24px rgb(15 23 42 / 0.28);
+  font-size: 11px;
+  line-height: 1.35;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.quality-history-footer {
+  margin-top: 12px;
+  color: rgb(126 154 173);
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.quality-history-footer time {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.quality-history-message {
+  margin-top: 8px;
+  color: rgb(126 154 173);
+  font-size: 11px;
+}
+
+.quality-history-message.is-error {
+  color: rgb(248 113 113);
+}
+
+.is-pass .quality-history-status__dot,
+.quality-history-slot.is-pass {
+  background: rgb(16 185 129);
+}
+
+.quality-history-status.is-pass {
+  color: rgb(126 154 173);
+}
+
+.is-degraded .quality-history-status__dot,
+.quality-history-slot.is-degraded {
+  background: rgb(239 68 68);
+}
+
+.quality-history-status.is-degraded {
+  color: rgb(248 113 113);
+}
+
+.is-unknown .quality-history-status__dot,
+.quality-history-slot.is-unknown {
+  background: rgb(100 116 139 / 0.75);
+}
+
+.quality-history-status.is-unknown {
+  color: rgb(148 163 184);
+}
+
+@media (max-width: 640px) {
+  .quality-history-title,
+  .quality-history-status {
+    font-size: 14px;
+  }
+
+  .quality-history-meta {
+    font-size: 12px;
+  }
+
+  .quality-history-slots {
+    gap: 3px;
+    margin-top: 12px;
+  }
+
+  .quality-history-slot {
+    height: 18px;
+    border-radius: 7px;
+  }
+
+  .quality-history-footer {
+    font-size: 11px;
   }
 }
 </style>
