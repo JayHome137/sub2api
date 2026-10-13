@@ -56,7 +56,9 @@ describe('UsageStatsCards', () => {
       },
     })
 
-    const text = wrapper.text()
+    // HelpTooltip teleports its hover panel to body so it cannot be clipped by
+    // the usage card or the AIFOO console shell.
+    const text = `${wrapper.text()}${document.body.textContent ?? ''}`
     expect(text).toContain('Cache: 34')
     expect(text).toContain('Cache Token Breakdown')
     expect(text).toContain('Cache Creation')
