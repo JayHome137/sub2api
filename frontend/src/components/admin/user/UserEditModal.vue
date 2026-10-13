@@ -27,7 +27,7 @@
       </div>
       <div>
         <label class="input-label">{{ t('admin.users.username') }}</label>
-        <input v-model="form.username" type="text" class="input" />
+        <input v-model="form.username" type="text" maxlength="50" class="input" />
       </div>
       <div>
         <label class="input-label">{{ t('admin.users.form.roleLabel') }}</label>
@@ -86,6 +86,7 @@
 import { computed, ref, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
+import { isUsernameValid } from '@/utils/usernamePolicy'
 import { useClipboard } from '@/composables/useClipboard'
 import { adminAPI } from '@/api/admin'
 import type { AdminUser, UserAttributeValuesMap } from '@/types'
@@ -139,6 +140,10 @@ const handleUpdateUser = async () => {
   if (!props.user) return
   if (!form.email.trim()) {
     appStore.showError(t('admin.users.emailRequired'))
+    return
+  }
+  if (!isUsernameValid(form.username)) {
+    appStore.showError(t('admin.users.usernameInvalid'))
     return
   }
   // 0 = 不限制，与网关 (AcquireUserSlot: maxConcurrency <= 0) 和批量改限额一致

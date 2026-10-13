@@ -84,6 +84,26 @@ func FromBodyForRoute(routePath, contentType string, body []byte) string {
 	return candidates[0]
 }
 
+// ConflictingModelCandidates reports that the request declares model more than
+// once. Duplicate declarations are rejected even when values are identical.
+func ConflictingModelCandidates(candidates []string) bool {
+	seen := false
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		if !seen {
+			seen = true
+			continue
+		}
+		// Even identical duplicate values are rejected. Different decoders may
+		// bind duplicate keys differently, so the request must be unambiguous.
+		return true
+	}
+	return false
+}
+
 // FromJSON 从 JSON 请求体提取模型名：顶层 `model` 优先，其次 `session.model`（Live）。
 func FromJSON(body []byte) string {
 	model, _ := JSONModelPath(body)

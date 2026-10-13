@@ -457,7 +457,7 @@ func (s *APIKeyService) checkAPIKeyCreateLimits(ctx context.Context, userID int6
 	if maxPerHour := s.cfg.APIKeyCreate.MaxPerUserPerHour; maxPerHour > 0 && s.cache != nil {
 		count, err := s.cache.IncrementCreateCount(ctx, userID, apiKeyCreateCountWindow)
 		if err != nil {
-			return nil
+			return ErrBillingServiceUnavailable.WithCause(err)
 		}
 		if count > int64(maxPerHour) {
 			return ErrAPIKeyCreateLimited

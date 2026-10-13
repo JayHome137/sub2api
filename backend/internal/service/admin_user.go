@@ -130,10 +130,16 @@ func (s *adminServiceImpl) CreateUser(ctx context.Context, input *CreateUserInpu
 	if err != nil {
 		return nil, err
 	}
+	username := strings.TrimSpace(input.Username)
+	if username != "" {
+		if err := ValidateUsername(username); err != nil {
+			return nil, err
+		}
+	}
 
 	user := &User{
 		Email:         input.Email,
-		Username:      input.Username,
+		Username:      username,
 		Notes:         input.Notes,
 		Role:          role,
 		Balance:       balance,
@@ -236,7 +242,13 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 	}
 
 	if input.Username != nil {
-		user.Username = *input.Username
+		username := strings.TrimSpace(*input.Username)
+		if username != "" {
+			if err := ValidateUsername(username); err != nil {
+				return nil, err
+			}
+		}
+		user.Username = username
 		fields.Username = true
 	}
 	if input.Notes != nil {

@@ -521,7 +521,13 @@ func (s *UserService) updateProfile(ctx context.Context, userID int64, req Updat
 	}
 
 	if req.Username != nil {
-		user.Username = *req.Username
+		username := strings.TrimSpace(*req.Username)
+		if username != "" && username != user.Username {
+			if err := ValidateUsername(username); err != nil {
+				return nil, oldConcurrency, err
+			}
+		}
+		user.Username = username
 		fields.Username = true
 	}
 
