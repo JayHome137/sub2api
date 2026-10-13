@@ -23,7 +23,7 @@
       </div>
       <div>
         <label class="input-label">{{ t('admin.users.username') }}</label>
-        <input v-model="form.username" type="text" class="input" :placeholder="t('admin.users.enterUsername')" />
+        <input v-model="form.username" type="text" maxlength="50" class="input" :placeholder="t('admin.users.enterUsername')" />
       </div>
       <div>
         <label class="input-label">{{ t('admin.users.form.roleLabel') }}</label>
@@ -73,6 +73,7 @@
 import { reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'; import { adminAPI } from '@/api/admin'
 import { useAppStore } from '@/stores/app'
+import { isUsernameValid } from '@/utils/usernamePolicy'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useStepUp, isStepUpBlocked, isStepUpCancelled, stepUpBlockReason } from '@/composables/useStepUp'
@@ -89,6 +90,10 @@ const loading = ref(false)
 
 const submit = async () => {
   if (loading.value) return
+  if (!isUsernameValid(form.username)) {
+    appStore.showError(t('admin.users.usernameInvalid'))
+    return
+  }
   loading.value = true
   try {
     const { balance: rawBalance, ...rest } = { ...form }

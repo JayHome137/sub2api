@@ -578,10 +578,7 @@ func (s *AuthService) LoginOrRegisterOAuth(ctx context.Context, email, username 
 		return "", nil, infraerrors.BadRequest("INVALID_EMAIL", "invalid email")
 	}
 
-	username = strings.TrimSpace(username)
-	if len([]rune(username)) > 100 {
-		username = string([]rune(username)[:100])
-	}
+	username = SanitizeUsername(username)
 
 	user, err := s.userRepo.GetByEmail(ctx, email)
 	if err != nil {
@@ -706,10 +703,7 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 		return nil, nil, infraerrors.BadRequest("INVALID_EMAIL", "invalid email")
 	}
 
-	username = strings.TrimSpace(username)
-	if len([]rune(username)) > 100 {
-		username = string([]rune(username)[:100])
-	}
+	username = SanitizeUsername(username)
 
 	user, err := s.userRepo.GetByEmail(ctx, email)
 	created := false
