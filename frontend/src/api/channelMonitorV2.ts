@@ -169,6 +169,7 @@ export interface MonitorMatrixRow {
   platform: string
   group_id?: number
   group_name?: string
+  sort_order?: number
   model?: string
   metrics: MonitorMetric
   health: MonitorHealth

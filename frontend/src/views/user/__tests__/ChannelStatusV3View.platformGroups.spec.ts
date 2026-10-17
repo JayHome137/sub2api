@@ -75,11 +75,12 @@ function health() {
   }
 }
 
-function row(platform: string, groupId: number, groupName: string): MonitorMatrixRow {
+function row(platform: string, groupId: number, groupName: string, sortOrder = groupId * 10): MonitorMatrixRow {
   return {
     platform,
     group_id: groupId,
     group_name: groupName,
+    sort_order: sortOrder,
     metrics: metrics(),
     health: health(),
     buckets: [{ bucket_start: '2026-09-11T12:00:00Z', metrics: metrics(), health: health() }],
@@ -122,9 +123,9 @@ describe('ChannelStatusV3View platform grouping', () => {
       coverage: coverage(),
       group_by: 'platform_group',
       items: [
-        row('openai', 2, 'Codex'),
+        row('openai', 2, 'Codex', 20),
         row('gemini', 9, 'Gemini'),
-        row('openai', 1, 'GPT'),
+        row('openai', 1, 'GPT', 10),
       ],
     })
   })
@@ -215,15 +216,15 @@ describe('ChannelStatusV3View platform grouping', () => {
     expect(wrapper.find('[data-testid="card-1"]').exists()).toBe(true)
   })
 
-  it('orders ordinary before exclusive within each platform using metadata, without adding invisible groups', async () => {
+  it('uses the persisted group sort order within each platform, without adding invisible groups', async () => {
     vi.mocked(userGroupsAPI.getAvailable).mockResolvedValue([
       { id: 1, is_exclusive: true }, { id: 2, is_exclusive: false },
       { id: 4, is_exclusive: true }, { id: 5, is_exclusive: false },
       { id: 99, is_exclusive: false },
     ] as Awaited<ReturnType<typeof userGroupsAPI.getAvailable>>)
     getMatrix.mockResolvedValue({ coverage: coverage(), group_by: 'platform_group', items: [
-      row('openai', 1, 'Exclusive'), row('openai', 2, 'Ordinary'),
-      row('anthropic', 4, 'Exclusive Claude'), row('anthropic', 5, 'Ordinary Claude'),
+      row('openai', 1, 'Exclusive', 20), row('openai', 2, 'Ordinary', 10),
+      row('anthropic', 4, 'Exclusive Claude', 40), row('anthropic', 5, 'Ordinary Claude', 30),
     ] })
     const wrapper = mountView()
     await flushPromises()

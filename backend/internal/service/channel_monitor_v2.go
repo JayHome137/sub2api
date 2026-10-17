@@ -249,6 +249,7 @@ type ChannelMonitorV2MatrixRow struct {
 	Platform       string                          `json:"platform"`
 	GroupID        *int64                          `json:"group_id,omitempty"`
 	GroupName      string                          `json:"group_name,omitempty"`
+	SortOrder      int                             `json:"sort_order"`
 	Model          string                          `json:"model,omitempty"`
 	Metrics        ChannelMonitorV2Metric          `json:"metrics"`
 	Health         ChannelMonitorV2Health          `json:"health"`
