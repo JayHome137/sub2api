@@ -113,7 +113,6 @@ const loading = ref(false)
 const refreshing = ref(false)
 const monitorDisabled = ref(false)
 const userGroupRates = ref<Record<number, number>>({})
-const groupExclusive = ref<Record<number, boolean>>({})
 const countdownSeconds = ref(0)
 const qualityRefreshRevision = ref(0)
 interface RangeData {
@@ -135,7 +134,8 @@ let countdownTimer: number | null = null
 // monitor group_ids selected by the operator, so unrelated groups never appear.
 const rows = computed(() => [...(matrix.value?.items ?? [])]
   .filter(row => row.group_id != null && row.group_id > 0)
-  .sort((a, b) => (a.group_id ?? 0) - (b.group_id ?? 0)))
+  .sort((a, b) => (a.sort_order ?? Number.MAX_SAFE_INTEGER) - (b.sort_order ?? Number.MAX_SAFE_INTEGER)
+    || (a.group_id ?? 0) - (b.group_id ?? 0)))
 const platformSections = computed(() => {
   const grouped = new Map<string, typeof rows.value>()
   for (const row of rows.value) {
@@ -146,7 +146,7 @@ const platformSections = computed(() => {
   }
   return [...grouped.entries()].map(([platform, sectionRows]) => ({
     platform,
-    rows: sectionRows.sort((a, b) => groupCategory(a.group_id) - groupCategory(b.group_id)
+    rows: sectionRows.sort((a, b) => (a.sort_order ?? Number.MAX_SAFE_INTEGER) - (b.sort_order ?? Number.MAX_SAFE_INTEGER)
       || (a.group_id ?? 0) - (b.group_id ?? 0)),
   }))
 })
@@ -155,11 +155,6 @@ const timelineLength = computed(() => ({ '90m': 18, '24h': 24, '7d': 14, '30d': 
 function formatPercent(value: number | null) { return value == null ? '-' : formatMonitorPercent(value, locale.value || 'zh-CN') }
 function formatTime(value?: string) { if (!value) return '-'; return new Intl.DateTimeFormat(locale.value || undefined, { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) }
 function setRange(value: MonitorRange) { filter.value = { ...filter.value, range: value } }
-
-function groupCategory(groupId?: number) {
-  const exclusive = groupId == null ? undefined : groupExclusive.value[groupId]
-  return exclusive === false ? 0 : exclusive === true ? 1 : 2
-}
 
 function getUserRateMultiplier(groupId?: number) {
   if (!groupId) return null
@@ -171,7 +166,6 @@ async function loadUserGroupRates() {
   try {
     const [groups, customRates] = await Promise.all([
       userGroupsAPI.getAvailable().then(groups => {
-        groupExclusive.value = Object.fromEntries(groups.map(group => [group.id, group.is_exclusive]))
         return groups
       }),
       userGroupsAPI.getUserGroupRates(),
