@@ -2480,3 +2480,29 @@ html.dark.console-shell.route-dashboard .dark\:bg-dark-700\/50 {
     linear-gradient(180deg, rgba(24, 31, 42, 0.92), rgba(13, 18, 27, 0.96)),
     rgba(14, 19, 28, 0.94) !important;
 }
+
+/* The compact V3 platform grid wraps each card in a div for its heading.
+   Keep the wrapper transparent so generic dashboard-card decoration does not
+   create a second square surface behind the rounded monitor card. */
+html.console-shell .channel-status-board > section > div.grid.grid-cols-1.gap-5.md\:grid-cols-2.xl\:grid-cols-3.\32 xl\:grid-cols-4 > div[data-testid^="channel-status-platform-"],
+html.console-shell.route-dashboard .channel-status-board > section > div.grid.grid-cols-1.gap-5.md\:grid-cols-2.xl\:grid-cols-3.\32 xl\:grid-cols-4 > div[data-testid^="channel-status-platform-"],
+html.dark.console-shell .channel-status-board > section > div.grid.grid-cols-1.gap-5.md\:grid-cols-2.xl\:grid-cols-3.\32 xl\:grid-cols-4 > div[data-testid^="channel-status-platform-"],
+html.dark.console-shell.route-dashboard .channel-status-board > section > div.grid.grid-cols-1.gap-5.md\:grid-cols-2.xl\:grid-cols-3.\32 xl\:grid-cols-4 > div[data-testid^="channel-status-platform-"] {
+  position: static !important;
+  overflow: visible !important;
+  transform: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html.console-shell .channel-status-board > section > div.grid.grid-cols-1.gap-5.md\:grid-cols-2.xl\:grid-cols-3.\32 xl\:grid-cols-4 > div[data-testid^="channel-status-platform-"]::before,
+html.console-shell.route-dashboard .channel-status-board > section > div.grid.grid-cols-1.gap-5.md\:grid-cols-2.xl\:grid-cols-3.\32 xl\:grid-cols-4 > div[data-testid^="channel-status-platform-"]::before,
+html.dark.console-shell .channel-status-board > section > div.grid.grid-cols-1.gap-5.md\:grid-cols-2.xl\:grid-cols-3.\32 xl\:grid-cols-4 > div[data-testid^="channel-status-platform-"]::before,
+html.dark.console-shell.route-dashboard .channel-status-board > section > div.grid.grid-cols-1.gap-5.md\:grid-cols-2.xl\:grid-cols-3.\32 xl\:grid-cols-4 > div[data-testid^="channel-status-platform-"]::before {
+  content: none !important;
+  display: none !important;
+}
