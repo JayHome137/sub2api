@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 const testAuthorization = "Bearer 1234567890abcdef"
@@ -24,6 +25,21 @@ func (f *fakeHelper) Run(_ context.Context, args ...string) (helperResult, error
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, append([]string(nil), args...))
 	return helperResult{Message: "ok"}, f.err
+}
+
+type blockingHelper struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (h *blockingHelper) Run(ctx context.Context, _ ...string) (helperResult, error) {
+	close(h.started)
+	select {
+	case <-ctx.Done():
+		return helperResult{}, ctx.Err()
+	case <-h.release:
+		return helperResult{Message: "ok"}, nil
+	}
 }
 
 func newTestServer(t *testing.T, helper *fakeHelper, hasUpdate bool) (*bridgeServer, func()) {
@@ -148,6 +164,41 @@ func TestRestartActivatesPreparedImage(t *testing.T) {
 	}
 }
 
+func TestRestartContinuesAfterClientDisconnect(t *testing.T) {
+	helper := &blockingHelper{started: make(chan struct{}), release: make(chan struct{})}
+	server := newBridgeServer(config{}, helper)
+	requestCtx, cancelRequest := context.WithCancel(context.Background())
+	request := httptest.NewRequest(http.MethodPost, "/restart", nil).WithContext(requestCtx)
+	response := httptest.NewRecorder()
+	handlerDone := make(chan struct{})
+	go func() {
+		server.handleRestart(response, request)
+		close(handlerDone)
+	}()
+
+	select {
+	case <-helper.started:
+	case <-time.After(time.Second):
+		t.Fatal("helper did not start")
+	}
+	cancelRequest()
+	select {
+	case <-handlerDone:
+		t.Fatal("helper stopped when the client disconnected")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(helper.release)
+	select {
+	case <-handlerDone:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not finish after helper was released")
+	}
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+}
+
 func TestUnauthorizedRequestNeverRunsHelper(t *testing.T) {
 	helper := &fakeHelper{}
 	server, closeAdmin := newTestServer(t, helper, true)
@@ -159,6 +210,27 @@ func TestUnauthorizedRequestNeverRunsHelper(t *testing.T) {
 	}
 	if len(helper.calls) != 0 {
 		t.Fatalf("helper calls = %#v", helper.calls)
+	}
+}
+
+func TestOperationContextSurvivesRequestCancellation(t *testing.T) {
+	requestCtx, cancelRequest := context.WithCancel(context.Background())
+	operationCtx, cancelOperation := newOperationContext(requestCtx)
+	defer cancelOperation()
+
+	cancelRequest()
+	select {
+	case <-operationCtx.Done():
+		t.Fatalf("operation context canceled with request: %v", operationCtx.Err())
+	default:
+	}
+
+	deadline, ok := operationCtx.Deadline()
+	if !ok {
+		t.Fatal("operation context has no deadline")
+	}
+	if remaining := time.Until(deadline); remaining <= 0 || remaining > operationTimeout {
+		t.Fatalf("operation deadline has unexpected remaining duration %s", remaining)
 	}
 }
 

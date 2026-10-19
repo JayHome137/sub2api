@@ -287,7 +287,7 @@ func (s *bridgeServer) handleRollback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *bridgeServer) runPreparation(w http.ResponseWriter, r *http.Request, target string) {
-	ctx, cancel := context.WithTimeout(r.Context(), operationTimeout)
+	ctx, cancel := newOperationContext(r.Context())
 	defer cancel()
 	result, err := s.helper.Run(ctx, "app-prepare", target)
 	if err != nil {
@@ -303,7 +303,7 @@ func (s *bridgeServer) handleRestart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), operationTimeout)
+	ctx, cancel := newOperationContext(r.Context())
 	defer cancel()
 	result, err := s.helper.Run(ctx, "app-activate")
 	if err != nil {
@@ -312,6 +312,11 @@ func (s *bridgeServer) handleRestart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": result.Message})
+}
+
+func newOperationContext(parent context.Context) (context.Context, context.CancelFunc) {
+	// Deployment work must survive a disconnected caller, but remain time-bounded.
+	return context.WithTimeout(context.WithoutCancel(parent), operationTimeout)
 }
 
 func normalizeVersion(value string) (string, error) {

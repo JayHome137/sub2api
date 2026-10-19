@@ -6,6 +6,8 @@
 - `POST /api/v1/aifoo-upgrade/rollback`：准备管理员选择的自有旧版本镜像并锁定 digest。
 - `POST /api/v1/aifoo-upgrade/restart`：只重建 Compose 的全栈 app 服务，验证容器健康、镜像 digest 和版本；失败时恢复原 Compose 和原 app。
 
+准备、激活和回滚操作不随发起请求的浏览器连接取消；即使客户端断开，helper 仍会继续执行，并受 15 分钟操作超时限制。
+
 日常更新只拉取已经发布的 Release 和 GHCR 镜像，不触发 Actions，不在生产机编译代码，也不使用 VM。桥只监听 `127.0.0.1:8091`，每个 mutation 都把浏览器现有的 Bearer Token 回查本机管理员 API。它不读取 GitHub PAT。
 
 当前 GHCR 包为私有包。首次安装控制面后，在生产机用有权读取该包的 GitHub 用户名和短期令牌完成一次登录；凭据会写入 systemd bridge 使用的独立 Docker 配置目录，不会写入 Compose 或仓库：
