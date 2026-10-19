@@ -27,6 +27,21 @@ func (f *fakeHelper) Run(_ context.Context, args ...string) (helperResult, error
 	return helperResult{Message: "ok"}, f.err
 }
 
+type blockingHelper struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (h *blockingHelper) Run(ctx context.Context, _ ...string) (helperResult, error) {
+	close(h.started)
+	select {
+	case <-ctx.Done():
+		return helperResult{}, ctx.Err()
+	case <-h.release:
+		return helperResult{Message: "ok"}, nil
+	}
+}
+
 func newTestServer(t *testing.T, helper *fakeHelper, hasUpdate bool) (*bridgeServer, func()) {
 	t.Helper()
 	admin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -146,6 +161,41 @@ func TestRestartActivatesPreparedImage(t *testing.T) {
 	}
 	if !reflect.DeepEqual(helper.calls, [][]string{{"app-activate"}}) {
 		t.Fatalf("helper calls = %#v", helper.calls)
+	}
+}
+
+func TestRestartContinuesAfterClientDisconnect(t *testing.T) {
+	helper := &blockingHelper{started: make(chan struct{}), release: make(chan struct{})}
+	server := newBridgeServer(config{}, helper)
+	requestCtx, cancelRequest := context.WithCancel(context.Background())
+	request := httptest.NewRequest(http.MethodPost, "/restart", nil).WithContext(requestCtx)
+	response := httptest.NewRecorder()
+	handlerDone := make(chan struct{})
+	go func() {
+		server.handleRestart(response, request)
+		close(handlerDone)
+	}()
+
+	select {
+	case <-helper.started:
+	case <-time.After(time.Second):
+		t.Fatal("helper did not start")
+	}
+	cancelRequest()
+	select {
+	case <-handlerDone:
+		t.Fatal("helper stopped when the client disconnected")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(helper.release)
+	select {
+	case <-handlerDone:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not finish after helper was released")
+	}
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 }
 
