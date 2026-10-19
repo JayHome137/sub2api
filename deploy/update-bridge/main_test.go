@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 const testAuthorization = "Bearer 1234567890abcdef"
@@ -159,6 +160,27 @@ func TestUnauthorizedRequestNeverRunsHelper(t *testing.T) {
 	}
 	if len(helper.calls) != 0 {
 		t.Fatalf("helper calls = %#v", helper.calls)
+	}
+}
+
+func TestOperationContextSurvivesRequestCancellation(t *testing.T) {
+	requestCtx, cancelRequest := context.WithCancel(context.Background())
+	operationCtx, cancelOperation := newOperationContext(requestCtx)
+	defer cancelOperation()
+
+	cancelRequest()
+	select {
+	case <-operationCtx.Done():
+		t.Fatalf("operation context canceled with request: %v", operationCtx.Err())
+	default:
+	}
+
+	deadline, ok := operationCtx.Deadline()
+	if !ok {
+		t.Fatal("operation context has no deadline")
+	}
+	if remaining := time.Until(deadline); remaining <= 0 || remaining > operationTimeout {
+		t.Fatalf("operation deadline has unexpected remaining duration %s", remaining)
 	}
 }
 
