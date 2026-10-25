@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -41,6 +42,11 @@ const (
 	geminiAbortUsageChunk = `data: {"candidates":[{"content":{"parts":[{"text":"drawing"}],"role":"model"}}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":2,"totalTokenCount":12}}` + "\n\n"
 )
 
+func newGeminiVertexAPIKeyTestService() (*GeminiMessagesCompatService, *geminiCompatHTTPUpstreamStub) {
+	stub := &geminiCompatHTTPUpstreamStub{}
+	return &GeminiMessagesCompatService{httpUpstream: stub, cfg: &config.Config{}}, stub
+}
+
 // newGeminiAbortingStreamService 返回的上游流在吐完 sse 后中断；clientGone=true 时中断伴随请求 context 取消。
 func newGeminiAbortingStreamService(t *testing.T, path string, reqBody []byte, sse string, clientGone bool) (*GeminiMessagesCompatService, *gin.Context, *httptest.ResponseRecorder) {
 	t.Helper()
@@ -69,7 +75,7 @@ func TestGeminiForwardNative_ClientDisconnectAfterFinalChunkBillsCollectedUsage(
 	reqBody := []byte(`{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}`)
 	svc, c, _ := newGeminiAbortingStreamService(t, "/v1beta/models/gemini-3-flash-preview:streamGenerateContent", reqBody, geminiAbortTextChunk+geminiAbortFinalChunk, true)
 
-	result, err := svc.ForwardNative(context.Background(), c, geminiVertexAPIKeyTestAccount(""), "gemini-3-flash-preview", "streamGenerateContent", true, reqBody)
+	result, err := svc.ForwardNative(context.Background(), c, geminiAPIKeyAccount("test-key"), "gemini-3-flash-preview", "streamGenerateContent", true, reqBody)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.True(t, result.ClientDisconnect)
@@ -82,7 +88,7 @@ func TestGeminiForwardNative_ClientDisconnectWithoutUsageStaysUnbilled(t *testin
 	reqBody := []byte(`{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}`)
 	svc, c, _ := newGeminiAbortingStreamService(t, "/v1beta/models/gemini-3-flash-preview:streamGenerateContent", reqBody, geminiAbortTextChunk, true)
 
-	result, err := svc.ForwardNative(context.Background(), c, geminiVertexAPIKeyTestAccount(""), "gemini-3-flash-preview", "streamGenerateContent", true, reqBody)
+	result, err := svc.ForwardNative(context.Background(), c, geminiAPIKeyAccount("test-key"), "gemini-3-flash-preview", "streamGenerateContent", true, reqBody)
 	require.ErrorIs(t, err, context.Canceled)
 	require.Nil(t, result)
 }
@@ -91,7 +97,7 @@ func TestGeminiForwardNative_UpstreamReadErrorWithLiveClientStaysError(t *testin
 	reqBody := []byte(`{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}`)
 	svc, c, _ := newGeminiAbortingStreamService(t, "/v1beta/models/gemini-3-flash-preview:streamGenerateContent", reqBody, geminiAbortTextChunk+geminiAbortFinalChunk, false)
 
-	result, err := svc.ForwardNative(context.Background(), c, geminiVertexAPIKeyTestAccount(""), "gemini-3-flash-preview", "streamGenerateContent", true, reqBody)
+	result, err := svc.ForwardNative(context.Background(), c, geminiAPIKeyAccount("test-key"), "gemini-3-flash-preview", "streamGenerateContent", true, reqBody)
 	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
 	require.Nil(t, result)
 }
@@ -101,7 +107,7 @@ func TestGeminiForwardNative_ClientDisconnectBillsOnlyDeliveredImages(t *testing
 
 	t.Run("image delivered before disconnect", func(t *testing.T) {
 		svc, c, _ := newGeminiAbortingStreamService(t, "/v1beta/models/gemini-3-pro-image:streamGenerateContent", reqBody, geminiAbortImageChunk, true)
-		result, err := svc.ForwardNative(context.Background(), c, geminiVertexAPIKeyTestAccount(""), "gemini-3-pro-image", "streamGenerateContent", true, reqBody)
+		result, err := svc.ForwardNative(context.Background(), c, geminiAPIKeyAccount("test-key"), "gemini-3-pro-image", "streamGenerateContent", true, reqBody)
 		require.NoError(t, err)
 		require.True(t, result.ClientDisconnect)
 		require.Equal(t, 1, result.ImageCount)
@@ -109,7 +115,7 @@ func TestGeminiForwardNative_ClientDisconnectBillsOnlyDeliveredImages(t *testing
 
 	t.Run("disconnect before the image arrives", func(t *testing.T) {
 		svc, c, _ := newGeminiAbortingStreamService(t, "/v1beta/models/gemini-3-pro-image:streamGenerateContent", reqBody, geminiAbortUsageChunk, true)
-		result, err := svc.ForwardNative(context.Background(), c, geminiVertexAPIKeyTestAccount(""), "gemini-3-pro-image", "streamGenerateContent", true, reqBody)
+		result, err := svc.ForwardNative(context.Background(), c, geminiAPIKeyAccount("test-key"), "gemini-3-pro-image", "streamGenerateContent", true, reqBody)
 		require.NoError(t, err)
 		require.True(t, result.ClientDisconnect)
 		require.Zero(t, result.ImageCount)
@@ -122,7 +128,7 @@ func TestGeminiCompatForward_ClientDisconnectAfterFinalChunkBillsCollectedUsage(
 
 	t.Run("client gone", func(t *testing.T) {
 		svc, c, _ := newGeminiAbortingStreamService(t, "/v1/messages", reqBody, geminiAbortTextChunk+geminiAbortFinalChunk, true)
-		result, err := svc.Forward(context.Background(), c, geminiVertexAPIKeyTestAccount(""), reqBody)
+		result, err := svc.Forward(context.Background(), c, geminiAPIKeyAccount("test-key"), reqBody)
 		require.NoError(t, err)
 		require.True(t, result.ClientDisconnect)
 		require.Equal(t, 10, result.Usage.InputTokens)
@@ -131,7 +137,7 @@ func TestGeminiCompatForward_ClientDisconnectAfterFinalChunkBillsCollectedUsage(
 
 	t.Run("upstream read error with live client", func(t *testing.T) {
 		svc, c, _ := newGeminiAbortingStreamService(t, "/v1/messages", reqBody, geminiAbortTextChunk+geminiAbortFinalChunk, false)
-		result, err := svc.Forward(context.Background(), c, geminiVertexAPIKeyTestAccount(""), reqBody)
+		result, err := svc.Forward(context.Background(), c, geminiAPIKeyAccount("test-key"), reqBody)
 		require.ErrorIs(t, err, io.ErrUnexpectedEOF)
 		require.Nil(t, result)
 	})
@@ -142,7 +148,7 @@ func TestGeminiForwardAsChatCompletions_ClientDisconnectAfterFinalChunkBillsColl
 
 	t.Run("client gone", func(t *testing.T) {
 		svc, c, _ := newGeminiAbortingStreamService(t, "/v1/chat/completions", reqBody, geminiAbortTextChunk+geminiAbortFinalChunk, true)
-		result, err := svc.ForwardAsChatCompletions(context.Background(), c, geminiVertexAPIKeyTestAccount(""), reqBody)
+		result, err := svc.ForwardAsChatCompletions(context.Background(), c, geminiAPIKeyAccount("test-key"), reqBody)
 		require.NoError(t, err)
 		require.True(t, result.ClientDisconnect)
 		require.Equal(t, 10, result.Usage.InputTokens)
@@ -151,7 +157,7 @@ func TestGeminiForwardAsChatCompletions_ClientDisconnectAfterFinalChunkBillsColl
 
 	t.Run("client gone before usage", func(t *testing.T) {
 		svc, c, _ := newGeminiAbortingStreamService(t, "/v1/chat/completions", reqBody, geminiAbortTextChunk, true)
-		result, err := svc.ForwardAsChatCompletions(context.Background(), c, geminiVertexAPIKeyTestAccount(""), reqBody)
+		result, err := svc.ForwardAsChatCompletions(context.Background(), c, geminiAPIKeyAccount("test-key"), reqBody)
 		require.ErrorIs(t, err, context.Canceled)
 		require.Nil(t, result)
 	})
@@ -163,7 +169,7 @@ func TestGeminiForwardNative_ClientDisconnectAfterFinishKeepsImageFallback(t *te
 	reqBody := []byte(`{"contents":[{"role":"user","parts":[{"text":"draw a cat"}]}]}`)
 	svc, c, _ := newGeminiAbortingStreamService(t, "/v1beta/models/gemini-3-pro-image:streamGenerateContent", reqBody, finishWithoutInline, true)
 
-	result, err := svc.ForwardNative(context.Background(), c, geminiVertexAPIKeyTestAccount(""), "gemini-3-pro-image", "streamGenerateContent", true, reqBody)
+	result, err := svc.ForwardNative(context.Background(), c, geminiAPIKeyAccount("test-key"), "gemini-3-pro-image", "streamGenerateContent", true, reqBody)
 	require.NoError(t, err)
 	require.True(t, result.ClientDisconnect)
 	require.Equal(t, 1, result.ImageCount)
@@ -175,7 +181,7 @@ func TestGeminiForwardNative_ClientDisconnectIgnoresTruncatedTrailingLine(t *tes
 	reqBody := []byte(`{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}`)
 	svc, c, _ := newGeminiAbortingStreamService(t, "/v1beta/models/gemini-3-flash-preview:streamGenerateContent", reqBody, complete+truncated, true)
 
-	result, err := svc.ForwardNative(context.Background(), c, geminiVertexAPIKeyTestAccount(""), "gemini-3-flash-preview", "streamGenerateContent", true, reqBody)
+	result, err := svc.ForwardNative(context.Background(), c, geminiAPIKeyAccount("test-key"), "gemini-3-flash-preview", "streamGenerateContent", true, reqBody)
 	require.NoError(t, err)
 	require.True(t, result.ClientDisconnect)
 	require.Equal(t, 1000, result.Usage.InputTokens)
@@ -186,7 +192,7 @@ func TestGeminiForwardAsChatCompletions_ClientDisconnectImageCount(t *testing.T)
 	t.Run("disconnect before finish bills no image", func(t *testing.T) {
 		reqBody := []byte(`{"model":"gemini-3-pro-image","stream":true,"messages":[{"role":"user","content":"draw a cat"}]}`)
 		svc, c, _ := newGeminiAbortingStreamService(t, "/v1/chat/completions", reqBody, geminiAbortUsageChunk, true)
-		result, err := svc.ForwardAsChatCompletions(context.Background(), c, geminiVertexAPIKeyTestAccount(""), reqBody)
+		result, err := svc.ForwardAsChatCompletions(context.Background(), c, geminiAPIKeyAccount("test-key"), reqBody)
 		require.NoError(t, err)
 		require.True(t, result.ClientDisconnect)
 		require.Zero(t, result.ImageCount)
@@ -196,7 +202,7 @@ func TestGeminiForwardAsChatCompletions_ClientDisconnectImageCount(t *testing.T)
 	t.Run("disconnect after finish keeps completed-request image count", func(t *testing.T) {
 		reqBody := []byte(`{"model":"gemini-3-pro-image","stream":true,"messages":[{"role":"user","content":"draw a cat"}]}`)
 		svc, c, _ := newGeminiAbortingStreamService(t, "/v1/chat/completions", reqBody, geminiAbortImageChunk, true)
-		result, err := svc.ForwardAsChatCompletions(context.Background(), c, geminiVertexAPIKeyTestAccount(""), reqBody)
+		result, err := svc.ForwardAsChatCompletions(context.Background(), c, geminiAPIKeyAccount("test-key"), reqBody)
 		require.NoError(t, err)
 		require.True(t, result.ClientDisconnect)
 		require.Equal(t, 1, result.ImageCount)
@@ -225,7 +231,7 @@ func TestGeminiForwardAsChatCompletions_WriteFailureOnImageModelBillsNoImage(t *
 		Body:       io.NopCloser(bytes.NewReader([]byte(geminiAbortUsageChunk))),
 	}
 
-	result, err := svc.ForwardAsChatCompletions(context.Background(), c, geminiVertexAPIKeyTestAccount(""), reqBody)
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, geminiAPIKeyAccount("test-key"), reqBody)
 	require.NoError(t, err)
 	require.True(t, result.ClientDisconnect)
 	require.Zero(t, result.ImageCount)
@@ -236,7 +242,7 @@ func TestGeminiCompatForward_ClientDisconnectBeforeFinishBillsNoImage(t *testing
 	reqBody := []byte(`{"model":"gemini-3-pro-image","max_tokens":16,"stream":true,"messages":[{"role":"user","content":"draw a cat"}]}`)
 	svc, c, _ := newGeminiAbortingStreamService(t, "/v1/messages", reqBody, inlineWithoutFinish, true)
 
-	result, err := svc.Forward(context.Background(), c, geminiVertexAPIKeyTestAccount(""), reqBody)
+	result, err := svc.Forward(context.Background(), c, geminiAPIKeyAccount("test-key"), reqBody)
 	require.NoError(t, err)
 	require.True(t, result.ClientDisconnect)
 	require.Zero(t, result.ImageCount)
