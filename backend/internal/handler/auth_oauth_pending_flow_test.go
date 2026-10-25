@@ -2821,8 +2821,19 @@ func (s *oauthPendingFlowEmailCacheStub) DeleteVerificationCode(_ context.Contex
 	return nil
 }
 
-func (s *oauthPendingFlowEmailCacheStub) VerifyVerificationCode(context.Context, string, string, int) (int, bool, error) {
-	return 0, false, nil
+func (s *oauthPendingFlowEmailCacheStub) VerifyVerificationCode(_ context.Context, email, code string, maxAttempts int) (int, bool, error) {
+	data := s.verificationCodes[email]
+	if data == nil || data.Attempts >= maxAttempts {
+		if data != nil {
+			return data.Attempts, false, nil
+		}
+		return 0, false, nil
+	}
+	if data.Code == code {
+		return data.Attempts, true, nil
+	}
+	data.Attempts++
+	return data.Attempts, false, nil
 }
 
 func (s *oauthPendingFlowEmailCacheStub) GetNotifyVerifyCode(context.Context, string) (*service.VerificationCodeData, error) {

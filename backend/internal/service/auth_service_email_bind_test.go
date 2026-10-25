@@ -832,8 +832,18 @@ func (s *emailBindCacheStub) DeleteVerificationCode(context.Context, string) err
 	return nil
 }
 
-func (s *emailBindCacheStub) VerifyVerificationCode(context.Context, string, string, int) (int, bool, error) {
-	return 0, false, nil
+func (s *emailBindCacheStub) VerifyVerificationCode(_ context.Context, _ string, code string, maxAttempts int) (int, bool, error) {
+	if s.data == nil || s.data.Attempts >= maxAttempts {
+		if s.data != nil {
+			return s.data.Attempts, false, nil
+		}
+		return 0, false, nil
+	}
+	if s.data.Code == code {
+		return s.data.Attempts, true, nil
+	}
+	s.data.Attempts++
+	return s.data.Attempts, false, nil
 }
 
 func (s *emailBindCacheStub) GetNotifyVerifyCode(context.Context, string) (*service.VerificationCodeData, error) {
