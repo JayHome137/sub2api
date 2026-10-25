@@ -946,7 +946,7 @@ type InflightReservationConfig struct {
 	// 实测一个 99B 的最小请求最终 prompt_tokens≈4387（其中约 3.2k 命中缓存）。
 	// 只按 bodyBytes/4 估算会把预留算成实际的 1/50，并发时准入形同虚设。
 	// 因此输入估算至少取这个值：宁可多留一点，也不能让并发集体透支。
-	// 0 表示不设下限（保持旧行为，仅用于回滚）。
+	// 0 使用默认下限；负数表示显式关闭下限（用于回滚）。
 	MinInputTokens int `mapstructure:"min_input_tokens"`
 	// MaxReservationUSD 单请求预留金额上限；0 表示不设上限。
 	MaxReservationUSD float64 `mapstructure:"max_reservation_usd"`
@@ -2145,7 +2145,6 @@ func setDefaults() {
 	viper.SetDefault("billing.inflight_reservation.min_input_tokens", 4096)
 	viper.SetDefault("billing.inflight_reservation.max_reservation_usd", 0)
 	viper.SetDefault("billing.inflight_reservation.fail_closed_on_unpriced", false)
-	viper.SetDefault("billing.inflight_reservation.fail_closed_on_reserve_error", false)
 	viper.SetDefault("billing.inflight_reservation.fail_closed_on_reserve_error", false)
 
 	// Turnstile

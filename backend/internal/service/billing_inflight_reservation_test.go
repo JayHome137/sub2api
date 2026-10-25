@@ -202,13 +202,15 @@ func TestInflightEstimate_MediaKinds(t *testing.T) {
 
 type memInflightCache struct {
 	BillingCache
-	mu        sync.Mutex
-	balance   float64
-	res       map[string]float64
-	exp       map[string]time.Time
-	renews    atomic.Int32
-	deducts   atomic.Int32
-	releaseCt atomic.Int32
+	mu         sync.Mutex
+	balance    float64
+	balanceErr error
+	reserveErr error
+	res        map[string]float64
+	exp        map[string]time.Time
+	renews     atomic.Int32
+	deducts    atomic.Int32
+	releaseCt  atomic.Int32
 }
 
 func newMemInflightCache(balance float64) *memInflightCache {
@@ -218,7 +220,7 @@ func newMemInflightCache(balance float64) *memInflightCache {
 func (m *memInflightCache) GetUserBalance(context.Context, int64) (float64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.balance, nil
+	return m.balance, m.balanceErr
 }
 
 func (m *memInflightCache) DeductUserBalance(_ context.Context, _ int64, amount float64) error {
@@ -242,6 +244,9 @@ func (m *memInflightCache) gc() {
 func (m *memInflightCache) ReserveInflightBalance(_ context.Context, _ int64, id string, amount, balance float64, ttl time.Duration) (bool, float64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.reserveErr != nil {
+		return false, 0, m.reserveErr
+	}
 	m.gc()
 	sum := 0.0
 	for _, v := range m.res {
@@ -253,6 +258,85 @@ func (m *memInflightCache) ReserveInflightBalance(_ context.Context, _ int64, id
 	m.res[id] = amount
 	m.exp[id] = time.Now().Add(ttl)
 	return true, sum, nil
+}
+
+func TestInflightReservation_ReserveErrorsRespectFailClosedSetting(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		cache      func() *memInflightCache
+		userRepo   UserRepository
+		failClosed bool
+		wantErr    bool
+	}{
+		{
+			name: "balance read defaults to fail open",
+			cache: func() *memInflightCache {
+				cache := newMemInflightCache(1)
+				cache.balanceErr = fmt.Errorf("balance store unavailable")
+				return cache
+			},
+			userRepo: &failingBalanceUserRepo{err: fmt.Errorf("database unavailable")},
+		},
+		{
+			name: "balance read can fail closed",
+			cache: func() *memInflightCache {
+				cache := newMemInflightCache(1)
+				cache.balanceErr = fmt.Errorf("balance store unavailable")
+				return cache
+			},
+			userRepo:   &failingBalanceUserRepo{err: fmt.Errorf("database unavailable")},
+			failClosed: true,
+			wantErr:    true,
+		},
+		{
+			name: "reservation store defaults to fail open",
+			cache: func() *memInflightCache {
+				cache := newMemInflightCache(1)
+				cache.reserveErr = fmt.Errorf("redis unavailable")
+				return cache
+			},
+		},
+		{
+			name: "reservation store can fail closed",
+			cache: func() *memInflightCache {
+				cache := newMemInflightCache(1)
+				cache.reserveErr = fmt.Errorf("redis unavailable")
+				return cache
+			},
+			failClosed: true,
+			wantErr:    true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &config.Config{}
+			cfg.Billing.InflightReservation = config.InflightReservationConfig{
+				Enabled:                  true,
+				FailClosedOnReserveError: tc.failClosed,
+			}
+			svc := NewBillingCacheService(tc.cache(), tc.userRepo, nil, nil, nil, nil, cfg, nil)
+			t.Cleanup(svc.Stop)
+
+			release, err := svc.ReserveInflight(context.Background(), &User{ID: 1}, nil, nil, 0.1)
+			if tc.wantErr {
+				require.ErrorIs(t, err, ErrInsufficientBalance)
+				require.Nil(t, release)
+				return
+			}
+			require.NoError(t, err)
+			if release != nil {
+				release.HandlerDone()
+			}
+		})
+	}
+}
+
+type failingBalanceUserRepo struct {
+	UserRepository
+	err error
+}
+
+func (r *failingBalanceUserRepo) GetByID(context.Context, int64) (*User, error) {
+	return nil, r.err
 }
 
 func (m *memInflightCache) ReleaseInflightBalance(_ context.Context, _ int64, id string) error {
