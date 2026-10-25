@@ -198,15 +198,7 @@ func (s *GatewayService) ForwardAsResponses(
 	var result *ForwardResult
 	var handleErr error
 	if clientStream {
-		writerSizeBeforeStream := c.Writer.Size()
 		result, handleErr = s.handleResponsesStreamingResponse(resp, c, originalModel, mappedModel, reasoningEffort, startTime, clientToolMapping)
-		var sseErr *sseStreamErrorEventError
-		switch {
-		case errors.As(handleErr, &sseErr):
-			return nil, s.sseStreamErrorEventFailover(ctx, c, account, resp, sseErr.RawData, mappedModel, c.Writer.Size() != writerSizeBeforeStream)
-		case errors.Is(handleErr, errAnthropicNativeStreamIdle) && s.rateLimitService != nil:
-			s.rateLimitService.HandleStreamTimeout(ctx, account, originalModel)
-		}
 	} else {
 		result, handleErr = s.handleResponsesBufferedStreamingResponse(resp, c, originalModel, mappedModel, reasoningEffort, startTime, clientToolMapping)
 	}
@@ -553,28 +545,30 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 	var usage ClaudeUsage
 	var firstTokenMs *int
 	firstChunk := true
-	writerSizeBeforeStream := c.Writer.Size()
 
-	stream := newAnthropicCompatStream(s.cfg, c, resp, "forward_as_responses", requestID)
-	defer stream.stop()
+	scanner := bufio.NewScanner(resp.Body)
+	maxLineSize := defaultMaxLineSize
+	if s.cfg != nil && s.cfg.Gateway.MaxLineSize > 0 {
+		maxLineSize = s.cfg.Gateway.MaxLineSize
+	}
+	scanner.Buffer(make([]byte, 0, 64*1024), maxLineSize)
 
 	resultWithUsage := func() *ForwardResult {
 		return &ForwardResult{
-			RequestID:        requestID,
-			UpstreamHeaders:  resp.Header,
-			Usage:            usage,
-			Model:            originalModel,
-			UpstreamModel:    mappedModel,
-			ReasoningEffort:  reasoningEffort,
-			Stream:           true,
-			Duration:         time.Since(startTime),
-			FirstTokenMs:     firstTokenMs,
-			ClientDisconnect: stream.clientDisconnected,
+			RequestID:       requestID,
+			UpstreamHeaders: resp.Header,
+			Usage:           usage,
+			Model:           originalModel,
+			UpstreamModel:   mappedModel,
+			ReasoningEffort: reasoningEffort,
+			Stream:          true,
+			Duration:        time.Since(startTime),
+			FirstTokenMs:    firstTokenMs,
 		}
 	}
 
 	// processEvent handles a single parsed Anthropic SSE event.
-	processEvent := func(event *apicompat.AnthropicStreamEvent) {
+	processEvent := func(event *apicompat.AnthropicStreamEvent) bool {
 		if firstChunk {
 			firstChunk = false
 			ms := int(time.Since(startTime).Milliseconds())
@@ -588,9 +582,6 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 		// Also capture usage from message_start
 		if event.Type == "message_start" && event.Message != nil {
 			mergeAnthropicUsage(&usage, event.Message.Usage)
-		}
-		if stream.clientDisconnected {
-			return
 		}
 
 		// Keep the terminal Responses usage aligned with the normalized billing
@@ -622,25 +613,20 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 			for _, restored := range payloads {
 				eventType := gjson.GetBytes(restored, "type").String()
 				if _, err := fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", eventType, restored); err != nil {
-					stream.markClientDisconnected()
-					return
+					logger.L().Info("forward_as_responses stream: client disconnected",
+						zap.String("request_id", requestID),
+					)
+					return true // client disconnected
 				}
 			}
 		}
 		if len(events) > 0 {
 			c.Writer.Flush()
 		}
+		return false
 	}
 
 	finalizeStream := func() (*ForwardResult, error) {
-		if failure := stream.failure(); failure != nil {
-			return finishAnthropicCompatStreamFailure(c, writerSizeBeforeStream, failure, resultWithUsage(), func() {
-				writeAnthropicCompatResponsesStreamFailure(c, state, clientToolRestorer, failure)
-			})
-		}
-		if stream.clientDisconnected {
-			return resultWithUsage(), nil
-		}
 		if finalEvents := apicompat.FinalizeAnthropicResponsesStream(state); len(finalEvents) > 0 {
 			for _, evt := range finalEvents {
 				sse, err := apicompat.ResponsesEventToSSE(evt)
@@ -656,21 +642,18 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 	}
 
 	// Read Anthropic SSE events
-	for {
-		line, ok := stream.nextLine()
-		if !ok {
-			break
-		}
+	for scanner.Scan() {
+		line := scanner.Text()
 		eventType, ok := parseAnthropicSSEField(line, "event")
 		if !ok {
 			continue
 		}
 
 		// Read data line
-		dataLine, ok := stream.nextLine()
-		if !ok {
+		if !scanner.Scan() {
 			break
 		}
+		dataLine := scanner.Text()
 		payload, ok := parseAnthropicSSEField(dataLine, "data")
 		if !ok {
 			continue
@@ -686,11 +669,18 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 			continue
 		}
 
-		stream.observe(&event, payload)
-		if stream.upstreamErrType != "" {
-			break
+		if processEvent(&event) {
+			return resultWithUsage(), nil
 		}
-		processEvent(&event)
+	}
+
+	if err := scanner.Err(); err != nil {
+		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+			logger.L().Warn("forward_as_responses stream: read error",
+				zap.Error(err),
+				zap.String("request_id", requestID),
+			)
+		}
 	}
 
 	return finalizeStream()
