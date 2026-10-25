@@ -105,6 +105,10 @@ jobs:
           go test ./internal/repository ./internal/handler/admin ./cmd/server -count=1
           go test -tags unit ./internal/service ./internal/handler -run 'Test.*(DashboardHealth|BusinessHealth|HealthScoreConfigured|WrappedUpstream|Sonnet55|Inflight|Reservation|SyncBalanceCache|StreamFailed|StreamError|AccessState|Claude55|FilterThinking)' -count=1
 
+      - name: Run full backend service and handler unit suites
+        working-directory: backend
+        run: go test -tags unit ./internal/service ./internal/handler -count=1
+
       - name: Validate renderer source
         run: |
           node --check backend/scripts/quality-renderer-js/server.mjs
