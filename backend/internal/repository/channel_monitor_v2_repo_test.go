@@ -393,15 +393,23 @@ func TestChannelMonitorV2SQLTaxonomyContainsGoNeedles(t *testing.T) {
 		"invalid_request",
 		"model not supported",
 		"billing hard limit",
+		"insufficient account balance",
 		"no healthy upstream account",
 		"rate_limit",
 		"gateway timeout",
 		"connection refused",
 		"unexpected eof",
+		"is_business_limited",
 	}
 	for _, needle := range needles {
 		require.Containsf(t, strings.ToLower(sql), strings.ToLower(needle), "SQL taxonomy missing Go needle %q", needle)
 	}
+}
+
+func TestChannelMonitorV2SQLExcludesBusinessLimitedRequestsFromSLA(t *testing.T) {
+	sql := strings.ToLower(channelMonitorV2ErrorAggregationSQL)
+	require.Contains(t, sql, "from classified where not is_business_limited")
+	require.Contains(t, sql, "user_id is not null and not is_business_limited")
 }
 
 func TestApplyIgnoredErrorsAdjustsRatesKeepsAbsoluteVolume(t *testing.T) {
