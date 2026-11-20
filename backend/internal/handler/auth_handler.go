@@ -262,7 +262,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	// Check if TOTP 2FA is enabled for this user
-	if h.totpService != nil && h.settingSvc.IsTotpEnabled(c.Request.Context()) && user.TotpEnabled {
+	if h.settingSvc.LoginRequiresTOTP(c.Request.Context(), user) {
+		if h.totpService == nil {
+			response.InternalError(c, "Two-factor verification is unavailable")
+			return
+		}
 		// Create a temporary login session for 2FA
 		tempToken, err := h.totpService.CreateLoginSession(c.Request.Context(), user.ID, user.Email)
 		if err != nil {
