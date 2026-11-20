@@ -2264,14 +2264,12 @@ func TestResolvePendingOAuthTargetUserIDNormalizesLegacySpacingAndCase(t *testin
 	require.Equal(t, existingUser.ID, resolvedUserID)
 }
 
-func TestBindOIDCOAuthLoginReturns2FAChallengeWhenUserHasTotp(t *testing.T) {
+func TestBindOIDCOAuthLoginRequires2FAWhenSettingReadFails(t *testing.T) {
 	totpCache := &oauthPendingFlowTotpCacheStub{}
 	handler, client := newOAuthPendingFlowTestHandlerWithDependencies(t, oauthPendingFlowTestHandlerOptions{
-		settingValues: map[string]string{
-			service.SettingKeyTotpEnabled: "true",
-		},
-		totpCache:     totpCache,
-		totpEncryptor: oauthPendingFlowTotpEncryptorStub{},
+		totpSettingError: errors.New("settings temporarily unavailable"),
+		totpCache:        totpCache,
+		totpEncryptor:    oauthPendingFlowTotpEncryptorStub{},
 	})
 	ctx := context.Background()
 
@@ -2517,6 +2515,7 @@ type oauthPendingFlowTestHandlerOptions struct {
 	emailVerifyEnabled bool
 	emailCache         service.EmailCache
 	settingValues      map[string]string
+	totpSettingError   error
 	promoRepo          service.PromoCodeRepository
 	defaultSubAssigner service.DefaultSubscriptionAssigner
 	affiliateService   *service.AffiliateService
@@ -2600,7 +2599,10 @@ CREATE TABLE IF NOT EXISTS user_affiliates (
 	for key, value := range options.settingValues {
 		settingValues[key] = value
 	}
-	settingSvc := service.NewSettingService(&oauthPendingFlowSettingRepoStub{values: settingValues}, cfg)
+	settingSvc := service.NewSettingService(&oauthPendingFlowSettingRepoStub{
+		values:           settingValues,
+		totpSettingError: options.totpSettingError,
+	}, cfg)
 	affiliateService := options.affiliateService
 	if affiliateService == nil && options.affiliateFactory != nil {
 		affiliateService = options.affiliateFactory(client, settingSvc)
@@ -2672,7 +2674,8 @@ func boolPtr(v bool) *bool {
 }
 
 type oauthPendingFlowSettingRepoStub struct {
-	values map[string]string
+	values           map[string]string
+	totpSettingError error
 }
 
 type oauthPendingFlowPromoRepoStub struct {
@@ -2758,6 +2761,9 @@ func (s *oauthPendingFlowSettingRepoStub) Get(context.Context, string) (*service
 }
 
 func (s *oauthPendingFlowSettingRepoStub) GetValue(_ context.Context, key string) (string, error) {
+	if key == service.SettingKeyTotpEnabled && s.totpSettingError != nil {
+		return "", s.totpSettingError
+	}
 	value, ok := s.values[key]
 	if !ok {
 		return "", service.ErrSettingNotFound
@@ -3611,4 +3617,66 @@ func (oauthPendingFlowTotpEncryptorStub) Encrypt(plaintext string) (string, erro
 
 func (oauthPendingFlowTotpEncryptorStub) Decrypt(ciphertext string) (string, error) {
 	return ciphertext, nil
+}
+
+// 已绑定身份走 pending 兑换时，TOTP 账号必须拿到 2FA 挑战而不是直接会话：
+// LinuxDo / 钉钉 / 微信 / OIDC 都复用这个兑换接口。
+func TestExchangePendingOAuthCompletionRequiresTOTPForBoundIdentity(t *testing.T) {
+	totpCache := &oauthPendingFlowTotpCacheStub{}
+	handler, client := newOAuthPendingFlowTestHandlerWithDependencies(t, oauthPendingFlowTestHandlerOptions{
+		settingValues: map[string]string{
+			service.SettingKeyTotpEnabled: "true",
+		},
+		totpCache:     totpCache,
+		totpEncryptor: oauthPendingFlowTotpEncryptorStub{},
+	})
+	ctx := context.Background()
+
+	userEntity, err := client.User.Create().
+		SetEmail("totp-bound@example.com").
+		SetUsername("totp-bound").
+		SetPasswordHash("hash").
+		SetRole(service.RoleUser).
+		SetStatus(service.StatusActive).
+		SetTotpEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = client.PendingAuthSession.Create().
+		SetSessionToken("totp-pending-token").
+		SetIntent("login").
+		SetProviderType("linuxdo").
+		SetProviderKey("linuxdo").
+		SetProviderSubject("123").
+		SetTargetUserID(userEntity.ID).
+		SetResolvedEmail(userEntity.Email).
+		SetBrowserSessionKey("totp-browser-key").
+		SetLocalFlowState(map[string]any{
+			oauthCompletionResponseKey: map[string]any{"redirect": "/dashboard"},
+		}).
+		SetExpiresAt(time.Now().UTC().Add(10 * time.Minute)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	ginCtx, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/oauth/pending/exchange", nil)
+	req.AddCookie(&http.Cookie{Name: oauthPendingSessionCookieName, Value: encodeCookieValue("totp-pending-token")})
+	req.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue("totp-browser-key")})
+	ginCtx.Request = req
+
+	handler.ExchangePendingOAuthCompletion(ginCtx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	data := decodeJSONResponseData(t, recorder)
+	require.Equal(t, true, data["requires_2fa"])
+	tempToken, _ := data["temp_token"].(string)
+	require.NotEmpty(t, tempToken)
+	require.NotContains(t, data, "access_token")
+	require.NotContains(t, data, "refresh_token")
+
+	session, err := totpCache.GetLoginSession(ctx, tempToken)
+	require.NoError(t, err)
+	require.NotNil(t, session)
+	require.Equal(t, userEntity.ID, session.UserID)
 }
