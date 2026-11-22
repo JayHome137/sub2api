@@ -215,9 +215,10 @@ jobs:
           notes="$(cat <<'EOF'
           本版本更新内容：
 
-          - 修正 DeepSeek V4 Pro 在 2026-09-14 后被错误按 Flash 价格计费的问题，并将 prompt_cache_hit_tokens 计入缓存用量。
-          - 将管理员余额变更与来源记录纳入同一事务，并让退款余额回滚具备审计和幂等保护。
-          - 更新 Go 网络依赖至 golang.org/x/net v0.62.0，修复上游标记的安全问题。
+          - 拒绝 JSON、multipart 与 Responses WebSocket 帧中的重复计费和路由字段，避免实际执行参数与计费参数不一致。
+          - 统一登录 TOTP 挑战判定并在配置读取失败时 fail-closed，保护 OAuth 登录与兑换路径。
+          - 防止并发 OAuth 凭据刷新覆盖新凭据，将上游超时纳入账号 failover，并修正 Alpha Search 工具级 403 的账号池状态处理。
+          - 升级 Go 工具链至 1.27.4，并更新前端依赖安全覆盖。
 
           同步发布全栈镜像、隔离渲染器镜像和 Linux 更新控制面。
           EOF
